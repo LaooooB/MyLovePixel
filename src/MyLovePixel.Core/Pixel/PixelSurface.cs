@@ -48,6 +48,15 @@ public sealed class PixelSurface
 
     public PixelSurface Clone() => new(Size, Format, (byte[])_pixels.Clone(), Revision);
 
+    internal static PixelSurface FromRgbaBytes(IntSize size, ReadOnlySpan<byte> bytes)
+    {
+        var expectedLength = checked(size.Width * size.Height * 4);
+        if (bytes.Length != expectedLength)
+            throw new ArgumentException($"RGBA byte length must be {expectedLength}, received {bytes.Length}.", nameof(bytes));
+
+        return new PixelSurface(size, PixelFormat.Rgba32, bytes.ToArray(), revision: 0);
+    }
+
     internal void SetPixel(int x, int y, Rgba32 color)
     {
         ValidateCoordinates(x, y);
