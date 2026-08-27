@@ -34,7 +34,7 @@
 
 ## Batch 01 — Document Core / Stable References
 
-**状态：首批实现已落地**
+**状态：已完成**
 
 目标：把未来所有功能依赖的数据基础先做对。
 
@@ -65,7 +65,7 @@
 
 ## Batch 02 — Command / Transaction / Undo-Redo
 
-**状态：首批实现已落地**
+**状态：已完成**
 
 目标：建立唯一 mutation 通路，在开始画笔前先把撤销语义固定。
 
@@ -93,29 +93,41 @@
 
 ## Batch 03 — Persistence / Schema / Atomic Save
 
+**状态：已完成**
+
 目标：在算法越来越多之前先保证项目不会因升级或崩溃损坏。
 
 交付：
 
-- `.pixelproj` 容器格式
-- `manifest` + `schemaVersion`
+- `.pixelproj` ZIP 容器格式
+- `manifest.json` + `schemaVersion`
 - Document DTO 与 runtime model 显式映射
-- PixelSurface binary codec
+- `MLPX` PixelSurface binary codec
+- PixelSurface 内部 SHA-256 校验
 - Save / Load semantic roundtrip
+- `ProjectSemanticHash`
+- `ProjectContentHash`
 - Migration registry
-- Atomic temp-write / replace
-- content hash
-- Unknown field / plugin payload preserve
+- same-directory temp write / reopen validation / atomic replace
+- Unknown JSON field preserve
+- Unknown/Plugin opaque ZIP payload preserve
 - DocumentValidator 接入 load/save
+- 结构化 `PixelProjectException / PixelProjectErrorCode`
+- ZIP entry 数量与解压尺寸限制
 
-暂不做 Autosave Journal；先把普通保存语义做稳。
-
-验收：
+验收结果：
 
 - save -> load -> semantic hash equal。
-- 保存中断不破坏旧文件。
-- schema fixture 可以逐级 migration。
-- 非法 Resource/Cel 引用加载失败并给结构化错误。
+- Linked Cel 的共享 `SurfaceId` 经 roundtrip 不退化为复制像素。
+- 全局 content hash 被篡改时加载失败。
+- 即使重新计算全局 hash，Surface 内部 payload 被篡改仍因 MLPX SHA-256 失败。
+- schema migration registry 逐级执行，不允许跳版本。
+- 非法 Resource/Cel 引用加载失败并返回结构化错误。
+- Unknown JSON fields 与 opaque plugin payload 经 load/save 后仍保留。
+- atomic writer 在 commit 前失败时旧文件保持不变，临时文件被清理。
+- GitHub Actions `dotnet build` + `dotnet test` 已通过。
+
+暂不做 Autosave Journal；它仍属于 Batch 14。
 
 ---
 
@@ -436,4 +448,4 @@
 
 # 近期执行顺序
 
-当前已经完成 Batch 00，并落地 Batch 01/02 的最小闭环。下一次代码工作应直接进入 **Batch 03 Persistence**，因为在继续增加绘画算法前，必须先保证现有 Document/Resource/Command 状态可以稳定保存、迁移和恢复。
+Batch 00–03 已完成。下一次代码工作直接进入 **Batch 04 Raster Core**：先建立所有 Tool 共用的整数像素算法与策略接口，再进入 Selection、RenderGraph 和输入工具系统。
