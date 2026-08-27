@@ -12,16 +12,16 @@ internal static class ProjectContentHash
     {
         ArgumentNullException.ThrowIfNull(entries);
         using var aggregate = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        Span<byte> length = stackalloc byte[4];
+        Span<byte> entryHash = stackalloc byte[32];
 
         foreach (var pair in entries.OrderBy(x => x.Key, StringComparer.Ordinal))
         {
             var nameBytes = Encoding.UTF8.GetBytes(pair.Key);
-            Span<byte> length = stackalloc byte[4];
             BinaryPrimitives.WriteInt32LittleEndian(length, nameBytes.Length);
             aggregate.AppendData(length);
             aggregate.AppendData(nameBytes);
 
-            Span<byte> entryHash = stackalloc byte[32];
             SHA256.HashData(pair.Value, entryHash);
             aggregate.AppendData(entryHash);
         }
