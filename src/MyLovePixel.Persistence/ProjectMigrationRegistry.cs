@@ -71,7 +71,7 @@ public sealed class ProjectMigrationRegistry
     internal static int ReadSchemaVersion(JsonObject manifest)
     {
         var node = manifest["schemaVersion"];
-        if (node is null || !node.TryGetValue<int>(out var version) || version < 0)
+        if (node is not JsonValue value || !value.TryGetValue<int>(out var version) || version < 0)
             throw new PixelProjectException(
                 PixelProjectErrorCode.InvalidJson,
                 "manifest.json must contain a non-negative integer schemaVersion.",
