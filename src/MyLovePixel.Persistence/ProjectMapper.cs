@@ -250,7 +250,7 @@ internal static class ProjectEntryName
     {
         if (string.IsNullOrWhiteSpace(entryName))
             throw new PixelProjectException(PixelProjectErrorCode.InvalidContainer, "ZIP entry name cannot be empty.", entryName);
-        if (entryName.StartsWith('/', StringComparison.Ordinal) || entryName.Contains('\\', StringComparison.Ordinal))
+        if (entryName.StartsWith("/", StringComparison.Ordinal) || entryName.Contains('\\'))
             throw new PixelProjectException(PixelProjectErrorCode.InvalidContainer, $"Entry '{entryName}' is not a normalized project path.", entryName);
         if (entryName.Split('/').Any(segment => segment is "" or "." or ".."))
             throw new PixelProjectException(PixelProjectErrorCode.InvalidContainer, $"Entry '{entryName}' contains an unsafe path segment.", entryName);
