@@ -1,0 +1,25 @@
+# Build
+bin/
+obj/
+artifacts/
+TestResults/
+
+# IDE
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local project files / crash recovery
+*.pixelproj.autosave
+*.pixelproj.tmp
+*.pixelproj.bak
+
+# Local developer settings
+local.settings.json

@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/MyLovePixel.Core/MyLovePixel.Core.csproj" />
+    <Project Path="src/MyLovePixel.Commands/MyLovePixel.Commands.csproj" />
+    <Project Path="src/MyLovePixel.Cli/MyLovePixel.Cli.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/MyLovePixel.Core.Tests/MyLovePixel.Core.Tests.csproj" />
+  </Folder>
+</Solution>
