@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>MyLovePixel.Commands</AssemblyName>
+    <RootNamespace>MyLovePixel.Commands</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../MyLovePixel.Core/MyLovePixel.Core.csproj" />
+  </ItemGroup>
+</Project>
