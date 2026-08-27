@@ -239,7 +239,7 @@ public static class PixelProjectFile
             long totalBytes = 0;
             foreach (var entry in archive.Entries)
             {
-                if (entry.FullName.EndsWith('/', StringComparison.Ordinal) && entry.Length == 0) continue;
+                if (entry.FullName.EndsWith("/", StringComparison.Ordinal) && entry.Length == 0) continue;
                 ProjectEntryName.Validate(entry.FullName);
                 if (entry.Length < 0 || entry.Length > limits.MaxEntryBytes || entry.Length > int.MaxValue)
                     throw new PixelProjectException(PixelProjectErrorCode.InvalidContainer, $"Entry '{entry.FullName}' exceeds the allowed size.", entry.FullName);
