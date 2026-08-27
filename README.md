@@ -26,35 +26,45 @@ MyLovePixel 是一个面向私人游戏开发工作流的 Pixel Art 创作软件
 
 ## 当前状态
 
-仓库骨架和第一批核心代码已经建立：
+Batch 00–03 已完成并通过 GitHub Actions build/test：
 
 - Stable IDs
 - Canvas / PixelSurface / ResourceStore
 - Layer / Frame / Cel / Linked Cel 引用模型
 - DocumentValidator
 - CommandBus
-- Undo / Redo
-- Transaction
-- PixelPatchCommand
-- UnlinkCelCommand
-- Core roundtrip tests
+- Undo / Redo / Transaction
+- PixelPatchCommand / UnlinkCelCommand
+- `.pixelproj` ZIP 容器
+- `manifest.json` + `schemaVersion`
+- Runtime Model ↔ Persistence DTO 显式映射
+- `MLPX` PixelSurface 二进制格式与内部 SHA-256
+- 项目逻辑 Content Hash
+- Save / Load semantic roundtrip
+- Migration Registry
+- Unknown JSON field / opaque plugin payload 保留
+- same-directory temp write + reopen validation + atomic replace
+- 结构化 Persistence Error
+- Persistence corruption / migration / atomicity tests
 - Headless CLI smoke path
 
-下一步严格按 [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) 推进。
+下一步进入 **Batch 04 — Raster Core**，严格按 [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) 推进。
 
 ## 目录
 
 ```text
 src/
-  MyLovePixel.Core/       文档模型、资源、像素真值、验证器
-  MyLovePixel.Commands/   唯一修改入口、Undo/Redo、Transaction
-  MyLovePixel.Cli/        无 UI 宿主，验证 Core 可独立运行
+  MyLovePixel.Core/          文档模型、资源、像素真值、验证器
+  MyLovePixel.Commands/      唯一修改入口、Undo/Redo、Transaction
+  MyLovePixel.Persistence/   项目格式、迁移、哈希、原子保存
+  MyLovePixel.Cli/           无 UI 宿主，验证 Core 可独立运行
 tests/
-  MyLovePixel.Core.Tests/ Core / Command 不变量测试
+  MyLovePixel.Core.Tests/        Core / Command 不变量测试
+  MyLovePixel.Persistence.Tests/ 项目格式与损坏恢复边界测试
 docs/
-  ARCHITECTURE.md         架构边界与依赖规则
-  IMPLEMENTATION_PLAN.md  分批实现计划和验收门槛
-  reference/              原始规格文档
+  ARCHITECTURE.md            架构边界与依赖规则
+  IMPLEMENTATION_PLAN.md     分批实现计划和验收门槛
+  DECISIONS/                 ADR 技术决策
 ```
 
 ## 本地构建
