@@ -2,7 +2,7 @@ namespace MyLovePixel.Persistence;
 
 internal static class AtomicFileWriter
 {
-    public static void Write(string path, Action<Stream> writer, Action? beforeCommit = null)
+    public static void Write(string path, Action<Stream> writer, Action<string>? validateBeforeCommit = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentNullException.ThrowIfNull(writer);
@@ -30,7 +30,7 @@ internal static class AtomicFileWriter
                 stream.Flush(flushToDisk: true);
             }
 
-            beforeCommit?.Invoke();
+            validateBeforeCommit?.Invoke(tempPath);
             File.Move(tempPath, fullPath, overwrite: true);
             committed = true;
         }
