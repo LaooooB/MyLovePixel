@@ -217,5 +217,7 @@ public sealed class PersistenceTests
         public void Apply(JsonObject manifest, JsonObject document) => apply(manifest, document);
     }
 
-    private sealed class InjectedFailureException : Exception;
+    private sealed class InjectedFailureException : Exception
+    {
+    }
 }
