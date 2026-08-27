@@ -48,33 +48,35 @@ public sealed class PixelSurface
 
     public PixelSurface Clone() => new(Size, Format, (byte[])_pixels.Clone(), Revision);
 
-    internal static PixelSurface FromRgbaBytes(IntSize size, ReadOnlySpan<byte> bytes)
+    internal static PixelSurface FromRaw(IntSize size, PixelFormat format, ReadOnlySpan<byte> pixels, long revision)
     {
+        if (format != PixelFormat.Rgba32) throw new ArgumentOutOfRangeException(nameof(format));
+        if (revision < 0) throw new ArgumentOutOfRangeException(nameof(revision));
         var expectedLength = checked(size.Width * size.Height * 4);
-        if (bytes.Length != expectedLength)
-            throw new ArgumentException($"RGBA byte length must be {expectedLength}, received {bytes.Length}.", nameof(bytes));
-
-        return new PixelSurface(size, PixelFormat.Rgba32, bytes.ToArray(), revision: 0);
+        if (pixels.Length != expectedLength)
+            throw new ArgumentException($"Raw pixel length must be {expectedLength}.", nameof(pixels));
+        return new PixelSurface(size, format, pixels.ToArray(), revision);
     }
 
     internal void SetPixel(int x, int y, Rgba32 color)
     {
         ValidateCoordinates(x, y);
+        var nextRevision = checked(Revision + 1);
         WriteUnchecked(x, y, color);
-        Revision = checked(Revision + 1);
+        Revision = nextRevision;
     }
 
     internal void SetPixels(ReadOnlySpan<PixelWrite> writes)
     {
         if (writes.IsEmpty) return;
 
-        foreach (var write in writes)
-        {
-            ValidateCoordinates(write.X, write.Y);
-            WriteUnchecked(write.X, write.Y, write.Color);
-        }
+        // Validate the complete patch and revision transition before mutating any byte.
+        // Commands rely on this to keep failed patches atomic.
+        foreach (var write in writes) ValidateCoordinates(write.X, write.Y);
+        var nextRevision = checked(Revision + 1);
 
-        Revision = checked(Revision + 1);
+        foreach (var write in writes) WriteUnchecked(write.X, write.Y, write.Color);
+        Revision = nextRevision;
     }
 
     private void WriteUnchecked(int x, int y, Rgba32 color)
