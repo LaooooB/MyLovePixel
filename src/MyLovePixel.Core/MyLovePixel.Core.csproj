@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>MyLovePixel.Core</AssemblyName>
+    <RootNamespace>MyLovePixel.Core</RootNamespace>
+  </PropertyGroup>
+</Project>
