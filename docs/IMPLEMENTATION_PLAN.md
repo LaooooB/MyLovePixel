@@ -133,50 +133,74 @@
 
 ## Batch 04 — Raster Core
 
+**状态：已完成**
+
 目标：所有绘画工具共享一套可测试的整数像素算法，而不是每个 Tool 自己画。
 
 交付：
 
-- Brush stamp / spacing
+- 独立 `MyLovePixel.Raster` 程序集
+- immutable `BrushMask`
+- Brush connected path / spacing / endpoint policy
 - Bresenham line
-- rectangle / ellipse / polygon rasterizer
+- integer rectangle / ellipse / polygon rasterizer
 - span flood fill
 - replace color
-- tolerance strategy
-- PixelPerfect `StrokeFilter`
+- `IColorToleranceStrategy`
+- PixelPerfect `IStrokeFilter`
 - symmetry `PointTransform`
-- tiled coordinate policy
-- `InkStrategy`: Simple / Alpha / LockAlpha
+- clipped / tiled coordinate policy
+- `IInkStrategy`: Simple / Alpha / LockAlpha
+- `RasterPatch` / exact DirtyRegion
+- `RasterWorkBudget` + structured budget exception
+- ASCII golden pixel fixtures
 
-验收：
+验收结果：
 
-- 全部算法纯函数或受控 surface mutation，可不启动 UI 测试。
-- 固定输入具有 golden image fixture。
-- preview 和 final raster 使用同一算法。
-- Flood fill 有工作量和边界保护。
+- Raster 只读 `PixelSurfaceSnapshot`，不持有 live surface 写权限。
+- Preview/final 可调用同一 Raster 算法并得到相同 patch。
+- Brush spacing 保证起点与最终端点，不因低采样率漏掉笔画尾端。
+- Flood Fill 有 visited/write 双预算保护，不 silent truncate。
+- Replace Color 与 Flood Fill 共用 tolerance 策略。
+- Line / Rectangle / Ellipse / Polygon 有固定 golden fixture。
+- RasterPatch 在执行 Command 前不修改 live surface；执行/Undo 后像素正确恢复。
+- GitHub Actions `dotnet build` + `dotnet test` 已通过。
 
 ---
 
 ## Batch 05 — Selection / Transform
 
+**状态：已完成**
+
 目标：Selection 是独立 Mask，Transform 不依赖具体 Tool/UI。
 
 交付：
 
-- 1-bit/8-bit `SelectionMask`
-- Rect / Ellipse / Lasso selection
-- Add/Subtract/Intersect/Invert
+- 独立 `MyLovePixel.Selection` 程序集
+- 真正 bit-packed 的 `Bit1 SelectionMask`
+- `Alpha8 SelectionMask`
+- Rectangle / Ellipse / Lasso selection
+- Add / Subtract / Intersect / Invert
 - Select by color
-- FloatingContent
-- move / flip / 90° rotate / nearest scale
-- arbitrary rotation strategy interface
-- multi-target transform command
+- Selection translate / flip / 90° rotate / nearest scale
+- immutable `FloatingContent`
+- FloatingContent move / flip / rotate90 / nearest scale
+- `IArbitraryRotationStrategy`
+- `FloatingContentComposer`：Snapshot -> preview/final RasterPatch
+- `MultiTargetPixelPatchCommand`
+- Multi-target apply 前全量验证与 before capture
+- `PixelSurface.SetPixels` 全量坐标与 revision 预验证
 
-验收：
+验收结果：
 
-- Move Selection 与 Move Content 语义独立。
-- Cancel preview 不留下 live mutation。
-- Transform 全部进入统一 Undo。
+- Move Selection 只改变 Mask，不改变 Surface revision/像素。
+- Move Content 在确认前只生成 patch，不修改 live surface/Undo 历史。
+- 确认 Transform 后通过 CommandBus 修改，Undo 恢复源像素。
+- FloatingContent Flip / Rotate90 / nearest scale 使用确定性像素映射。
+- 多 Surface Transform 只占一个 Undo entry。
+- 后一个 target 非法时，前一个 target 不发生半提交。
+- Selection 是工作区瞬态状态，不写入 `.pixelproj`；只有最终像素结果进入 Document。
+- GitHub Actions `dotnet build` + `dotnet test` 已通过。
 
 ---
 
@@ -448,4 +472,4 @@
 
 # 近期执行顺序
 
-Batch 00–03 已完成。下一次代码工作直接进入 **Batch 04 Raster Core**：先建立所有 Tool 共用的整数像素算法与策略接口，再进入 Selection、RenderGraph 和输入工具系统。
+Batch 00–05 已完成并通过 GitHub Actions。下一次代码工作直接进入 **Batch 06 RenderGraph / Canvas Cache**：先做 CPU reference compositor、RenderGraph contract、Revision/Dirty cache key，再接 Skia backend；Renderer 全程只消费 Snapshot，不获得 live Document mutation 权限。
