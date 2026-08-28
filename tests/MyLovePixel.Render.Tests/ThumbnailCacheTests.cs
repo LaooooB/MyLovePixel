@@ -53,10 +53,15 @@ public sealed class ThumbnailCacheTests
         var document = PixelDocumentFactory.CreateBlank(1, 1);
         var first = document.FrameOrder.Single();
         var bus = new CommandBus(document);
+
+        var beforeFirstCopy = document.FrameOrder.ToHashSet();
         bus.Execute(new CopyFrameCommand(first, FrameCopyMode.Linked));
-        var second = document.FrameOrder[^1];
+        var second = document.FrameOrder.Single(id => !beforeFirstCopy.Contains(id));
+
+        var beforeSecondCopy = document.FrameOrder.ToHashSet();
         bus.Execute(new CopyFrameCommand(first, FrameCopyMode.Linked));
-        var third = document.FrameOrder[^1];
+        var third = document.FrameOrder.Single(id => !beforeSecondCopy.Contains(id));
+
         var snapshot = DocumentSnapshot.Capture(document);
         var cache = new ThumbnailCache(new ThumbnailCacheOptions(MaxEntries: 2, MaxBytes: 4096));
 
