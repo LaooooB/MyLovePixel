@@ -1,4 +1,5 @@
 using MyLovePixel.Core.Document;
+using MyLovePixel.Core.Effects;
 using MyLovePixel.Core.Pixel;
 using MyLovePixel.Core.Primitives;
 using MyLovePixel.Core.Tiles;
@@ -45,9 +46,11 @@ public static class DocumentValidator
                 issues.Add(new("cel.surface.missing", $"Cel {cel.Id} references missing surface {cel.SurfaceId}."));
             if (!occupied.Add((cel.LayerId, cel.FrameId)))
                 issues.Add(new("cel.slot.duplicate", $"More than one Cel occupies layer {cel.LayerId}, frame {cel.FrameId}."));
+            ValidateEffects(document, cel, frames, issues);
         }
 
         ValidateAnimation(document, frames, frameIndex, issues);
+        ValidateTrackIdUniqueness(document, issues);
         return issues;
     }
 
@@ -161,6 +164,88 @@ public static class DocumentValidator
                         $"Tilemap {tilemapId} cell {pair.Key} references missing tile {pair.Value.TileId}."));
             }
         }
+    }
+
+    private static void ValidateEffects(
+        PixelDocument document,
+        Cel cel,
+        IReadOnlySet<FrameId> frames,
+        List<ValidationIssue> issues)
+    {
+        var seen = new HashSet<EffectInstanceId>();
+        foreach (var effectId in cel.Effects.EffectOrder)
+        {
+            if (!seen.Add(effectId))
+            {
+                issues.Add(new("effect.instance.id.duplicate", $"Cel {cel.Id} contains duplicate effect instance id {effectId}."));
+                continue;
+            }
+
+            var effect = cel.Effects.GetEffect(effectId);
+            if (string.IsNullOrWhiteSpace(effect.TypeId))
+                issues.Add(new("effect.type.invalid", $"Effect {effect.Id} on cel {cel.Id} has an empty type id."));
+
+            foreach (var pair in effect.Parameters)
+                ValidateEffectValue(document, cel.Id, effect.Id, pair.Key, pair.Value, issues);
+
+            foreach (var pair in effect.ParameterTracks)
+            {
+                if (string.IsNullOrWhiteSpace(pair.Key))
+                    issues.Add(new("effect.parameter.key.invalid", $"Effect {effect.Id} on cel {cel.Id} has an empty animated parameter key."));
+
+                foreach (var value in pair.Value.Values)
+                {
+                    if (!frames.Contains(value.Key))
+                        issues.Add(new(
+                            "effect.track.frame.missing",
+                            $"Effect {effect.Id} parameter '{pair.Key}' references missing frame {value.Key}."));
+                    ValidateEffectValue(document, cel.Id, effect.Id, pair.Key, value.Value, issues);
+                }
+            }
+        }
+    }
+
+    private static void ValidateEffectValue(
+        PixelDocument document,
+        CelId celId,
+        EffectInstanceId effectId,
+        string key,
+        EffectValue value,
+        List<ValidationIssue> issues)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+            issues.Add(new("effect.parameter.key.invalid", $"Effect {effectId} on cel {celId} has an empty parameter key."));
+
+        if (value.Kind == EffectParameterKind.PaletteReference &&
+            !document.Resources.ContainsPalette(value.PaletteIdValue))
+        {
+            issues.Add(new(
+                "effect.parameter.palette.missing",
+                $"Effect {effectId} parameter '{key}' on cel {celId} references missing palette {value.PaletteIdValue}."));
+        }
+    }
+
+    private static void ValidateTrackIdUniqueness(PixelDocument document, List<ValidationIssue> issues)
+    {
+        var ids = new List<AnimationTrackId>
+        {
+            document.Animation.PivotTrack.Id,
+            document.Animation.HitboxTrack.Id,
+            document.Animation.HurtboxTrack.Id,
+            document.Animation.SocketTrack.Id,
+            document.Animation.EventTrack.Id,
+            document.Animation.ColorCycleTrack.Id,
+        };
+
+        foreach (var cel in document.Cels)
+        foreach (var effectId in cel.Effects.EffectOrder)
+        foreach (var track in cel.Effects.GetEffect(effectId).ParameterTracks.Values)
+            ids.Add(track.Id);
+
+        if (ids.Distinct().Count() != ids.Count)
+            issues.Add(new(
+                "animation.track.id.globalDuplicate",
+                "Built-in and effect parameter animation tracks must use globally unique stable IDs."));
     }
 
     private static void ValidateAnimation(
