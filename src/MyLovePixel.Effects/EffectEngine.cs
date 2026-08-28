@@ -56,12 +56,16 @@ public sealed class EffectRegistry
     private readonly Dictionary<string, EffectDescriptor> _descriptors = new(StringComparer.Ordinal);
 
     public IReadOnlyCollection<string> TypeIds => _descriptors.Keys;
+    public long Revision { get; private set; }
 
     public void Register(EffectDescriptor descriptor)
     {
         ArgumentNullException.ThrowIfNull(descriptor);
-        if (!_descriptors.TryAdd(descriptor.TypeId, descriptor))
+        if (_descriptors.ContainsKey(descriptor.TypeId))
             throw new InvalidOperationException($"Effect descriptor '{descriptor.TypeId}' is already registered.");
+        var nextRevision = checked(Revision + 1);
+        _descriptors.Add(descriptor.TypeId, descriptor);
+        Revision = nextRevision;
     }
 
     public bool TryGetDescriptor(string typeId, out EffectDescriptor descriptor) =>
@@ -102,6 +106,7 @@ public sealed class EffectEngine
     public long CacheHitCount { get; private set; }
     public long EvaluationCount { get; private set; }
     public long UnavailableEffectCount { get; private set; }
+    public long ConfigurationRevision => checked(_registry.Revision + _backend.Revision);
 
     public static EffectEngine CreateDefault()
     {
@@ -118,7 +123,7 @@ public sealed class EffectEngine
         if (cel.FrameId != frameId)
             throw new ArgumentException("Cel does not belong to the requested frame.", nameof(cel));
         var identity = new EffectCacheIdentity(snapshot.Id, cel.Id, frameId);
-        var signature = EffectCacheSignature.Capture(snapshot, frameId, cel, _backend.Revision);
+        var signature = EffectCacheSignature.Capture(snapshot, frameId, cel, _backend.Revision, _registry.Revision);
         if (_cache.TryGetValue(identity, out var cached) && cached.Signature.Equals(signature))
         {
             CacheHitCount++;
@@ -219,6 +224,7 @@ internal sealed class EffectCacheSignature : IEquatable<EffectCacheSignature>
         long surfaceRevision,
         long graphRevision,
         long backendRevision,
+        long registryRevision,
         ColorCycleFrameValue? colorCycles,
         EffectState[] effects,
         PaletteState[] palettes)
@@ -227,6 +233,7 @@ internal sealed class EffectCacheSignature : IEquatable<EffectCacheSignature>
         SurfaceRevision = surfaceRevision;
         GraphRevision = graphRevision;
         BackendRevision = backendRevision;
+        RegistryRevision = registryRevision;
         _colorCycles = colorCycles;
         _effects = effects;
         _palettes = palettes;
@@ -236,12 +243,14 @@ internal sealed class EffectCacheSignature : IEquatable<EffectCacheSignature>
     private long SurfaceRevision { get; }
     private long GraphRevision { get; }
     private long BackendRevision { get; }
+    private long RegistryRevision { get; }
 
     public static EffectCacheSignature Capture(
         DocumentSnapshot snapshot,
         FrameId frameId,
         CelSnapshot cel,
-        long backendRevision)
+        long backendRevision,
+        long registryRevision)
     {
         var surface = snapshot.GetSurface(cel.SurfaceId);
         snapshot.Animation.ColorCycleTrack.Values.TryGetValue(frameId, out var colorCycles);
@@ -258,6 +267,7 @@ internal sealed class EffectCacheSignature : IEquatable<EffectCacheSignature>
             surface.Revision,
             cel.Effects.Revision,
             backendRevision,
+            registryRevision,
             colorCycles,
             effects,
             palettes);
@@ -269,6 +279,7 @@ internal sealed class EffectCacheSignature : IEquatable<EffectCacheSignature>
         SurfaceRevision == other.SurfaceRevision &&
         GraphRevision == other.GraphRevision &&
         BackendRevision == other.BackendRevision &&
+        RegistryRevision == other.RegistryRevision &&
         Equals(_colorCycles, other._colorCycles) &&
         _effects.AsSpan().SequenceEqual(other._effects) &&
         _palettes.AsSpan().SequenceEqual(other._palettes);
@@ -282,6 +293,7 @@ internal sealed class EffectCacheSignature : IEquatable<EffectCacheSignature>
         hash.Add(SurfaceRevision);
         hash.Add(GraphRevision);
         hash.Add(BackendRevision);
+        hash.Add(RegistryRevision);
         hash.Add(_colorCycles);
         foreach (var effect in _effects) hash.Add(effect);
         foreach (var palette in _palettes) hash.Add(palette);
