@@ -11,33 +11,62 @@ public sealed class PixelCanvasView : Control
 {
     private readonly Dictionary<uint, IBrush> _brushes = [];
     private CanvasPresentation? _presentation;
+    private SelectionOverlayPresentation? _selection;
+    private IntPoint? _hoveredPixel;
     private double _zoom = 1d;
+    private bool _invert;
+    private bool _grid = true;
 
     public PixelCanvasView()
     {
         ClipToBounds = true;
+        Focusable = true;
         PointerCaptureLost += (_, _) => CancelPointerInput?.Invoke();
+        PointerExited += (_, _) =>
+        {
+            _hoveredPixel = null;
+            HoverPixelChanged?.Invoke(null);
+            InvalidateVisual();
+        };
     }
 
     public Action<EditorPointerEvent>? PointerInput { get; set; }
     public Action? CancelPointerInput { get; set; }
+    public Action<(int X, int Y)?>? HoverPixelChanged { get; set; }
+    public Action<int, int>? SecondaryPickRequested { get; set; }
+    public Action<double>? ZoomFactorRequested { get; set; }
     public CanvasPresentation? Presentation => _presentation;
     public double Zoom => _zoom;
 
-    public void SetPresentation(CanvasPresentation? presentation, double zoom)
+    public void SetPresentation(CanvasPresentation? presentation, double zoom, SelectionOverlayPresentation? selection = null)
     {
         if (!double.IsFinite(zoom) || zoom <= 0d) throw new ArgumentOutOfRangeException(nameof(zoom));
         _presentation = presentation;
+        _selection = selection;
         _zoom = zoom;
         Width = presentation is null ? 1d : presentation.Size.Width * zoom;
         Height = presentation is null ? 1d : presentation.Size.Height * zoom;
         InvalidateVisual();
     }
 
+    public void SetInvert(bool invert)
+    {
+        if (_invert == invert) return;
+        _invert = invert;
+        _brushes.Clear();
+        InvalidateVisual();
+    }
+
+    public void SetGrid(bool grid)
+    {
+        if (_grid == grid) return;
+        _grid = grid;
+        InvalidateVisual();
+    }
+
     public override void Render(DrawingContext context)
     {
         base.Render(context);
-        context.FillRectangle(EditorThemeTokens.CanvasBackground, new Rect(Bounds.Size));
         var presentation = _presentation;
         if (presentation is null) return;
 
@@ -52,25 +81,62 @@ public sealed class PixelCanvasView : Control
         foreach (var preview in presentation.PreviewPixels)
             DrawPixel(context, preview.Point.X, preview.Point.Y, preview.Color.R, preview.Color.G, preview.Color.B, preview.Color.A);
 
+        if (_grid && _zoom >= 8d)
+        {
+            var pen = new Pen(EditorThemeTokens.GridLine, 1d);
+            for (var x = 1; x < presentation.Size.Width; x++)
+                context.DrawLine(pen, new Point(x * _zoom, 0), new Point(x * _zoom, presentation.Size.Height * _zoom));
+            for (var y = 1; y < presentation.Size.Height; y++)
+                context.DrawLine(pen, new Point(0, y * _zoom), new Point(presentation.Size.Width * _zoom, y * _zoom));
+        }
+
+        if (_selection is { } selection)
+        {
+            if (_zoom >= 2d && selection.Pixels.Count <= 100_000)
+            {
+                foreach (var point in selection.Pixels)
+                    context.FillRectangle(EditorThemeTokens.SelectionFill, new Rect(point.X * _zoom, point.Y * _zoom, _zoom, _zoom));
+            }
+            var b = selection.Bounds;
+            var rect = new Rect(b.X * _zoom, b.Y * _zoom, b.Width * _zoom, b.Height * _zoom);
+            context.DrawRectangle(null, new Pen(EditorThemeTokens.SelectionOutline, 1.5d), rect);
+        }
+
         if (presentation.DirtyRegions.Count != 0)
         {
             var pen = new Pen(EditorThemeTokens.DirtyRegionOutline, 1d);
             foreach (var region in presentation.DirtyRegions)
             {
-                var rect = new Rect(
-                    region.X * _zoom,
-                    region.Y * _zoom,
-                    region.Width * _zoom,
-                    region.Height * _zoom);
+                var rect = new Rect(region.X * _zoom, region.Y * _zoom, region.Width * _zoom, region.Height * _zoom);
                 context.DrawRectangle(null, pen, rect);
             }
         }
+
+        if (_hoveredPixel is { } hover &&
+            (uint)hover.X < (uint)presentation.Size.Width &&
+            (uint)hover.Y < (uint)presentation.Size.Height)
+        {
+            var rect = new Rect(hover.X * _zoom, hover.Y * _zoom, _zoom, _zoom);
+            context.FillRectangle(EditorThemeTokens.HoverCell, rect);
+            context.DrawRectangle(null, new Pen(EditorThemeTokens.HoverCellOutline, Math.Min(2d, Math.Max(1d, _zoom / 8d))), rect);
+        }
+
+        context.DrawRectangle(null, new Pen(EditorThemeTokens.StrongBorder, 1d), new Rect(0, 0, presentation.Size.Width * _zoom, presentation.Size.Height * _zoom));
     }
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
         if (_presentation is null) return;
+        Focus();
+        UpdateHover(e);
+        var point = e.GetCurrentPoint(this);
+        if (point.Properties.IsRightButtonPressed && _hoveredPixel is { } hover)
+        {
+            SecondaryPickRequested?.Invoke(hover.X, hover.Y);
+            e.Handled = true;
+            return;
+        }
         e.Pointer.Capture(this);
         DispatchPointer(e, EditorPointerKind.Pressed);
         e.Handled = true;
@@ -79,26 +145,59 @@ public sealed class PixelCanvasView : Control
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
-        if (!ReferenceEquals(e.Pointer.Captured, this) || _presentation is null) return;
-        DispatchPointer(e, EditorPointerKind.Moved);
-        e.Handled = true;
+        if (_presentation is null) return;
+        UpdateHover(e);
+        if (ReferenceEquals(e.Pointer.Captured, this))
+        {
+            DispatchPointer(e, EditorPointerKind.Moved);
+            e.Handled = true;
+        }
     }
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
         if (_presentation is null) return;
-        DispatchPointer(e, EditorPointerKind.Released);
-        e.Pointer.Capture(null);
+        UpdateHover(e);
+        if (ReferenceEquals(e.Pointer.Captured, this))
+        {
+            DispatchPointer(e, EditorPointerKind.Released);
+            e.Pointer.Capture(null);
+            e.Handled = true;
+        }
+    }
+
+    protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
+    {
+        base.OnPointerWheelChanged(e);
+        if ((e.KeyModifiers & KeyModifiers.Control) == 0) return;
+        ZoomFactorRequested?.Invoke(e.Delta.Y > 0 ? 1.25d : 0.8d);
         e.Handled = true;
+    }
+
+    private void UpdateHover(PointerEventArgs e)
+    {
+        var presentation = _presentation;
+        if (presentation is null) return;
+        var p = e.GetPosition(this);
+        var x = (int)Math.Floor(p.X / _zoom);
+        var y = (int)Math.Floor(p.Y / _zoom);
+        IntPoint? next = (uint)x < (uint)presentation.Size.Width && (uint)y < (uint)presentation.Size.Height
+            ? new IntPoint(x, y)
+            : null;
+        if (_hoveredPixel == next) return;
+        _hoveredPixel = next;
+        HoverPixelChanged?.Invoke(next is { } value ? (value.X, value.Y) : null);
+        InvalidateVisual();
     }
 
     private void DispatchPointer(PointerEventArgs e, EditorPointerKind kind)
     {
+        var presentation = _presentation;
+        if (presentation is null) return;
         var point = e.GetCurrentPoint(this);
-        var canvasPixel = new IntPoint(
-            checked((int)Math.Floor(point.Position.X / _zoom)),
-            checked((int)Math.Floor(point.Position.Y / _zoom)));
+        var x = Math.Clamp((int)Math.Floor(point.Position.X / _zoom), 0, presentation.Size.Width - 1);
+        var y = Math.Clamp((int)Math.Floor(point.Position.Y / _zoom), 0, presentation.Size.Height - 1);
         var properties = point.Properties;
         var buttons = EditorPointerButtons.None;
         if (properties.IsLeftButtonPressed) buttons |= EditorPointerButtons.Primary;
@@ -108,10 +207,10 @@ public sealed class PixelCanvasView : Control
         if (properties.IsEraser) buttons |= EditorPointerButtons.Eraser;
 
         var modifiers = EditorInputModifiers.None;
-        if ((e.KeyModifiers & Avalonia.Input.KeyModifiers.Shift) != 0) modifiers |= EditorInputModifiers.Shift;
-        if ((e.KeyModifiers & Avalonia.Input.KeyModifiers.Control) != 0) modifiers |= EditorInputModifiers.Control;
-        if ((e.KeyModifiers & Avalonia.Input.KeyModifiers.Alt) != 0) modifiers |= EditorInputModifiers.Alt;
-        if ((e.KeyModifiers & Avalonia.Input.KeyModifiers.Meta) != 0) modifiers |= EditorInputModifiers.Meta;
+        if ((e.KeyModifiers & KeyModifiers.Shift) != 0) modifiers |= EditorInputModifiers.Shift;
+        if ((e.KeyModifiers & KeyModifiers.Control) != 0) modifiers |= EditorInputModifiers.Control;
+        if ((e.KeyModifiers & KeyModifiers.Alt) != 0) modifiers |= EditorInputModifiers.Alt;
+        if ((e.KeyModifiers & KeyModifiers.Meta) != 0) modifiers |= EditorInputModifiers.Meta;
 
         PointerInput?.Invoke(new EditorPointerEvent(
             e.Pointer.Id,
@@ -123,7 +222,7 @@ public sealed class PixelCanvasView : Control
                 _ => EditorPointerDevice.Unknown,
             },
             kind,
-            canvasPixel,
+            new IntPoint(x, y),
             properties.Pressure,
             buttons,
             modifiers,
@@ -135,9 +234,14 @@ public sealed class PixelCanvasView : Control
         var rect = new Rect(x * _zoom, y * _zoom, _zoom, _zoom);
         if (a == 0)
         {
-            var checker = ((x + y) & 1) == 0 ? EditorThemeTokens.CheckerLight : EditorThemeTokens.CheckerDark;
-            context.FillRectangle(checker, rect);
+            context.FillRectangle(((x + y) & 1) == 0 ? EditorThemeTokens.CheckerLight : EditorThemeTokens.CheckerDark, rect);
             return;
+        }
+        if (_invert)
+        {
+            r = (byte)(255 - r);
+            g = (byte)(255 - g);
+            b = (byte)(255 - b);
         }
         context.FillRectangle(GetBrush(r, g, b, a), rect);
     }

@@ -12,5 +12,9 @@
     <ProjectReference Include="../MyLovePixel.Export/MyLovePixel.Export.csproj" />
     <ProjectReference Include="../MyLovePixel.Tools/MyLovePixel.Tools.csproj" />
     <ProjectReference Include="../MyLovePixel.PluginHost/MyLovePixel.PluginHost.csproj" />
+    <ProjectReference Include="../MyLovePixel.Selection/MyLovePixel.Selection.csproj" />
+    <ProjectReference Include="../MyLovePixel.Animation/MyLovePixel.Animation.csproj" />
+    <ProjectReference Include="../MyLovePixel.Effects/MyLovePixel.Effects.csproj" />
+    <ProjectReference Include="../MyLovePixel.Tilemap/MyLovePixel.Tilemap.csproj" />
   </ItemGroup>
 </Project>

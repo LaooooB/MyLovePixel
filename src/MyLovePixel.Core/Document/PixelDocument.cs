@@ -54,17 +54,45 @@ public sealed class PixelDocument
     public Cel? FindCel(LayerId layerId, FrameId frameId) =>
         _cels.Values.FirstOrDefault(c => c.LayerId == layerId && c.FrameId == frameId);
 
+    public int GetLayerIndex(LayerId layerId)
+    {
+        var index = _layerOrder.IndexOf(layerId);
+        return index >= 0 ? index : throw new KeyNotFoundException($"Layer '{layerId}' does not exist.");
+    }
+
     public int GetFrameIndex(FrameId frameId)
     {
         var index = _frameOrder.IndexOf(frameId);
         return index >= 0 ? index : throw new KeyNotFoundException($"Frame '{frameId}' does not exist.");
     }
 
-    internal void AddLayer(Layer layer)
+    internal void AddLayer(Layer layer) => InsertLayer(_layerOrder.Count, layer);
+
+    internal void InsertLayer(int index, Layer layer)
     {
         ArgumentNullException.ThrowIfNull(layer);
+        if ((uint)index > (uint)_layerOrder.Count) throw new ArgumentOutOfRangeException(nameof(index));
         if (!_layers.TryAdd(layer.Id, layer)) throw new InvalidOperationException($"Layer '{layer.Id}' already exists.");
-        _layerOrder.Add(layer.Id);
+        _layerOrder.Insert(index, layer.Id);
+    }
+
+    internal void MoveLayer(LayerId layerId, int newIndex)
+    {
+        var oldIndex = GetLayerIndex(layerId);
+        if ((uint)newIndex >= (uint)_layerOrder.Count) throw new ArgumentOutOfRangeException(nameof(newIndex));
+        if (oldIndex == newIndex) return;
+        _layerOrder.RemoveAt(oldIndex);
+        _layerOrder.Insert(newIndex, layerId);
+    }
+
+    internal Layer RemoveLayer(LayerId layerId)
+    {
+        if (_cels.Values.Any(cel => cel.LayerId == layerId))
+            throw new InvalidOperationException("Remove all Cels from a Layer before removing the Layer.");
+        if (!_layers.Remove(layerId, out var layer))
+            throw new KeyNotFoundException($"Layer '{layerId}' does not exist.");
+        _layerOrder.Remove(layerId);
+        return layer;
     }
 
     internal void AddFrame(Frame frame) => InsertFrame(_frameOrder.Count, frame);
