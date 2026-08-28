@@ -16,17 +16,8 @@ public sealed class PixelPatchCommand : ICommand
         _surfaceId = surfaceId;
         Name = name;
         ArgumentNullException.ThrowIfNull(writes);
-
-        // Last write wins per coordinate. This prevents repeated samples in one patch
-        // from bloating undo state and makes command semantics deterministic.
-        _writes = writes
-            .GroupBy(x => (x.X, x.Y))
-            .Select(group => group.Last())
-            .ToArray();
-
-        if (_writes.Length == 0)
-            throw new ArgumentException("Pixel patch must contain at least one write.", nameof(writes));
-
+        _writes = writes.GroupBy(x => (x.X, x.Y)).Select(group => group.Last()).ToArray();
+        if (_writes.Length == 0) throw new ArgumentException("Pixel patch must contain at least one write.", nameof(writes));
         _dirtyRegion = CalculateBounds(_writes);
     }
 
@@ -41,7 +32,6 @@ public sealed class PixelPatchCommand : ICommand
             var write = _writes[i];
             before[i] = new PixelWrite(write.X, write.Y, surface.GetPixel(write.X, write.Y));
         }
-
         surface.SetPixels(_writes);
         return new CommandApplication(new Undo(before), DocumentChange.ForSurface(_surfaceId, _dirtyRegion));
     }
@@ -70,5 +60,8 @@ public sealed class PixelPatchCommand : ICommand
         return new IntRect(minX, minY, maxX - minX + 1, maxY - minY + 1);
     }
 
-    private sealed record Undo(PixelWrite[] Before) : IUndoToken;
+    private sealed record Undo(PixelWrite[] Before) : IUndoToken, IUndoMemoryCost
+    {
+        public long EstimatedMemoryBytes => checked(32L + (Before.LongLength * 16L));
+    }
 }

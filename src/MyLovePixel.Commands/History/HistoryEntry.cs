@@ -7,12 +7,25 @@ internal sealed class AppliedCommand(ICommand command, IUndoToken undoToken)
 {
     public ICommand Command { get; } = command;
     public IUndoToken UndoToken { get; set; } = undoToken;
+
+    public long EstimateMemoryBytes(long fallbackTokenBytes) =>
+        UndoToken is IUndoMemoryCost measured
+            ? Math.Max(1, measured.EstimatedMemoryBytes)
+            : fallbackTokenBytes;
 }
 
 internal sealed class HistoryEntry(string name, IReadOnlyList<AppliedCommand> commands)
 {
     public string Name { get; } = name;
     public IReadOnlyList<AppliedCommand> Commands { get; } = commands;
+
+    public long EstimateMemoryBytes(long fallbackTokenBytes)
+    {
+        var total = 128L;
+        foreach (var command in Commands)
+            total = checked(total + command.EstimateMemoryBytes(fallbackTokenBytes));
+        return total;
+    }
 
     public IReadOnlyList<DocumentChange> Revert(PixelDocument document)
     {

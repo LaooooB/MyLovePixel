@@ -7,12 +7,13 @@ namespace MyLovePixel.Commands;
 public sealed class CommandBus
 {
     private readonly PixelDocument _document;
-    private readonly UndoStack _history = new();
+    private readonly UndoStack _history;
     private TransactionState? _transaction;
 
-    public CommandBus(PixelDocument document)
+    public CommandBus(PixelDocument document, UndoHistoryOptions? historyOptions = null)
     {
         _document = document ?? throw new ArgumentNullException(nameof(document));
+        _history = new UndoStack(historyOptions ?? new UndoHistoryOptions());
     }
 
     public event EventHandler<DocumentChange>? Changed;
@@ -21,6 +22,7 @@ public sealed class CommandBus
     public bool CanRedo => _transaction is null && _history.CanRedo;
     public int UndoCount => _history.UndoCount;
     public int RedoCount => _history.RedoCount;
+    public UndoHistoryDiagnostics HistoryDiagnostics => _history.Diagnostics();
 
     public DocumentChange Execute(ICommand command)
     {
@@ -59,7 +61,9 @@ public sealed class CommandBus
         EnsureNoActiveTransaction();
         if (!_history.CanRedo) return;
         var entry = _history.PeekRedo();
+        var previousCost = _history.Estimate(entry);
         var changes = entry.Reapply(_document);
+        _history.RefreshEntryCost(entry, previousCost);
         _history.CommitRedo(entry);
         foreach (var change in changes) Changed?.Invoke(this, change);
     }
