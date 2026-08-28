@@ -18,7 +18,7 @@ public sealed class TilemapCoreTests
         document.Resources.AddTileset(tileset);
         var tile = new TileDefinition(TileId.New(), surfaceId, "Grass");
         document.Resources.AddTile(tileset.Id, tile);
-        var tilemap = new Tilemap(TilemapId.New(), "Ground", tileset.Id);
+        var tilemap = new MyLovePixel.Core.Tiles.Tilemap(TilemapId.New(), "Ground", tileset.Id);
         document.Resources.AddTilemap(tilemap);
 
         document.Resources.SetTileCell(tilemap.Id, new IntPoint(0, 0), new TileCell(tile.Id));
@@ -125,7 +125,7 @@ public sealed class TilemapCoreTests
         document.Resources.AddTileset(tileset);
         var tile = new TileDefinition(TileId.New(), surfaceId, "Grass");
         document.Resources.AddTile(tileset.Id, tile);
-        var tilemap = new Tilemap(TilemapId.New(), "Ground", tileset.Id);
+        var tilemap = new MyLovePixel.Core.Tiles.Tilemap(TilemapId.New(), "Ground", tileset.Id);
         document.Resources.AddTilemap(tilemap);
         return new Fixture(document, tileset.Id, tilemap.Id, tile.Id, surfaceId);
     }
