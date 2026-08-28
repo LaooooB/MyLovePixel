@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>MyLovePixel.Export</AssemblyName>
+    <RootNamespace>MyLovePixel.Export</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../MyLovePixel.Core/MyLovePixel.Core.csproj" />
+    <ProjectReference Include="../MyLovePixel.Render/MyLovePixel.Render.csproj" />
+  </ItemGroup>
+</Project>
