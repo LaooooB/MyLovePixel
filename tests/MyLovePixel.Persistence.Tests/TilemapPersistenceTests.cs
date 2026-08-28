@@ -12,7 +12,7 @@ namespace MyLovePixel.Persistence.Tests;
 public sealed class TilemapPersistenceTests
 {
     [Fact]
-    public void Schema4Tilemap_RoundTripPreservesSeedReferencesCellsAndSemanticHash()
+    public void Tilemap_RoundTripPreservesSeedReferencesCellsAndSemanticHash()
     {
         var project = CreateTileProject(out var tilesetId, out var tilemapId, out var tileId, out var surfaceId);
         var expectedHash = ProjectSemanticHash.Compute(project.Document);
@@ -27,7 +27,7 @@ public sealed class TilemapPersistenceTests
         var documentJson = Parse(entries, documentEntry);
         var tilemapJson = documentJson["tilemaps"]![0]!.AsObject();
 
-        Assert.Equal(4, manifest["schemaVersion"]!.GetValue<int>());
+        Assert.Equal(PixelProjectFormat.CurrentSchemaVersion, manifest["schemaVersion"]!.GetValue<int>());
         Assert.Equal(expectedSeed, documentJson["seed"]!.GetValue<ulong>());
         Assert.Null(tilemapJson["chunks"]);
         Assert.Equal(2, tilemapJson["cells"]!.AsArray().Count);
@@ -48,7 +48,7 @@ public sealed class TilemapPersistenceTests
     }
 
     [Fact]
-    public void Schema3Project_MigratesToSchema4WithDeterministicSeedAndEmptyTileCollections()
+    public void Schema3Project_MigratesThroughCurrentSchemaWithDeterministicSeedAndEmptyTileCollections()
     {
         var document = PixelDocumentFactory.CreateBlank(2, 2);
         var entries = SaveToEntries(new PixelProject(document));
@@ -60,6 +60,7 @@ public sealed class TilemapPersistenceTests
         documentJson.Remove("seed");
         documentJson.Remove("tilesets");
         documentJson.Remove("tilemaps");
+        foreach (var cel in documentJson["cels"]!.AsArray()) cel!.AsObject().Remove("effects");
         entries[documentEntry] = Encoding.UTF8.GetBytes(documentJson.ToJsonString(ProjectJson.Options));
         Rehash(entries, manifest);
 
@@ -68,6 +69,7 @@ public sealed class TilemapPersistenceTests
         Assert.Equal(DocumentSeed.Derive(document.Id), loaded.Seed);
         Assert.Empty(loaded.Resources.TilesetIds);
         Assert.Empty(loaded.Resources.TilemapIds);
+        Assert.All(loaded.Cels, cel => Assert.Empty(cel.Effects.EffectOrder));
 
         using var savedAgain = new MemoryStream();
         PixelProjectFile.Save(savedAgain, new PixelProject(loaded));
@@ -75,10 +77,11 @@ public sealed class TilemapPersistenceTests
         var migratedEntries = ReadEntries(savedAgain);
         var migratedManifest = Parse(migratedEntries, PixelProjectFormat.ManifestEntry);
         var migratedDocument = Parse(migratedEntries, migratedManifest["documentEntry"]!.GetValue<string>());
-        Assert.Equal(4, migratedManifest["schemaVersion"]!.GetValue<int>());
+        Assert.Equal(PixelProjectFormat.CurrentSchemaVersion, migratedManifest["schemaVersion"]!.GetValue<int>());
         Assert.Equal(loaded.Seed, migratedDocument["seed"]!.GetValue<ulong>());
         Assert.Empty(migratedDocument["tilesets"]!.AsArray());
         Assert.Empty(migratedDocument["tilemaps"]!.AsArray());
+        Assert.All(migratedDocument["cels"]!.AsArray(), cel => Assert.Empty(cel!["effects"]!.AsArray()));
     }
 
     [Fact]
