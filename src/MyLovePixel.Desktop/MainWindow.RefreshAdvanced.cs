@@ -24,18 +24,18 @@ public sealed partial class MainWindow
         _effectsPanel.Children.Clear();
         var session = Current();
         if (session is null) return;
-        var add = new ComboBox { ItemsSource = AdvancedEditingExtensions.GetBuiltinEffectTypes(), SelectedIndex = 0 };
+        var add = new ComboBox { ItemsSource = _plugins.GetEffectTypes(), SelectedIndex = 0 };
         _effectsPanel.Children.Add(new Grid
         {
             ColumnDefinitions = new ColumnDefinitions("*,36"),
             Children =
             {
                 add,
-                Place(IconButton("＋", "Add effect", () => { if (add.SelectedItem is string type) Safe(() => { _selectedEffect = session.AddEffect(type); }); }), 1),
+                Place(IconButton("＋", "Add effect", () => { if (add.SelectedItem is string type) Safe(() => { _selectedEffect = _plugins.AddEffect(session, type); }); }), 1),
             },
         });
 
-        var effects = session.GetCurrentEffects();
+        var effects = _plugins.GetEffects(session);
         if (_selectedEffect is { } selected && effects.All(v => v.Id != selected)) _selectedEffect = null;
         foreach (var effect in effects)
         {
@@ -52,8 +52,8 @@ public sealed partial class MainWindow
         }
         if (_selectedEffect is { } id)
         {
-            foreach (var parameter in session.GetEffectParameters(id)) _effectsPanel.Children.Add(BuildEffectParameter(session, id, parameter));
-            _effectsPanel.Children.Add(IconButton("✓", "Bake effects", () => Safe(session.BakeCurrentEffects)));
+            foreach (var parameter in _plugins.GetEffectParameters(session, id)) _effectsPanel.Children.Add(BuildEffectParameter(session, id, parameter));
+            _effectsPanel.Children.Add(IconButton("✓", "Bake effects", () => Safe(() => _plugins.BakeEffects(session))));
         }
     }
 
@@ -65,44 +65,44 @@ public sealed partial class MainWindow
             case EffectParameterKind.Integer:
             {
                 var n = new NumericUpDown { Value = parameter.Value.IntegerValue, Minimum = parameter.Minimum is { } min ? (decimal)min : decimal.MinValue, Maximum = parameter.Maximum is { } max ? (decimal)max : decimal.MaxValue, Increment = 1, FormatString = "0" };
-                n.ValueChanged += (_, _) => { if (n.Value is { } v) Safe(() => session.SetEffectParameter(id, parameter.Key, EffectValue.Integer((long)v))); };
+                n.ValueChanged += (_, _) => { if (n.Value is { } v) Safe(() => _plugins.SetEffectParameter(session, id, parameter.Key, EffectValue.Integer((long)v))); };
                 editor = n; break;
             }
             case EffectParameterKind.Number:
             {
                 var n = new NumericUpDown { Value = (decimal)parameter.Value.NumberValue, Minimum = parameter.Minimum is { } min ? (decimal)min : -1000000m, Maximum = parameter.Maximum is { } max ? (decimal)max : 1000000m, Increment = 0.1m, FormatString = "0.###" };
-                n.ValueChanged += (_, _) => { if (n.Value is { } v) Safe(() => session.SetEffectParameter(id, parameter.Key, EffectValue.Number((double)v))); };
+                n.ValueChanged += (_, _) => { if (n.Value is { } v) Safe(() => _plugins.SetEffectParameter(session, id, parameter.Key, EffectValue.Number((double)v))); };
                 editor = n; break;
             }
             case EffectParameterKind.Boolean:
             {
                 var c = new CheckBox { IsChecked = parameter.Value.BooleanValue };
-                c.Click += (_, _) => session.SetEffectParameter(id, parameter.Key, EffectValue.Boolean(c.IsChecked == true)); editor = c; break;
+                c.Click += (_, _) => _plugins.SetEffectParameter(session, id, parameter.Key, EffectValue.Boolean(c.IsChecked == true)); editor = c; break;
             }
             case EffectParameterKind.Point:
             {
                 var x = Number(parameter.Value.PointValue.X, -4096, 4096); var y = Number(parameter.Value.PointValue.Y, -4096, 4096);
-                void Set() => session.SetEffectParameter(id, parameter.Key, EffectValue.Point(new IntPoint((int)(x.Value ?? 0), (int)(y.Value ?? 0))));
+                void Set() => _plugins.SetEffectParameter(session, id, parameter.Key, EffectValue.Point(new IntPoint((int)(x.Value ?? 0), (int)(y.Value ?? 0))));
                 x.ValueChanged += (_, _) => Safe(Set); y.ValueChanged += (_, _) => Safe(Set); editor = Icons(x, y); break;
             }
             case EffectParameterKind.Color:
             {
                 var swatch = new Border { Width = 28, Height = 28, Background = Brush(parameter.Value.ColorValue), CornerRadius = new CornerRadius(4) };
                 var b = new Button { Content = swatch, Padding = new Thickness(2) };
-                b.Click += async (_, _) => { var c = await new ColorDialog(parameter.Value.ColorValue).ShowDialog<Rgba32?>(this); if (c is { } v) session.SetEffectParameter(id, parameter.Key, EffectValue.Color(v)); };
+                b.Click += async (_, _) => { var c = await new ColorDialog(parameter.Value.ColorValue).ShowDialog<Rgba32?>(this); if (c is { } v) _plugins.SetEffectParameter(session, id, parameter.Key, EffectValue.Color(v)); };
                 editor = b; break;
             }
             case EffectParameterKind.PaletteReference:
             {
                 var palettes = session.GetPaletteEditors();
                 var combo = new ComboBox { ItemsSource = palettes.Select(v => v.Id).ToArray(), SelectedItem = parameter.Value.PaletteIdValue };
-                combo.SelectionChanged += (_, _) => { if (combo.SelectedItem is PaletteId p) session.SetEffectParameter(id, parameter.Key, EffectValue.PaletteReference(p)); };
+                combo.SelectionChanged += (_, _) => { if (combo.SelectedItem is PaletteId p) _plugins.SetEffectParameter(session, id, parameter.Key, EffectValue.PaletteReference(p)); };
                 editor = combo; break;
             }
             case EffectParameterKind.Text:
             {
                 var text = new TextBox { Text = parameter.Value.TextValue ?? string.Empty };
-                text.LostFocus += (_, _) => session.SetEffectParameter(id, parameter.Key, EffectValue.Text(text.Text ?? string.Empty));
+                text.LostFocus += (_, _) => _plugins.SetEffectParameter(session, id, parameter.Key, EffectValue.Text(text.Text ?? string.Empty));
                 editor = text; break;
             }
             default: editor = new TextBlock { Text = "—" }; break;
@@ -113,8 +113,8 @@ public sealed partial class MainWindow
         {
             Safe(() =>
             {
-                if (parameter.HasKeyframe) session.ClearEffectParameterKeyframe(id, parameter.Key);
-                else session.SetEffectParameterKeyframe(id, parameter.Key, parameter.Value);
+                if (parameter.HasKeyframe) _plugins.ClearEffectParameterKeyframe(session, id, parameter.Key);
+                else _plugins.SetEffectParameterKeyframe(session, id, parameter.Key, parameter.Value);
             });
             RefreshEffects();
         });
