@@ -16,5 +16,6 @@
     <ProjectReference Include="../MyLovePixel.Animation/MyLovePixel.Animation.csproj" />
     <ProjectReference Include="../MyLovePixel.Effects/MyLovePixel.Effects.csproj" />
     <ProjectReference Include="../MyLovePixel.Tilemap/MyLovePixel.Tilemap.csproj" />
+    <ProjectReference Include="../MyLovePixel.Color/MyLovePixel.Color.csproj" />
   </ItemGroup>
 </Project>
