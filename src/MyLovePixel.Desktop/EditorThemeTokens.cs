@@ -5,37 +5,40 @@ namespace MyLovePixel.Desktop;
 
 public static class EditorThemeTokens
 {
-    public static IBrush AppBackground { get; } = Rgb(12, 13, 16);
-    public static IBrush Surface { get; } = Rgb(18, 20, 25);
-    public static IBrush SurfaceRaised { get; } = Rgb(24, 27, 34);
-    public static IBrush SurfaceHover { get; } = Rgb(31, 36, 44);
-    public static IBrush SurfaceSelected { get; } = Rgb(23, 50, 47);
-    public static IBrush PanelBorder { get; } = Rgb(43, 48, 57);
-    public static IBrush StrongBorder { get; } = Rgb(68, 77, 89);
+    // Gesture-rack inspired palette: near-black graphite surfaces, restrained
+    // olive/green undertones, and a single mint accent for active interaction.
+    public static IBrush AppBackground { get; } = Rgb(12, 15, 13);
+    public static IBrush Surface { get; } = Rgb(17, 21, 19);
+    public static IBrush SurfaceRaised { get; } = Rgb(23, 28, 25);
+    public static IBrush SurfaceHover { get; } = Rgb(30, 37, 33);
+    public static IBrush SurfaceSelected { get; } = Rgb(22, 50, 42);
+    public static IBrush PanelBorder { get; } = Rgb(42, 50, 45);
+    public static IBrush StrongBorder { get; } = Rgb(68, 80, 73);
 
-    public static IBrush TextPrimary { get; } = Rgb(236, 241, 247);
-    public static IBrush TextSecondary { get; } = Rgb(162, 172, 185);
-    public static IBrush TextMuted { get; } = Rgb(111, 120, 132);
+    public static IBrush TextPrimary { get; } = Rgb(235, 240, 236);
+    public static IBrush TextSecondary { get; } = Rgb(165, 176, 168);
+    public static IBrush TextMuted { get; } = Rgb(108, 120, 112);
 
-    public static IBrush Accent { get; } = Rgb(99, 230, 205);
-    public static IBrush AccentHover { get; } = Rgb(129, 239, 219);
-    public static IBrush AccentForeground { get; } = Rgb(6, 24, 22);
-    public static IBrush Danger { get; } = Rgb(255, 105, 121);
-    public static IBrush Warning { get; } = Rgb(241, 196, 95);
+    public static IBrush Accent { get; } = Rgb(91, 218, 176);
+    public static IBrush AccentHover { get; } = Rgb(119, 232, 195);
+    public static IBrush AccentForeground { get; } = Rgb(8, 25, 19);
+    public static IBrush Danger { get; } = Rgb(232, 101, 111);
+    public static IBrush Warning { get; } = Rgb(215, 183, 104);
 
-    public static IBrush CanvasWorkspace { get; } = Rgb(80, 84, 91);
-    public static IBrush CanvasFrame { get; } = Rgb(226, 228, 231);
-    public static IBrush CheckerLight { get; } = Rgb(246, 246, 246);
-    public static IBrush CheckerDark { get; } = Rgb(216, 218, 221);
-    public static IBrush GridLine { get; } = Rgba(92, 98, 105, 68);
-    public static IBrush HoverCell { get; } = Rgba(99, 230, 205, 62);
+    public static IBrush CanvasWorkspace { get; } = Rgb(67, 72, 68);
+    public static IBrush CanvasFrame { get; } = Rgb(222, 226, 221);
+    public static IBrush PreviewBackground { get; } = Rgb(232, 235, 230);
+    public static IBrush CheckerLight { get; } = Rgb(242, 244, 241);
+    public static IBrush CheckerDark { get; } = Rgb(211, 216, 212);
+    public static IBrush GridLine { get; } = Rgba(82, 91, 85, 70);
+    public static IBrush HoverCell { get; } = Rgba(91, 218, 176, 58);
     public static IBrush HoverCellOutline { get; } = Accent;
-    public static IBrush SelectionFill { get; } = Rgba(99, 230, 205, 34);
+    public static IBrush SelectionFill { get; } = Rgba(91, 218, 176, 32);
     public static IBrush SelectionOutline { get; } = Accent;
     public static IBrush DirtyRegionOutline { get; } = Danger;
 
     public static CornerRadius ControlRadius { get; } = new(5);
-    public static CornerRadius CardRadius { get; } = new(8);
+    public static CornerRadius CardRadius { get; } = new(7);
 
     public const double CompactSpacing = 4d;
     public const double ControlSpacing = 6d;
