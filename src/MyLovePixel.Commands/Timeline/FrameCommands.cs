@@ -1,5 +1,6 @@
 using MyLovePixel.Commands.Abstractions;
 using MyLovePixel.Core.Document;
+using MyLovePixel.Core.Effects;
 using MyLovePixel.Core.Pixel;
 using MyLovePixel.Core.Primitives;
 
@@ -63,6 +64,7 @@ public sealed class CopyFrameCommand : ICommand
     private readonly FrameId _newFrameId = FrameId.New();
     private readonly Dictionary<CelId, CelId> _celIds = [];
     private readonly Dictionary<ResourceId, ResourceId> _surfaceIds = [];
+    private readonly Dictionary<CelId, EffectGraphSnapshot> _effectGraphs = [];
 
     public CopyFrameCommand(
         FrameId sourceFrameId,
@@ -92,7 +94,11 @@ public sealed class CopyFrameCommand : ICommand
 
         if (_celIds.Count == 0)
         {
-            foreach (var cel in sourceCels) _celIds.Add(cel.Id, CelId.New());
+            foreach (var cel in sourceCels)
+            {
+                _celIds.Add(cel.Id, CelId.New());
+                _effectGraphs.Add(cel.Id, CloneEffectsWithNewTrackIds(cel.Effects.Snapshot()));
+            }
             if (_mode == FrameCopyMode.Independent)
             {
                 foreach (var surfaceId in sourceCels.Select(cel => cel.SurfaceId).Distinct())
@@ -125,6 +131,7 @@ public sealed class CopyFrameCommand : ICommand
             {
                 Position = sourceCel.Position,
                 Opacity = sourceCel.Opacity,
+                Effects = EffectGraph.FromSnapshot(_effectGraphs[sourceCel.Id]),
             };
             document.AddCel(copied);
         }
@@ -148,6 +155,35 @@ public sealed class CopyFrameCommand : ICommand
         }
 
         return DocumentChange.Empty;
+    }
+
+    private static EffectGraphSnapshot CloneEffectsWithNewTrackIds(EffectGraphSnapshot source)
+    {
+        var effects = new Dictionary<EffectInstanceId, EffectInstanceSnapshot>();
+        foreach (var effectId in source.EffectOrder)
+        {
+            var effect = source.GetEffect(effectId);
+            var tracks = effect.ParameterTracks.ToDictionary(
+                pair => pair.Key,
+                pair => new AnimationTrackSnapshot<EffectValue>(
+                    AnimationTrackId.New(),
+                    pair.Value.Name,
+                    pair.Value.Values),
+                StringComparer.Ordinal);
+            effects.Add(
+                effectId,
+                new EffectInstanceSnapshot(
+                    effect.Id,
+                    effect.TypeId,
+                    effect.Enabled,
+                    effect.Revision,
+                    effect.Parameters,
+                    tracks));
+        }
+        return new EffectGraphSnapshot(
+            source.Revision,
+            source.EffectOrder.ToArray(),
+            effects);
     }
 
     private static void CopyTrackValues(AnimationMetadata animation, FrameId sourceFrameId, FrameId targetFrameId)
