@@ -101,6 +101,7 @@ public sealed class CopyFrameCommand : ICommand
         }
 
         document.InsertFrame(targetIndex, new Frame(_newFrameId, sourceFrame.DurationTicks));
+        CopyTrackValues(document.Animation, _sourceFrameId, _newFrameId);
 
         if (_mode == FrameCopyMode.Independent)
         {
@@ -137,6 +138,7 @@ public sealed class CopyFrameCommand : ICommand
 
         foreach (var cel in document.Cels.Where(cel => cel.FrameId == _newFrameId).ToArray())
             document.RemoveCel(cel.Id);
+        RemoveTrackValues(document.Animation, _newFrameId);
         document.RemoveFrame(_newFrameId);
 
         if (_mode == FrameCopyMode.Independent)
@@ -146,6 +148,29 @@ public sealed class CopyFrameCommand : ICommand
         }
 
         return DocumentChange.Empty;
+    }
+
+    private static void CopyTrackValues(AnimationMetadata animation, FrameId sourceFrameId, FrameId targetFrameId)
+    {
+        if (animation.PivotTrack.TryGetValue(sourceFrameId, out var pivot))
+            animation.PivotTrack.Set(targetFrameId, pivot);
+        if (animation.HitboxTrack.TryGetValue(sourceFrameId, out var hitboxes))
+            animation.HitboxTrack.Set(targetFrameId, hitboxes);
+        if (animation.HurtboxTrack.TryGetValue(sourceFrameId, out var hurtboxes))
+            animation.HurtboxTrack.Set(targetFrameId, hurtboxes);
+        if (animation.SocketTrack.TryGetValue(sourceFrameId, out var sockets))
+            animation.SocketTrack.Set(targetFrameId, sockets);
+        if (animation.EventTrack.TryGetValue(sourceFrameId, out var events))
+            animation.EventTrack.Set(targetFrameId, events);
+    }
+
+    private static void RemoveTrackValues(AnimationMetadata animation, FrameId frameId)
+    {
+        animation.PivotTrack.Remove(frameId, out _);
+        animation.HitboxTrack.Remove(frameId, out _);
+        animation.HurtboxTrack.Remove(frameId, out _);
+        animation.SocketTrack.Remove(frameId, out _);
+        animation.EventTrack.Remove(frameId, out _);
     }
 
     private sealed record Undo : IUndoToken;
