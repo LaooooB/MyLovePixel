@@ -76,10 +76,7 @@ public sealed partial class MainWindow
         _toolsPanel.Children.Clear();
         var session = Current();
         if (session is null) return;
-        _toolsPanel.Margin = new Thickness(8, 8, 8, 4);
-        var colors = session.GetToolColors();
-        _primarySwatch.Background = Brush(colors.Primary);
-        _secondarySwatch.Background = Brush(colors.Secondary);
+        _toolsPanel.Margin = new Thickness(14, 6, 14, 8);
 
         var select = IconButton("▧", "Selection", () =>
         {
@@ -90,6 +87,7 @@ public sealed partial class MainWindow
         });
         if (_selectionMode) select.Classes.Add("selected");
         _toolsPanel.Children.Add(select);
+        _toolsPanel.Children.Add(SeparatorH());
 
         foreach (var tool in _plugins.GetTools(session))
         {
@@ -105,11 +103,6 @@ public sealed partial class MainWindow
             if (!_selectionMode && tool.IsActive) button.Classes.Add("selected");
             _toolsPanel.Children.Add(button);
         }
-
-        _toolsPanel.Children.Add(SeparatorH());
-        _toolsPanel.Children.Add(SwatchButton(_primarySwatch, "Primary", true));
-        _toolsPanel.Children.Add(SwatchButton(_secondarySwatch, "Secondary", false));
-        _toolsPanel.Children.Add(IconButton("⇄", "Swap colors", SwapColors));
     }
 
     private void RefreshToolOptions()
@@ -120,20 +113,27 @@ public sealed partial class MainWindow
 
         if (_selectionMode)
         {
+            AddPanelLabel(_toolOptionsPanel, "Selection type");
             _toolOptionsPanel.Children.Add(Icons(
                 SelectionModeButton("▧", "Rectangle", SelectionGestureMode.Rectangle),
                 SelectionModeButton("○", "Ellipse", SelectionGestureMode.Ellipse),
                 SelectionModeButton("⌁", "Lasso", SelectionGestureMode.Lasso),
                 SelectionModeButton("◉", "By color", SelectionGestureMode.ByColor)));
+
+            AddPanelLabel(_toolOptionsPanel, "Modify");
             _toolOptionsPanel.Children.Add(Icons(
-                IconButton("▣", "Select all", () => { _selection.SelectAll(session); RefreshCanvas(); }),
-                IconButton("◐", "Invert selection", () => { Safe(() => _selection.Invert(session)); RefreshCanvas(); }),
+                TextIconButton("▣", "Select All", "Select all", () => { _selection.SelectAll(session); RefreshCanvas(); }),
+                TextIconButton("◐", "Invert", "Invert selection", () => { Safe(() => _selection.Invert(session)); RefreshCanvas(); }),
                 IconButton("×", "Clear selection", () => { _selection.Clear(session); RefreshCanvas(); })));
+
+            AddPanelLabel(_toolOptionsPanel, "Move");
             _toolOptionsPanel.Children.Add(Icons(
                 IconButton("←", "Move left", () => MoveSelection(-1, 0)),
                 IconButton("↑", "Move up", () => MoveSelection(0, -1)),
                 IconButton("↓", "Move down", () => MoveSelection(0, 1)),
                 IconButton("→", "Move right", () => MoveSelection(1, 0))));
+
+            AddPanelLabel(_toolOptionsPanel, "Transform");
             _toolOptionsPanel.Children.Add(Icons(
                 IconButton("↔", "Flip horizontal", () => TransformSelection(() => _selection.FlipHorizontal(session))),
                 IconButton("↕", "Flip vertical", () => TransformSelection(() => _selection.FlipVertical(session))),
@@ -142,9 +142,17 @@ public sealed partial class MainWindow
             {
                 var w = Number(overlay.Bounds.Width, 1, 8192);
                 var h = Number(overlay.Bounds.Height, 1, 8192);
-                _toolOptionsPanel.Children.Add(Icons(w, h, IconButton("↗", "Scale selection", () => TransformSelection(() => _selection.Scale(session, (int)(w.Value ?? 1), (int)(h.Value ?? 1))))));
+                _toolOptionsPanel.Children.Add(Labeled("Scale to", Icons(w, h, TextIconButton("↗", "Apply", "Scale selection", () => TransformSelection(() => _selection.Scale(session, (int)(w.Value ?? 1), (int)(h.Value ?? 1)))))));
             }
             return;
+        }
+
+        var active = session.GetTools().FirstOrDefault(value => value.IsActive)?.DisplayName;
+        if (!string.IsNullOrWhiteSpace(active))
+        {
+            var current = new TextBlock { Text = active };
+            current.Classes.Add("section-title");
+            _toolOptionsPanel.Children.Add(current);
         }
 
         foreach (var option in session.GetToolOptions())
@@ -192,26 +200,30 @@ public sealed partial class MainWindow
         var session = Current();
         if (session is null) return;
         _layersPanel.Children.Add(Icons(
-            IconButton("＋", "Add layer", () => session.AddLayer()),
+            TextIconButton("＋", "Add Layer", "Add layer", () => session.AddLayer()),
             IconButton("↑", "Move layer up", () => session.MoveCurrentLayer(-1)),
             IconButton("↓", "Move layer down", () => session.MoveCurrentLayer(1)),
             IconButton("×", "Delete layer", () => session.RemoveCurrentLayer())));
 
         foreach (var layer in session.GetLayers())
         {
-            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("30,30,*,62"), ColumnSpacing = 4 };
+            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("30,30,*,62"), ColumnSpacing = 5 };
             var eye = SmallIcon(layer.Visible ? "●" : "○", layer.Visible ? "Hide" : "Show", () => session.SetLayerVisibility(layer.Id, !layer.Visible));
             row.Children.Add(eye);
             var lockButton = SmallIcon(layer.Locked ? "◆" : "◇", layer.Locked ? "Unlock" : "Lock", () => session.SetLayerLocked(layer.Id, !layer.Locked));
-            Grid.SetColumn(lockButton, 1); row.Children.Add(lockButton);
+            Grid.SetColumn(lockButton, 1);
+            row.Children.Add(lockButton);
             var name = new TextBox { Text = layer.Name, Padding = new Thickness(6, 3) };
             name.LostFocus += (_, _) => { if (!string.IsNullOrWhiteSpace(name.Text)) Safe(() => session.RenameLayer(layer.Id, name.Text!)); };
             name.PointerPressed += (_, _) => session.SelectLayer(layer.Id);
             if (layer.IsCurrent) name.BorderBrush = EditorThemeTokens.Accent;
-            Grid.SetColumn(name, 2); row.Children.Add(name);
+            Grid.SetColumn(name, 2);
+            row.Children.Add(name);
             var opacity = new NumericUpDown { Value = layer.Opacity, Minimum = 0, Maximum = 255, Increment = 1, FormatString = "0" };
             opacity.ValueChanged += (_, _) => { if (opacity.Value is { } v) Safe(() => session.SetLayerOpacity(layer.Id, (byte)v)); };
-            ToolTip.SetTip(opacity, "Opacity"); Grid.SetColumn(opacity, 3); row.Children.Add(opacity);
+            ToolTip.SetTip(opacity, "Layer opacity");
+            Grid.SetColumn(opacity, 3);
+            row.Children.Add(opacity);
             _layersPanel.Children.Add(row);
         }
     }
@@ -224,23 +236,33 @@ public sealed partial class MainWindow
         var colors = session.GetToolColors();
         _primarySwatch.Background = Brush(colors.Primary);
         _secondarySwatch.Background = Brush(colors.Secondary);
-        _palettePanel.Children.Add(Icons(SwatchButton(_primarySwatch, "Primary", true), SwatchButton(_secondarySwatch, "Secondary", false), IconButton("⇄", "Swap", SwapColors)));
+
+        _palettePanel.Children.Add(Labeled("Primary", SwatchButton(_primarySwatch, "Primary color", true)));
+        _palettePanel.Children.Add(Labeled("Secondary", SwatchButton(_secondarySwatch, "Secondary color", false)));
+        _palettePanel.Children.Add(TextIconButton("⇄", "Swap Colors", "Swap primary and secondary colors", SwapColors));
 
         var editors = session.GetPaletteEditors();
         var format = session.GetCurrentSurfaceFormat();
-        var quantize = IconButton("◫", "Quantize", async () => await QuantizeCurrentAsync());
-        var dither = IconButton("▦", "Dither", async () => await DitherCurrentAsync());
-        var shade = IconButton("◐", "Color ramp shading", async () => await ShadeCurrentAsync());
-        var rgba = IconButton("◇", "Convert Indexed8 to RGBA", ConvertIndexedCurrentToRgba);
+        AddPanelLabel(_palettePanel, "Color processing");
+        var processing = new WrapPanel { ItemHeight = 34 };
+        var quantize = TextIconButton("", "Quantize", "Quantize current image", async () => await QuantizeCurrentAsync());
+        var dither = TextIconButton("", "Dither", "Dither current image", async () => await DitherCurrentAsync());
+        var shade = TextIconButton("", "Ramp / Shade", "Color ramp shading", async () => await ShadeCurrentAsync());
+        var rgba = TextIconButton("", "Convert to RGBA", "Convert Indexed8 to RGBA", ConvertIndexedCurrentToRgba);
         quantize.IsEnabled = format == PixelFormat.Rgba32;
         dither.IsEnabled = format == PixelFormat.Rgba32 && editors.Count > 0;
         shade.IsEnabled = format == PixelFormat.Indexed8;
         rgba.IsEnabled = format == PixelFormat.Indexed8;
-        _palettePanel.Children.Add(Icons(quantize, dither, shade, rgba));
+        processing.Children.Add(quantize);
+        processing.Children.Add(dither);
+        processing.Children.Add(shade);
+        processing.Children.Add(rgba);
+        _palettePanel.Children.Add(processing);
 
+        AddPanelLabel(_palettePanel, "Palette");
         if (editors.Count == 0)
         {
-            _palettePanel.Children.Add(IconButton("＋", "Create 16-color grayscale palette", () => { session.AddDefaultPalette(); RefreshPalette(); }));
+            _palettePanel.Children.Add(TextIconButton("＋", "Create Grayscale Palette", "Create 16-color grayscale palette", () => { session.AddDefaultPalette(); RefreshPalette(); }));
             return;
         }
 
@@ -257,7 +279,7 @@ public sealed partial class MainWindow
             foreach (var entry in palette.Colors)
             {
                 var b = new Button { Width = 28, Height = 28, Padding = new Thickness(2), Content = new Border { Background = Brush(entry.Color), CornerRadius = new CornerRadius(3) } };
-                ToolTip.SetTip(b, $"{entry.Index} · #{entry.Color.R:X2}{entry.Color.G:X2}{entry.Color.B:X2}{entry.Color.A:X2}");
+                ToolTip.SetTip(b, $"Palette index {entry.Index} · #{entry.Color.R:X2}{entry.Color.G:X2}{entry.Color.B:X2}{entry.Color.A:X2}");
                 if (_selectedPalette == palette.Id && _selectedPaletteIndex == entry.Index) b.Classes.Add("selected");
                 b.Click += (_, _) =>
                 {
@@ -276,5 +298,12 @@ public sealed partial class MainWindow
             }
             _palettePanel.Children.Add(wrap);
         }
+    }
+
+    private static void AddPanelLabel(Panel panel, string text)
+    {
+        var label = new TextBlock { Text = text, Margin = new Thickness(0, 4, 0, 0) };
+        label.Classes.Add("toolbar-label");
+        panel.Children.Add(label);
     }
 }
