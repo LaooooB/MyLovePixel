@@ -159,20 +159,26 @@ public sealed class GameAssetExporter : IExporter
         IReadOnlyList<FrameMetadata> frames,
         IEnumerable<string> images)
     {
-        var frameSet = frames.Select(frame => frame.Id).ToHashSet(StringComparer.Ordinal);
+        var frameIndex = snapshot.FrameOrder
+            .Select((id, index) => (Id: id.ToString(), Index: index))
+            .ToDictionary(item => item.Id, item => item.Index, StringComparer.Ordinal);
+        var orderedFrames = frames.OrderBy(frame => frameIndex[frame.Id]).ToArray();
+        var selectedIndices = orderedFrames.Select(frame => frameIndex[frame.Id]).ToHashSet();
+
         var dto = new ExportMetadata
         {
             Version = 1,
             DocumentId = snapshot.Id.ToString(),
+            CoordinateSpace = "document",
             Scale = preset.Scale,
             Images = images.Distinct(StringComparer.Ordinal).OrderBy(path => path, StringComparer.Ordinal).ToArray(),
-            Frames = frames.ToArray(),
+            Frames = orderedFrames,
             Clips = snapshot.Animation.Clips
-                .Where(clip => frameSet.Contains(clip.StartFrameId.ToString()) || frameSet.Contains(clip.EndFrameId.ToString()))
+                .Where(clip => RangeOverlaps(frameIndex, selectedIndices, clip.StartFrameId, clip.EndFrameId))
                 .Select(clip => new ClipMetadata(clip.Id.ToString(), clip.Name, clip.StartFrameId.ToString(), clip.EndFrameId.ToString(), clip.LoopMode.ToString()))
                 .ToArray(),
             Tags = snapshot.Animation.Tags
-                .Where(tag => frameSet.Contains(tag.StartFrameId.ToString()) || frameSet.Contains(tag.EndFrameId.ToString()))
+                .Where(tag => RangeOverlaps(frameIndex, selectedIndices, tag.StartFrameId, tag.EndFrameId))
                 .Select(tag => new TagMetadata(tag.Id.ToString(), tag.Name, tag.StartFrameId.ToString(), tag.EndFrameId.ToString()))
                 .ToArray(),
             Slices = snapshot.Animation.Slices
@@ -215,21 +221,41 @@ public sealed class GameAssetExporter : IExporter
     private static FrameId[] ResolveFrames(DocumentSnapshot snapshot, ExportFrameSelection selection)
     {
         ArgumentNullException.ThrowIfNull(selection);
-        var order = snapshot.FrameOrder;
         return selection.Mode switch
         {
-            ExportFrameSelectionMode.All => order.ToArray(),
-            ExportFrameSelectionMode.Clip when selection.ClipId is { } clipId => Range(
-                order,
-                snapshot.Animation.Clips.Single(clip => clip.Id == clipId).StartFrameId,
-                snapshot.Animation.Clips.Single(clip => clip.Id == clipId).EndFrameId),
-            ExportFrameSelectionMode.Tag when selection.TagId is { } tagId => Range(
-                order,
-                snapshot.Animation.Tags.Single(tag => tag.Id == tagId).StartFrameId,
-                snapshot.Animation.Tags.Single(tag => tag.Id == tagId).EndFrameId),
-            ExportFrameSelectionMode.Explicit => order.Where(selection.FrameIds.Contains).ToArray(),
+            ExportFrameSelectionMode.All => snapshot.FrameOrder.ToArray(),
+            ExportFrameSelectionMode.Clip when selection.ClipId is { } clipId => ResolveClipFrames(snapshot, clipId),
+            ExportFrameSelectionMode.Tag when selection.TagId is { } tagId => ResolveTagFrames(snapshot, tagId),
+            ExportFrameSelectionMode.Explicit => snapshot.FrameOrder.Where(selection.FrameIds.Contains).ToArray(),
             _ => throw new InvalidOperationException("Export frame selection is incomplete."),
         };
+    }
+
+    private static FrameId[] ResolveClipFrames(DocumentSnapshot snapshot, AnimationClipId clipId)
+    {
+        var clip = snapshot.Animation.Clips.FirstOrDefault(value => value.Id == clipId)
+            ?? throw new KeyNotFoundException($"Animation clip '{clipId}' does not exist in the export snapshot.");
+        return Range(snapshot.FrameOrder, clip.StartFrameId, clip.EndFrameId);
+    }
+
+    private static FrameId[] ResolveTagFrames(DocumentSnapshot snapshot, AnimationTagId tagId)
+    {
+        var tag = snapshot.Animation.Tags.FirstOrDefault(value => value.Id == tagId)
+            ?? throw new KeyNotFoundException($"Animation tag '{tagId}' does not exist in the export snapshot.");
+        return Range(snapshot.FrameOrder, tag.StartFrameId, tag.EndFrameId);
+    }
+
+    private static bool RangeOverlaps(
+        IReadOnlyDictionary<string, int> frameIndex,
+        IReadOnlySet<int> selectedIndices,
+        FrameId start,
+        FrameId end)
+    {
+        if (!frameIndex.TryGetValue(start.ToString(), out var startIndex) || !frameIndex.TryGetValue(end.ToString(), out var endIndex))
+            return false;
+        for (var index = startIndex; index <= endIndex; index++)
+            if (selectedIndices.Contains(index)) return true;
+        return false;
     }
 
     private static FrameId[] Range(IReadOnlyList<FrameId> order, FrameId start, FrameId end)
@@ -274,6 +300,7 @@ internal sealed class ExportMetadata
 {
     public int Version { get; init; }
     public string DocumentId { get; init; } = string.Empty;
+    public string CoordinateSpace { get; init; } = "document";
     public int Scale { get; init; }
     public string[] Images { get; init; } = [];
     public FrameMetadata[] Frames { get; init; } = [];
