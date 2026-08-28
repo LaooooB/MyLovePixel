@@ -37,7 +37,7 @@ public sealed class PixelCanvasView : Control
     public override void Render(DrawingContext context)
     {
         base.Render(context);
-        context.FillRectangle(Brushes.DimGray, new Rect(Bounds.Size));
+        context.FillRectangle(EditorThemeTokens.CanvasBackground, new Rect(Bounds.Size));
         var presentation = _presentation;
         if (presentation is null) return;
 
@@ -121,7 +121,7 @@ public sealed class PixelCanvasView : Control
         var rect = new Rect(x * _zoom, y * _zoom, _zoom, _zoom);
         if (a == 0)
         {
-            var checker = ((x + y) & 1) == 0 ? Brushes.Gray : Brushes.DarkGray;
+            var checker = ((x + y) & 1) == 0 ? EditorThemeTokens.CheckerLight : EditorThemeTokens.CheckerDark;
             context.FillRectangle(checker, rect);
             return;
         }
