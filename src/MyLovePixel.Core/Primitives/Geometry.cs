@@ -1,6 +1,9 @@
 namespace MyLovePixel.Core.Primitives;
 
-public readonly record struct IntPoint(int X, int Y);
+public readonly record struct IntPoint(int X, int Y)
+{
+    public static IntPoint Zero { get; } = new(0, 0);
+}
 
 public readonly record struct IntSize
 {
