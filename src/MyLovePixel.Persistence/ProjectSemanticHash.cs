@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using MyLovePixel.Core.Document;
+using MyLovePixel.Core.Primitives;
 
 namespace MyLovePixel.Persistence;
 
@@ -48,10 +49,11 @@ public static class ProjectSemanticHash
             AppendGuid(hash, cel.LayerId.Value);
             AppendGuid(hash, cel.FrameId.Value);
             AppendGuid(hash, cel.SurfaceId.Value);
-            AppendInt32(hash, cel.Position.X);
-            AppendInt32(hash, cel.Position.Y);
+            AppendPoint(hash, cel.Position);
             AppendByte(hash, cel.Opacity);
         }
+
+        AppendAnimation(hash, document);
 
         var surfaceIds = document.Resources.SurfaceIds.OrderBy(id => id.Value).ToArray();
         AppendInt32(hash, surfaceIds.Length);
@@ -67,6 +69,120 @@ public static class ProjectSemanticHash
         }
 
         return "sha256:" + Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+    }
+
+    private static void AppendAnimation(IncrementalHash hash, PixelDocument document)
+    {
+        var animation = document.Animation;
+
+        AppendInt32(hash, animation.ClipOrder.Count);
+        foreach (var clipId in animation.ClipOrder)
+        {
+            var clip = animation.GetClip(clipId);
+            AppendGuid(hash, clip.Id.Value);
+            AppendString(hash, clip.Name);
+            AppendGuid(hash, clip.StartFrameId.Value);
+            AppendGuid(hash, clip.EndFrameId.Value);
+            AppendInt32(hash, (int)clip.LoopMode);
+        }
+
+        AppendInt32(hash, animation.TagOrder.Count);
+        foreach (var tagId in animation.TagOrder)
+        {
+            var tag = animation.GetTag(tagId);
+            AppendGuid(hash, tag.Id.Value);
+            AppendString(hash, tag.Name);
+            AppendGuid(hash, tag.StartFrameId.Value);
+            AppendGuid(hash, tag.EndFrameId.Value);
+        }
+
+        AppendInt32(hash, animation.SliceOrder.Count);
+        foreach (var sliceId in animation.SliceOrder)
+        {
+            var slice = animation.GetSlice(sliceId);
+            AppendGuid(hash, slice.Id.Value);
+            AppendString(hash, slice.Name);
+            AppendRect(hash, slice.Bounds);
+            AppendPoint(hash, slice.Pivot);
+            AppendByte(hash, slice.NineSlice.HasValue ? (byte)1 : (byte)0);
+            if (slice.NineSlice is { } insets)
+            {
+                AppendInt32(hash, insets.Left);
+                AppendInt32(hash, insets.Top);
+                AppendInt32(hash, insets.Right);
+                AppendInt32(hash, insets.Bottom);
+            }
+        }
+
+        var frameIndex = document.FrameOrder
+            .Select((id, index) => (id, index))
+            .ToDictionary(item => item.id, item => item.index);
+        AppendTrack(hash, animation.PivotTrack, frameIndex, AppendPoint);
+        AppendTrack(hash, animation.HitboxTrack, frameIndex, AppendBoxFrame);
+        AppendTrack(hash, animation.HurtboxTrack, frameIndex, AppendBoxFrame);
+        AppendTrack(hash, animation.SocketTrack, frameIndex, AppendSocketFrame);
+        AppendTrack(hash, animation.EventTrack, frameIndex, AppendEventFrame);
+    }
+
+    private static void AppendTrack<T>(
+        IncrementalHash hash,
+        AnimationTrack<T> track,
+        IReadOnlyDictionary<FrameId, int> frameIndex,
+        Action<IncrementalHash, T> appendValue)
+    {
+        AppendGuid(hash, track.Id.Value);
+        AppendString(hash, track.Name);
+        var values = track.Values.OrderBy(pair => frameIndex[pair.Key]).ToArray();
+        AppendInt32(hash, values.Length);
+        foreach (var pair in values)
+        {
+            AppendGuid(hash, pair.Key.Value);
+            appendValue(hash, pair.Value);
+        }
+    }
+
+    private static void AppendBoxFrame(IncrementalHash hash, BoxFrameValue value)
+    {
+        AppendInt32(hash, value.Boxes.Count);
+        foreach (var box in value.Boxes)
+        {
+            AppendString(hash, box.Name);
+            AppendRect(hash, box.Bounds);
+        }
+    }
+
+    private static void AppendSocketFrame(IncrementalHash hash, SocketFrameValue value)
+    {
+        AppendInt32(hash, value.Sockets.Count);
+        foreach (var socket in value.Sockets)
+        {
+            AppendString(hash, socket.Name);
+            AppendPoint(hash, socket.Position);
+        }
+    }
+
+    private static void AppendEventFrame(IncrementalHash hash, EventFrameValue value)
+    {
+        AppendInt32(hash, value.Events.Count);
+        foreach (var marker in value.Events)
+        {
+            AppendString(hash, marker.Name);
+            AppendString(hash, marker.Payload);
+        }
+    }
+
+    private static void AppendPoint(IncrementalHash hash, IntPoint value)
+    {
+        AppendInt32(hash, value.X);
+        AppendInt32(hash, value.Y);
+    }
+
+    private static void AppendRect(IncrementalHash hash, IntRect value)
+    {
+        AppendInt32(hash, value.X);
+        AppendInt32(hash, value.Y);
+        AppendInt32(hash, value.Width);
+        AppendInt32(hash, value.Height);
     }
 
     private static void AppendGuid(IncrementalHash hash, Guid value)
