@@ -1,3 +1,4 @@
+using MyLovePixel.Commands.Color;
 using MyLovePixel.Core.Document;
 using MyLovePixel.Core.Pixel;
 using MyLovePixel.Core.Primitives;
@@ -57,6 +58,44 @@ public sealed class EditingFacadeTests
 
         session.Undo();
         Assert.Equal(new Rgba32(10, 20, 30, 255), session.GetPaletteEditors().Single().Colors[1].Color);
+    }
+
+    [Fact]
+    public void QuantizeSurface_RoundTripsFormatAndPaletteThroughSingleUndo()
+    {
+        var workspace = new EditorWorkspace();
+        var session = workspace.NewDocument(2, 2);
+
+        var paletteId = session.QuantizeCurrentSurface(4, reserveTransparentIndex: true);
+
+        Assert.Equal(PixelFormat.Indexed8, session.GetCurrentSurfaceFormat());
+        Assert.Contains(session.GetPaletteEditors(), value => value.Id == paletteId);
+        Assert.Equal(1, session.Commands.UndoCount);
+
+        session.Undo();
+
+        Assert.Equal(PixelFormat.Rgba32, session.GetCurrentSurfaceFormat());
+        Assert.DoesNotContain(session.GetPaletteEditors(), value => value.Id == paletteId);
+    }
+
+    [Fact]
+    public void PaletteResize_IsUndoableAndRejectsDanglingIndexedReferences()
+    {
+        var original = new[] { new Rgba32(0, 0, 0, 0), new Rgba32(10, 20, 30, 255) };
+        var document = IndexedDocumentFactory.Create(new IntSize(1, 1), original, 0, [1]);
+        var session = new DocumentSession(new PixelProject(document));
+        var paletteId = session.GetPaletteEditors().Single().Id;
+
+        session.Execute(new ReplacePaletteColorsCommand(
+            paletteId,
+            [original[0], original[1], new Rgba32(200, 210, 220, 255)]));
+        Assert.Equal(3, session.GetPaletteEditors().Single().Colors.Count);
+
+        session.Undo();
+        Assert.Equal(2, session.GetPaletteEditors().Single().Colors.Count);
+
+        Assert.Throws<InvalidOperationException>(() => session.Execute(new ReplacePaletteColorsCommand(paletteId, [original[0]])));
+        Assert.Equal(2, session.GetPaletteEditors().Single().Colors.Count);
     }
 
     [Fact]
