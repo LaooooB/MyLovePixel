@@ -209,6 +209,17 @@ public sealed partial class MainWindow
         _palettePanel.Children.Add(Icons(SwatchButton(_primarySwatch, "Primary", true), SwatchButton(_secondarySwatch, "Secondary", false), IconButton("⇄", "Swap", SwapColors)));
 
         var editors = session.GetPaletteEditors();
+        var format = session.GetCurrentSurfaceFormat();
+        var quantize = IconButton("◫", "Quantize", async () => await QuantizeCurrentAsync());
+        var dither = IconButton("▦", "Dither", async () => await DitherCurrentAsync());
+        var shade = IconButton("◐", "Color ramp shading", async () => await ShadeCurrentAsync());
+        var rgba = IconButton("◇", "Convert Indexed8 to RGBA", ConvertIndexedCurrentToRgba);
+        quantize.IsEnabled = format == PixelFormat.Rgba32;
+        dither.IsEnabled = format == PixelFormat.Rgba32 && editors.Count > 0;
+        shade.IsEnabled = format == PixelFormat.Indexed8;
+        rgba.IsEnabled = format == PixelFormat.Indexed8;
+        _palettePanel.Children.Add(Icons(quantize, dither, shade, rgba));
+
         if (editors.Count == 0)
         {
             _palettePanel.Children.Add(IconButton("＋", "Create 16-color grayscale palette", () => { session.AddDefaultPalette(); RefreshPalette(); }));
