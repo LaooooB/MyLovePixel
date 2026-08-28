@@ -76,6 +76,12 @@ public sealed class PixelDocument
         var oldIndex = GetFrameIndex(frameId);
         if ((uint)newIndex >= (uint)_frameOrder.Count) throw new ArgumentOutOfRangeException(nameof(newIndex));
         if (oldIndex == newIndex) return;
+
+        var proposedOrder = _frameOrder.ToList();
+        proposedOrder.RemoveAt(oldIndex);
+        proposedOrder.Insert(newIndex, frameId);
+        ValidateAnimationRanges(proposedOrder);
+
         _frameOrder.RemoveAt(oldIndex);
         _frameOrder.Insert(newIndex, frameId);
     }
@@ -110,6 +116,33 @@ public sealed class PixelDocument
 
     internal bool IsSurfaceReferenced(ResourceId surfaceId) =>
         _cels.Values.Any(cel => cel.SurfaceId == surfaceId);
+
+    private void ValidateAnimationRanges(IReadOnlyList<FrameId> proposedOrder)
+    {
+        var positions = proposedOrder
+            .Select((id, index) => (id, index))
+            .ToDictionary(item => item.id, item => item.index);
+
+        foreach (var clipId in Animation.ClipOrder)
+        {
+            var clip = Animation.GetClip(clipId);
+            if (!positions.TryGetValue(clip.StartFrameId, out var start) ||
+                !positions.TryGetValue(clip.EndFrameId, out var end) ||
+                start > end)
+                throw new InvalidOperationException(
+                    $"Moving the frame would invert animation clip '{clip.Name}' ({clip.Id}).");
+        }
+
+        foreach (var tagId in Animation.TagOrder)
+        {
+            var tag = Animation.GetTag(tagId);
+            if (!positions.TryGetValue(tag.StartFrameId, out var start) ||
+                !positions.TryGetValue(tag.EndFrameId, out var end) ||
+                start > end)
+                throw new InvalidOperationException(
+                    $"Moving the frame would invert animation tag '{tag.Name}' ({tag.Id}).");
+        }
+    }
 }
 
 public static class PixelDocumentFactory
