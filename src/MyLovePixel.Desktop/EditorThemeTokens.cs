@@ -9,6 +9,7 @@ public static class EditorThemeTokens
     public static IBrush CheckerDark { get; } = new SolidColorBrush(Color.FromRgb(66, 66, 72));
     public static IBrush PanelBorder { get; } = new SolidColorBrush(Color.FromRgb(70, 70, 76));
     public static IBrush PreviewOutline { get; } = new SolidColorBrush(Color.FromArgb(220, 255, 255, 255));
+    public static IBrush DirtyRegionOutline { get; } = new SolidColorBrush(Color.FromArgb(235, 255, 84, 84));
 
     public const double PanelSpacing = 8d;
     public const double CompactSpacing = 4d;

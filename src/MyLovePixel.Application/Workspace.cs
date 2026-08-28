@@ -13,15 +13,25 @@ namespace MyLovePixel.Application;
 public sealed class DocumentSession
 {
     private readonly FrameRenderer _renderer = new();
+    private readonly Dictionary<ResourceId, List<IntRect>> _pendingDirtySurfaceRegions = [];
+    private readonly Dictionary<ResourceId, long> _lastRenderedSurfaceRevisions = [];
     private ToolHost? _toolHost;
     private string _activeToolId = BuiltinToolCatalog.DefaultToolId;
     private Rgba32 _primaryColor = new(0, 0, 0, 255);
     private Rgba32 _secondaryColor = new(255, 255, 255, 255);
 
-    public DocumentSession(PixelProject project, string? filePath = null)
+    public DocumentSession(
+        PixelProject project,
+        string? filePath = null,
+        string? recoverySourcePath = null,
+        string? recoveryId = null)
     {
         Project = project ?? throw new ArgumentNullException(nameof(project));
         FilePath = string.IsNullOrWhiteSpace(filePath) ? null : Path.GetFullPath(filePath);
+        RecoverySourcePath = string.IsNullOrWhiteSpace(recoverySourcePath) ? null : Path.GetFullPath(recoverySourcePath);
+        RecoveryId = string.IsNullOrWhiteSpace(recoveryId) ? null : recoveryId;
+        IsRecovered = RecoveryId is not null;
+        IsDirty = IsRecovered;
         Commands = new CommandBus(project.Document);
         CurrentFrameId = project.Document.FrameOrder.First();
         CurrentLayerId = project.Document.LayerOrder.First();
@@ -33,8 +43,11 @@ public sealed class DocumentSession
 
     internal PixelProject Project { get; }
     internal PixelDocument Document => Project.Document;
+    internal string? RecoveryId { get; private set; }
     public CommandBus Commands { get; }
     public string? FilePath { get; private set; }
+    public string? RecoverySourcePath { get; private set; }
+    public bool IsRecovered { get; private set; }
     public bool IsDirty { get; private set; }
     public bool CanUndo => Commands.CanUndo;
     public bool CanRedo => Commands.CanRedo;
@@ -43,6 +56,7 @@ public sealed class DocumentSession
     public string ActiveToolId => _activeToolId;
     public double Zoom { get; private set; } = 16d;
     public bool HasEditableCel => _toolHost is not null;
+    public bool ShowDirtyRegions { get; private set; }
 
     public DocumentSnapshot CaptureSnapshot() => DocumentSnapshot.Capture(Document);
 
@@ -151,15 +165,35 @@ public sealed class DocumentSession
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    public void SetDirtyRegionVisualization(bool enabled)
+    {
+        if (ShowDirtyRegions == enabled) return;
+        ShowDirtyRegions = enabled;
+        StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
     public CanvasPresentation RenderCanvas()
     {
         var snapshot = CaptureSnapshot();
-        var result = _renderer.Render(snapshot, new FrameRenderRequest(CurrentFrameId));
+        var invalidations = BuildPendingInvalidations(snapshot);
+        var result = _renderer.Render(snapshot, new FrameRenderRequest(CurrentFrameId, invalidations));
+        CaptureRenderedSurfaceRevisions(snapshot);
+        _pendingDirtySurfaceRegions.Clear();
+
+        var dirtyRegions = ShowDirtyRegions && result.UploadPlan.Mode == TextureUploadMode.Partial
+            ? result.UploadPlan.Regions
+            : Array.Empty<IntRect>();
         return new CanvasPresentation(
             CurrentFrameId,
             result.Surface.Size,
             result.Surface.Bytes,
-            BuildPreviewPixels(result.Surface.Size));
+            BuildPreviewPixels(result.Surface.Size),
+            dirtyRegions,
+            new CanvasRenderDiagnostics(
+                result.CacheOutcome,
+                result.UploadPlan.Mode,
+                result.UploadPlan.PixelCount,
+                result.Diagnostics));
     }
 
     public IReadOnlyList<LayerListItem> GetLayers()
@@ -205,8 +239,47 @@ public sealed class DocumentSession
     internal void MarkSaved(string path)
     {
         FilePath = Path.GetFullPath(path);
+        RecoverySourcePath = null;
+        RecoveryId = null;
+        IsRecovered = false;
         IsDirty = false;
         StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private IReadOnlyList<SurfaceInvalidation>? BuildPendingInvalidations(DocumentSnapshot snapshot)
+    {
+        if (_pendingDirtySurfaceRegions.Count == 0 || _lastRenderedSurfaceRevisions.Count == 0)
+            return null;
+
+        var values = new List<SurfaceInvalidation>();
+        foreach (var pair in _pendingDirtySurfaceRegions)
+        {
+            if (!snapshot.Surfaces.TryGetValue(pair.Key, out var surface) ||
+                !_lastRenderedSurfaceRevisions.TryGetValue(pair.Key, out var fromRevision) ||
+                surface.Revision <= fromRevision ||
+                pair.Value.Count == 0)
+                continue;
+
+            var region = pair.Value[0];
+            for (var index = 1; index < pair.Value.Count; index++)
+                region = IntRect.Union(region, pair.Value[index]);
+            if (region.IsEmpty) continue;
+
+            values.Add(new SurfaceInvalidation(
+                pair.Key,
+                fromRevision,
+                surface.Revision,
+                region));
+        }
+
+        return values.Count == 0 ? null : values.AsReadOnly();
+    }
+
+    private void CaptureRenderedSurfaceRevisions(DocumentSnapshot snapshot)
+    {
+        _lastRenderedSurfaceRevisions.Clear();
+        foreach (var pair in snapshot.Surfaces)
+            _lastRenderedSurfaceRevisions[pair.Key] = pair.Value.Revision;
     }
 
     private IReadOnlyList<CanvasPreviewPixel> BuildPreviewPixels(IntSize canvasSize)
@@ -254,6 +327,15 @@ public sealed class DocumentSession
     private void OnDocumentChanged(object? sender, DocumentChange change)
     {
         IsDirty = true;
+        foreach (var dirty in change.DirtySurfaces)
+        {
+            if (!_pendingDirtySurfaceRegions.TryGetValue(dirty.SurfaceId, out var regions))
+            {
+                regions = [];
+                _pendingDirtySurfaceRegions.Add(dirty.SurfaceId, regions);
+            }
+            regions.Add(dirty.Region);
+        }
         RefreshToolTarget();
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -280,6 +362,15 @@ public sealed class EditorWorkspace
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         var fullPath = Path.GetFullPath(path);
         var session = new DocumentSession(PixelProjectFile.Load(fullPath), fullPath);
+        AddSession(session);
+        return session;
+    }
+
+    internal DocumentSession OpenRecovered(PixelProject project, string? sourcePath, string recoveryId)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        ArgumentException.ThrowIfNullOrWhiteSpace(recoveryId);
+        var session = new DocumentSession(project, recoverySourcePath: sourcePath, recoveryId: recoveryId);
         AddSession(session);
         return session;
     }
@@ -341,12 +432,15 @@ public sealed class CanvasPresentation
 {
     private readonly byte[] _rgba;
     private readonly CanvasPreviewPixel[] _previewPixels;
+    private readonly IntRect[] _dirtyRegions;
 
     public CanvasPresentation(
         FrameId frameId,
         IntSize size,
         ReadOnlyMemory<byte> rgba,
-        IEnumerable<CanvasPreviewPixel>? previewPixels = null)
+        IEnumerable<CanvasPreviewPixel>? previewPixels = null,
+        IEnumerable<IntRect>? dirtyRegions = null,
+        CanvasRenderDiagnostics? diagnostics = null)
     {
         var expected = checked(size.Width * size.Height * 4);
         if (rgba.Length != expected) throw new ArgumentException("Canvas RGBA length does not match size.", nameof(rgba));
@@ -354,13 +448,23 @@ public sealed class CanvasPresentation
         Size = size;
         _rgba = rgba.ToArray();
         _previewPixels = (previewPixels ?? Array.Empty<CanvasPreviewPixel>()).ToArray();
+        _dirtyRegions = (dirtyRegions ?? Array.Empty<IntRect>()).ToArray();
+        Diagnostics = diagnostics;
     }
 
     public FrameId FrameId { get; }
     public IntSize Size { get; }
     public ReadOnlyMemory<byte> Rgba => _rgba;
     public IReadOnlyList<CanvasPreviewPixel> PreviewPixels => Array.AsReadOnly(_previewPixels);
+    public IReadOnlyList<IntRect> DirtyRegions => Array.AsReadOnly(_dirtyRegions);
+    public CanvasRenderDiagnostics? Diagnostics { get; }
 }
+
+public sealed record CanvasRenderDiagnostics(
+    RenderCacheOutcome CacheOutcome,
+    TextureUploadMode UploadMode,
+    int UploadPixelCount,
+    RenderCacheDiagnosticsSnapshot Cache);
 
 public sealed record LayerListItem(int Index, LayerId Id, string Name, bool Visible, bool Locked, byte Opacity, bool IsCurrent);
 public sealed record TimelineFrameItem(int Index, FrameId Id, long DurationTicks, bool IsCurrent);

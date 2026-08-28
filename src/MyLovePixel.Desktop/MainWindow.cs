@@ -4,6 +4,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Threading;
 using MyLovePixel.Application;
 
 namespace MyLovePixel.Desktop;
@@ -17,16 +18,21 @@ public sealed class MainWindow : Window
     private readonly ShortcutMap _shortcuts = ShortcutMap.CreateDefault();
     private readonly AvaloniaEditorInteraction _interaction;
     private readonly EditorActionContext _actionContext;
+    private readonly RecoveryWorkspaceCoordinator _recovery;
+    private readonly DispatcherTimer _autosaveTimer;
     private readonly Dictionary<ActionId, List<Control>> _actionControls = [];
     private readonly PixelCanvasView _canvas = new();
-    private readonly StackPanel _toolsPanel = new() { Spacing = 4 };
-    private readonly StackPanel _layersPanel = new() { Spacing = 4 };
+    private readonly StackPanel _toolsPanel = new() { Spacing = EditorThemeTokens.CompactSpacing };
+    private readonly StackPanel _layersPanel = new() { Spacing = EditorThemeTokens.CompactSpacing };
     private readonly StackPanel _toolOptionsPanel = new() { Spacing = 6 };
-    private readonly StackPanel _palettePanel = new() { Spacing = 4 };
-    private readonly StackPanel _timelineFrames = new() { Orientation = Orientation.Horizontal, Spacing = 4 };
+    private readonly StackPanel _palettePanel = new() { Spacing = EditorThemeTokens.CompactSpacing };
+    private readonly StackPanel _recoveryPanel = new() { Spacing = EditorThemeTokens.CompactSpacing };
+    private readonly StackPanel _timelineFrames = new() { Orientation = Orientation.Horizontal, Spacing = EditorThemeTokens.CompactSpacing };
     private readonly TextBlock _toolStatus = new();
     private readonly TextBlock _documentStatus = new();
     private readonly TextBlock _timelineStatus = new();
+    private readonly TextBlock _performanceStatus = new() { TextWrapping = TextWrapping.Wrap };
+    private readonly CheckBox _dirtyRegionsToggle = new() { Content = "Dirty regions" };
     private DocumentSession? _observedSession;
     private int _timelineStart;
 
@@ -40,13 +46,25 @@ public sealed class MainWindow : Window
 
         _interaction = new AvaloniaEditorInteraction(this);
         _actionContext = new EditorActionContext(_workspace, _interaction);
+        _recovery = new RecoveryWorkspaceCoordinator(
+            _workspace,
+            GetRecoveryRootDirectory(),
+            AutosavePolicy.Default);
+        _autosaveTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
+        _autosaveTimer.Tick += OnAutosaveTick;
+        _dirtyRegionsToggle.Click += (_, _) =>
+            _workspace.CurrentSession?.SetDirtyRegionVisualization(_dirtyRegionsToggle.IsChecked == true);
+
         _canvas.PointerInput = DispatchCanvasPointer;
         _canvas.CancelPointerInput = () => _workspace.CurrentSession?.CancelToolInteraction();
         Content = BuildShell();
 
         _workspace.Changed += OnWorkspaceChanged;
         KeyDown += OnKeyDown;
+        Closed += (_, _) => _autosaveTimer.Stop();
         _workspace.NewDocument(64, 64);
+        _autosaveTimer.Start();
+        RefreshRecovery();
         RefreshAll();
     }
 
@@ -64,7 +82,7 @@ public sealed class MainWindow : Window
 
         var status = new Border
         {
-            BorderBrush = Brushes.DimGray,
+            BorderBrush = EditorThemeTokens.PanelBorder,
             BorderThickness = new Thickness(1, 1, 0, 0),
             Padding = new Thickness(8, 4),
             Child = _documentStatus,
@@ -128,7 +146,7 @@ public sealed class MainWindow : Window
             panel.Children.Add(CreateActionButton(id));
         return new Border
         {
-            BorderBrush = Brushes.DimGray,
+            BorderBrush = EditorThemeTokens.PanelBorder,
             BorderThickness = new Thickness(0, 0, 0, 1),
             Child = panel,
         };
@@ -137,9 +155,9 @@ public sealed class MainWindow : Window
     private Control BuildWorkspace()
     {
         var grid = new Grid();
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(220) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(EditorThemeTokens.LeftPanelWidth) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(280) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(EditorThemeTokens.RightPanelWidth) });
 
         var left = BuildLeftPanel();
         Grid.SetColumn(left, 0);
@@ -151,7 +169,7 @@ public sealed class MainWindow : Window
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             Content = new Border
             {
-                Background = Brushes.Black,
+                Background = EditorThemeTokens.CanvasBackground,
                 Padding = new Thickness(24),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
@@ -169,7 +187,7 @@ public sealed class MainWindow : Window
 
     private Control BuildLeftPanel()
     {
-        var content = new StackPanel { Spacing = 8, Margin = new Thickness(8) };
+        var content = new StackPanel { Spacing = EditorThemeTokens.PanelSpacing, Margin = new Thickness(8) };
         content.Children.Add(SectionTitle("Tools"));
         content.Children.Add(_toolStatus);
         content.Children.Add(_toolsPanel);
@@ -180,18 +198,23 @@ public sealed class MainWindow : Window
 
     private Control BuildRightPanel()
     {
-        var content = new StackPanel { Spacing = 8, Margin = new Thickness(8) };
+        var content = new StackPanel { Spacing = EditorThemeTokens.PanelSpacing, Margin = new Thickness(8) };
         content.Children.Add(SectionTitle("Tool Options"));
         content.Children.Add(_toolOptionsPanel);
         content.Children.Add(SectionTitle("Palette"));
         content.Children.Add(_palettePanel);
+        content.Children.Add(SectionTitle("Recovery"));
+        content.Children.Add(_recoveryPanel);
         content.Children.Add(SectionTitle("View"));
 
-        var zoomRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        var zoomRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = EditorThemeTokens.CompactSpacing };
         zoomRow.Children.Add(CreateViewButton("−", () => ChangeZoom(0.5)));
         zoomRow.Children.Add(CreateViewButton("+", () => ChangeZoom(2.0)));
         zoomRow.Children.Add(CreateViewButton("1:1", () => SetZoom(1d)));
         content.Children.Add(zoomRow);
+        content.Children.Add(_dirtyRegionsToggle);
+        content.Children.Add(SectionTitle("Diagnostics"));
+        content.Children.Add(_performanceStatus);
         return PanelBorder(content, new Thickness(1, 0, 0, 0));
     }
 
@@ -222,8 +245,8 @@ public sealed class MainWindow : Window
         });
         return new Border
         {
-            Height = 128,
-            BorderBrush = Brushes.DimGray,
+            Height = EditorThemeTokens.TimelineHeight,
+            BorderBrush = EditorThemeTokens.PanelBorder,
             BorderThickness = new Thickness(0, 1, 0, 0),
             Child = outer,
         };
@@ -353,18 +376,37 @@ public sealed class MainWindow : Window
             Title = "MyLovePixel";
             _documentStatus.Text = "No document";
             _toolStatus.Text = "Active: none";
+            _dirtyRegionsToggle.IsEnabled = false;
             return;
         }
-        var name = session.FilePath is null ? "Untitled" : Path.GetFileName(session.FilePath);
+
+        var name = session.IsRecovered
+            ? $"Recovered{(session.RecoverySourcePath is null ? string.Empty : " — " + Path.GetFileName(session.RecoverySourcePath))}"
+            : session.FilePath is null ? "Untitled" : Path.GetFileName(session.FilePath);
         Title = $"MyLovePixel — {name}{(session.IsDirty ? " *" : string.Empty)}";
-        _documentStatus.Text = $"Frame {session.CurrentFrameId} · Layer {session.CurrentLayerId} · Zoom {session.Zoom:0.###}×";
+        _documentStatus.Text = $"Frame {session.CurrentFrameId} · Layer {session.CurrentLayerId} · Zoom {session.Zoom:0.###}×{(session.IsRecovered ? " · recovered copy" : string.Empty)}";
         _toolStatus.Text = $"Active: {session.ActiveToolId}{(session.HasEditableCel ? string.Empty : " · no Cel")}";
+        _dirtyRegionsToggle.IsEnabled = true;
+        _dirtyRegionsToggle.IsChecked = session.ShowDirtyRegions;
     }
 
     private void RefreshCanvas()
     {
         var session = _workspace.CurrentSession;
-        _canvas.SetPresentation(session?.RenderCanvas(), session?.Zoom ?? 1d);
+        var presentation = session?.RenderCanvas();
+        _canvas.SetPresentation(presentation, session?.Zoom ?? 1d);
+
+        if (session is null || presentation?.Diagnostics is not { } diagnostics)
+        {
+            _performanceStatus.Text = "No render diagnostics";
+            return;
+        }
+
+        var history = session.Commands.HistoryDiagnostics;
+        _performanceStatus.Text =
+            $"{diagnostics.CacheOutcome} · upload {diagnostics.UploadMode} {diagnostics.UploadPixelCount}px\n" +
+            $"render hit {diagnostics.Cache.CacheHitCount} · partial {diagnostics.Cache.PartialRecomposeCount} · full {diagnostics.Cache.FullRecomposeCount}\n" +
+            $"undo {history.EstimatedHistoryBytes / 1024d:0.0} KiB / {history.MemoryBudgetBytes / 1024d:0.0} KiB · evicted {history.EvictedUndoEntryCount}";
     }
 
     private void RefreshTools()
@@ -417,7 +459,7 @@ public sealed class MainWindow : Window
                 case ToolOptionPresentationKind.Integer:
                 {
                     var value = (int)option.Value;
-                    var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+                    var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = EditorThemeTokens.CompactSpacing };
                     row.Children.Add(new TextBlock
                     {
                         Text = $"{option.DisplayName}: {value}",
@@ -497,6 +539,48 @@ public sealed class MainWindow : Window
             });
     }
 
+    private void RefreshRecovery()
+    {
+        _recoveryPanel.Children.Clear();
+        IReadOnlyList<RecoveryCandidatePresentation> candidates;
+        try
+        {
+            candidates = _recovery.Discover();
+        }
+        catch (Exception ex)
+        {
+            _recoveryPanel.Children.Add(new TextBlock { Text = ex.Message, TextWrapping = TextWrapping.Wrap });
+            return;
+        }
+
+        if (candidates.Count == 0)
+        {
+            _recoveryPanel.Children.Add(new TextBlock { Text = "No recovery checkpoints" });
+            return;
+        }
+
+        foreach (var candidate in candidates.Take(6))
+        {
+            var block = new StackPanel { Spacing = 2 };
+            var source = candidate.SourcePath is null ? "Untitled" : Path.GetFileName(candidate.SourcePath);
+            block.Children.Add(new TextBlock
+            {
+                Text = $"{source} · {candidate.State}\n{candidate.CreatedUtc?.ToLocalTime():g}",
+                TextWrapping = TextWrapping.Wrap,
+            });
+            var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = EditorThemeTokens.CompactSpacing };
+            if (candidate.IsRecoverable)
+            {
+                var recoverId = candidate.RecoveryId;
+                actions.Children.Add(CreateViewButton("Recover", () => RecoverCandidate(recoverId)));
+            }
+            var dismissId = candidate.RecoveryId;
+            actions.Children.Add(CreateViewButton("Dismiss", () => DismissCandidate(dismissId)));
+            block.Children.Add(actions);
+            _recoveryPanel.Children.Add(block);
+        }
+    }
+
     private void RefreshTimeline()
     {
         _timelineFrames.Children.Clear();
@@ -524,6 +608,47 @@ public sealed class MainWindow : Window
         }
     }
 
+    private void OnAutosaveTick(object? sender, EventArgs e)
+    {
+        var attempts = _recovery.Tick(DateTimeOffset.UtcNow);
+        if (attempts.Count == 0) return;
+
+        var failure = attempts.FirstOrDefault(attempt => !attempt.WroteCheckpoint);
+        _documentStatus.Text = failure is null
+            ? $"Autosaved {attempts.Count} document(s)."
+            : $"Autosave failed: {failure.Error}";
+        RefreshRecovery();
+    }
+
+    private void RecoverCandidate(string recoveryId)
+    {
+        try
+        {
+            _recovery.Recover(recoveryId);
+            _timelineStart = 0;
+            _documentStatus.Text = "Recovered copy opened. Save explicitly to choose its destination.";
+        }
+        catch (Exception ex)
+        {
+            _documentStatus.Text = ex.Message;
+        }
+        RefreshRecovery();
+        RefreshAll();
+    }
+
+    private void DismissCandidate(string recoveryId)
+    {
+        try
+        {
+            _recovery.Dismiss(recoveryId);
+        }
+        catch (Exception ex)
+        {
+            _documentStatus.Text = ex.Message;
+        }
+        RefreshRecovery();
+    }
+
     private void PreviousTimelinePage()
     {
         _timelineStart = Math.Max(0, _timelineStart - TimelinePageSize);
@@ -548,6 +673,13 @@ public sealed class MainWindow : Window
 
     private void SetZoom(double zoom) => _workspace.CurrentSession?.SetZoom(zoom);
 
+    private static string GetRecoveryRootDirectory()
+    {
+        var root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (string.IsNullOrWhiteSpace(root)) root = AppContext.BaseDirectory;
+        return Path.Combine(root, "MyLovePixel", "Recovery");
+    }
+
     private static TextBlock SectionTitle(string text) => new()
     {
         Text = text,
@@ -558,7 +690,7 @@ public sealed class MainWindow : Window
 
     private static Border PanelBorder(Control child, Thickness borderThickness) => new()
     {
-        BorderBrush = Brushes.DimGray,
+        BorderBrush = EditorThemeTokens.PanelBorder,
         BorderThickness = borderThickness,
         Child = new ScrollViewer
         {

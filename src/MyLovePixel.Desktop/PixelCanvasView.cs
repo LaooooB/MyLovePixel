@@ -51,6 +51,20 @@ public sealed class PixelCanvasView : Control
 
         foreach (var preview in presentation.PreviewPixels)
             DrawPixel(context, preview.Point.X, preview.Point.Y, preview.Color.R, preview.Color.G, preview.Color.B, preview.Color.A);
+
+        if (presentation.DirtyRegions.Count != 0)
+        {
+            var pen = new Pen(EditorThemeTokens.DirtyRegionOutline, 1d);
+            foreach (var region in presentation.DirtyRegions)
+            {
+                var rect = new Rect(
+                    region.X * _zoom,
+                    region.Y * _zoom,
+                    region.Width * _zoom,
+                    region.Height * _zoom);
+                context.DrawRectangle(null, pen, rect);
+            }
+        }
     }
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
