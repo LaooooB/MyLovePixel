@@ -4,6 +4,7 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
+using MyLovePixel.Application;
 using MyLovePixel.Core.Pixel;
 
 namespace MyLovePixel.Desktop;
