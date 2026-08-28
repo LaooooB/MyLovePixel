@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using MyLovePixel.Core.Document;
+using MyLovePixel.Core.Effects;
 using MyLovePixel.Core.Pixel;
 using MyLovePixel.Core.Primitives;
 
@@ -43,6 +44,9 @@ public static class ProjectSemanticHash
             AppendInt64(hash, frame.DurationTicks);
         }
 
+        var frameIndex = document.FrameOrder
+            .Select((id, index) => (id, index))
+            .ToDictionary(item => item.id, item => item.index);
         var cels = document.Cels.OrderBy(c => c.Id.Value).ToArray();
         AppendInt32(hash, cels.Length);
         foreach (var cel in cels)
@@ -53,6 +57,7 @@ public static class ProjectSemanticHash
             AppendGuid(hash, cel.SurfaceId.Value);
             AppendPoint(hash, cel.Position);
             AppendByte(hash, cel.Opacity);
+            AppendEffects(hash, cel.Effects, frameIndex);
         }
 
         AppendAnimation(hash, document);
@@ -127,6 +132,76 @@ public static class ProjectSemanticHash
         }
 
         return "sha256:" + Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+    }
+
+    private static void AppendEffects(
+        IncrementalHash hash,
+        EffectGraph graph,
+        IReadOnlyDictionary<FrameId, int> frameIndex)
+    {
+        AppendInt32(hash, graph.EffectOrder.Count);
+        foreach (var effectId in graph.EffectOrder)
+        {
+            var effect = graph.GetEffect(effectId);
+            AppendGuid(hash, effect.Id.Value);
+            AppendString(hash, effect.TypeId);
+            AppendByte(hash, effect.Enabled ? (byte)1 : (byte)0);
+
+            var parameters = effect.Parameters.OrderBy(pair => pair.Key, StringComparer.Ordinal).ToArray();
+            AppendInt32(hash, parameters.Length);
+            foreach (var pair in parameters)
+            {
+                AppendString(hash, pair.Key);
+                AppendEffectValue(hash, pair.Value);
+            }
+
+            var tracks = effect.ParameterTracks.OrderBy(pair => pair.Key, StringComparer.Ordinal).ToArray();
+            AppendInt32(hash, tracks.Length);
+            foreach (var pair in tracks)
+            {
+                AppendString(hash, pair.Key);
+                AppendGuid(hash, pair.Value.Id.Value);
+                AppendString(hash, pair.Value.Name);
+                var keyframes = pair.Value.Values.OrderBy(value => frameIndex[value.Key]).ToArray();
+                AppendInt32(hash, keyframes.Length);
+                foreach (var keyframe in keyframes)
+                {
+                    AppendGuid(hash, keyframe.Key.Value);
+                    AppendEffectValue(hash, keyframe.Value);
+                }
+            }
+        }
+    }
+
+    private static void AppendEffectValue(IncrementalHash hash, EffectValue value)
+    {
+        AppendInt32(hash, (int)value.Kind);
+        switch (value.Kind)
+        {
+            case EffectParameterKind.Integer:
+                AppendInt64(hash, value.IntegerValue);
+                break;
+            case EffectParameterKind.Number:
+                AppendDouble(hash, value.NumberValue);
+                break;
+            case EffectParameterKind.Boolean:
+                AppendByte(hash, value.BooleanValue ? (byte)1 : (byte)0);
+                break;
+            case EffectParameterKind.Color:
+                AppendColor(hash, value.ColorValue);
+                break;
+            case EffectParameterKind.Point:
+                AppendPoint(hash, value.PointValue);
+                break;
+            case EffectParameterKind.PaletteReference:
+                AppendGuid(hash, value.PaletteIdValue.Value);
+                break;
+            case EffectParameterKind.Text:
+                AppendString(hash, value.TextValue ?? string.Empty);
+                break;
+            default:
+                throw new InvalidOperationException($"Unsupported effect value kind '{value.Kind}'.");
+        }
     }
 
     private static void AppendAnimation(IncrementalHash hash, PixelDocument document)
@@ -277,6 +352,9 @@ public static class ProjectSemanticHash
         AppendInt32(hash, bytes.Length);
         hash.AppendData(bytes);
     }
+
+    private static void AppendDouble(IncrementalHash hash, double value) =>
+        AppendInt64(hash, BitConverter.DoubleToInt64Bits(value));
 
     private static void AppendInt32(IncrementalHash hash, int value)
     {
