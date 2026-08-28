@@ -99,7 +99,7 @@ public sealed class TilePixelDialog : Window
     }
 }
 
-file sealed class TilePixelEditorView : Control
+internal sealed class TilePixelEditorView : Control
 {
     private MyLovePixel.Application.TileSurfacePresentation? _surface;
     private IReadOnlyList<Rgba32>? _palette;
