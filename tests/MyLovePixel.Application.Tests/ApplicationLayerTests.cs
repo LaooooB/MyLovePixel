@@ -42,7 +42,7 @@ public sealed class ApplicationLayerTests
     {
         var workspace = new EditorWorkspace();
         var session = workspace.NewDocument(2, 1);
-        var cel = session.Document.Cels.Single();
+        var cel = session.CaptureSnapshot().Cels.Single();
         session.Execute(new PixelPatchCommand(cel.SurfaceId, [new PixelWrite(0, 0, new Rgba32(255, 0, 0, 255))]));
         var snapshot = session.CaptureSnapshot();
         var canvas = session.RenderCanvas();
@@ -51,7 +51,7 @@ public sealed class ApplicationLayerTests
 
         Assert.Equal(new Rgba32(255, 0, 0, 255), snapshot.GetSurface(cel.SurfaceId).GetPixel(0, 0));
         Assert.Equal(new byte[] { 255, 0, 0, 255, 0, 0, 0, 0 }, canvas.Rgba.ToArray());
-        Assert.Equal(new Rgba32(0, 255, 0, 255), session.Document.Resources.GetSurface(cel.SurfaceId).GetPixel(0, 0));
+        Assert.Equal(new Rgba32(0, 255, 0, 255), session.CaptureSnapshot().GetSurface(cel.SurfaceId).GetPixel(0, 0));
     }
 
     [Fact]
@@ -59,7 +59,7 @@ public sealed class ApplicationLayerTests
     {
         var workspace = new EditorWorkspace();
         var session = workspace.NewDocument(1, 1);
-        var cel = session.Document.Cels.Single();
+        var cel = session.CaptureSnapshot().Cels.Single();
         session.Execute(new PixelPatchCommand(cel.SurfaceId, [new PixelWrite(0, 0, new Rgba32(10, 20, 30, 255))]));
         var registry = ActionRegistry.CreateDefault();
         var context = new EditorActionContext(workspace, new FakeInteraction());
@@ -67,10 +67,10 @@ public sealed class ApplicationLayerTests
 
         Assert.True(registry.CanExecute(BuiltinActionIds.Undo, context));
         await registry.ExecuteAsync(BuiltinActionIds.Undo, context, cancellationToken);
-        Assert.Equal(Rgba32.Transparent, session.Document.Resources.GetSurface(cel.SurfaceId).GetPixel(0, 0));
+        Assert.Equal(Rgba32.Transparent, session.CaptureSnapshot().GetSurface(cel.SurfaceId).GetPixel(0, 0));
         Assert.True(registry.CanExecute(BuiltinActionIds.Redo, context));
         await registry.ExecuteAsync(BuiltinActionIds.Redo, context, cancellationToken);
-        Assert.Equal(new Rgba32(10, 20, 30, 255), session.Document.Resources.GetSurface(cel.SurfaceId).GetPixel(0, 0));
+        Assert.Equal(new Rgba32(10, 20, 30, 255), session.CaptureSnapshot().GetSurface(cel.SurfaceId).GetPixel(0, 0));
     }
 
     [Fact]
@@ -78,7 +78,7 @@ public sealed class ApplicationLayerTests
     {
         var workspace = new EditorWorkspace();
         var session = workspace.NewDocument(1, 1);
-        var first = session.Document.FrameOrder.Single();
+        var first = session.CaptureSnapshot().FrameOrder.Single();
         for (var index = 0; index < 120; index++)
             session.Execute(new CopyFrameCommand(first, FrameCopyMode.Linked));
 
@@ -87,6 +87,56 @@ public sealed class ApplicationLayerTests
         Assert.Equal(12, window.Items.Count);
         Assert.Equal(50, window.Items[0].Index);
         Assert.Equal(61, window.Items[^1].Index);
+    }
+
+    [Fact]
+    public void ToolDispatch_PreviewsWithoutMutationAndCommitsThroughCommandBus()
+    {
+        var workspace = new EditorWorkspace();
+        var session = workspace.NewDocument(3, 1);
+        var cel = session.CaptureSnapshot().Cels.Single();
+        var pencil = session.GetTools().Single(tool => tool.DisplayName == "Pencil");
+        session.SelectTool(pencil.Id);
+
+        var pressed = session.DispatchPointer(new EditorPointerEvent(
+            1,
+            EditorPointerDevice.Mouse,
+            EditorPointerKind.Pressed,
+            new IntPoint(0, 0),
+            1d,
+            EditorPointerButtons.Primary,
+            EditorInputModifiers.None,
+            1));
+        Assert.True(pressed.HasPreview);
+        Assert.Equal(Rgba32.Transparent, session.CaptureSnapshot().GetSurface(cel.SurfaceId).GetPixel(0, 0));
+        Assert.NotEmpty(session.RenderCanvas().PreviewPixels);
+
+        session.DispatchPointer(new EditorPointerEvent(
+            1,
+            EditorPointerDevice.Mouse,
+            EditorPointerKind.Moved,
+            new IntPoint(1, 0),
+            1d,
+            EditorPointerButtons.Primary,
+            EditorInputModifiers.None,
+            2));
+        Assert.Equal(Rgba32.Transparent, session.CaptureSnapshot().GetSurface(cel.SurfaceId).GetPixel(1, 0));
+
+        var released = session.DispatchPointer(new EditorPointerEvent(
+            1,
+            EditorPointerDevice.Mouse,
+            EditorPointerKind.Released,
+            new IntPoint(1, 0),
+            1d,
+            EditorPointerButtons.None,
+            EditorInputModifiers.None,
+            3));
+        Assert.True(released.Committed);
+        Assert.Empty(session.RenderCanvas().PreviewPixels);
+        var after = session.CaptureSnapshot().GetSurface(cel.SurfaceId);
+        Assert.Equal(new Rgba32(0, 0, 0, 255), after.GetPixel(0, 0));
+        Assert.Equal(new Rgba32(0, 0, 0, 255), after.GetPixel(1, 0));
+        Assert.True(session.CanUndo);
     }
 
     [Fact]
@@ -100,7 +150,7 @@ public sealed class ApplicationLayerTests
             var exportPath = Path.Combine(root, "out");
             var workspace = new EditorWorkspace();
             var session = workspace.NewDocument(2, 2);
-            var cel = session.Document.Cels.Single();
+            var cel = session.CaptureSnapshot().Cels.Single();
             session.Execute(new PixelPatchCommand(cel.SurfaceId, [new PixelWrite(1, 1, new Rgba32(1, 2, 3, 255))]));
             Assert.True(session.IsDirty);
 
