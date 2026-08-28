@@ -83,6 +83,7 @@ internal static class ProjectMapper
                 X = cel.Position.X,
                 Y = cel.Position.Y,
                 Opacity = cel.Opacity,
+                Effects = EffectDtoMapper.ToDto(cel.Effects, document.FrameOrder, previous?.Effects),
                 ExtensionData = ExtensionData.Clone(previous?.ExtensionData),
             });
         }
@@ -247,6 +248,7 @@ internal static class ProjectMapper
                 {
                     Position = new IntPoint(item.X, item.Y),
                     Opacity = item.Opacity,
+                    Effects = EffectDtoMapper.FromDto(item.Effects, frameIds),
                 };
                 document.AddCel(cel);
             }
