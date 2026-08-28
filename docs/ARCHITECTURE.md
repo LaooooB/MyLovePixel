@@ -5,10 +5,12 @@
 ## 1. 依赖方向
 
 ```text
-Desktop UI ─┬─→ Tools ─────→ Commands ─────→ Core
-            ├─→ Render ── read Snapshot ────→ Core
-            ├─→ Persistence ─ DTO/Migration → Core
-            └─→ Export ─────→ Render + Core
+Desktop (Avalonia)
+        ↓
+Application ─┬─→ Tools ─────→ Commands ─────→ Core
+             ├─→ Render ── read Snapshot ────→ Core
+             ├─→ Persistence ─ DTO/Migration → Core
+             └─→ Export ─────→ Render + Core
 
 CLI ─────────┬─→ Persistence
              └─→ Export
@@ -45,9 +47,13 @@ Core 保存文档语义和稳定引用模型。
 
 只吃 immutable `DocumentSnapshot`。最终帧像素复用 Render 的 Palette / Color Cycle / Effect 语义，之后再做 trim/crop/scale/extrude/sheet/atlas。`ExportPreset` 是独立 versioned JSON，不等同于 `.pixelproj` schema。
 
+### Application
+
+Application 是 UI-facing orchestration boundary。它管理 workspace/session、ActionId、file workflows、ToolHost routing、snapshot/presentation DTO。Application 可以协调 domain/services，但不能用 UI 绑定便利性绕过 Commands。
+
 ### Desktop UI
 
-UI 负责 workspace、action routing、panels、view state、file dialogs 和 presentation。UI 不直接改 `PixelDocument`，不在 click handler 中实现导出算法，不持有 GPU/bitmap 作为文档真值。
+Desktop 只引用 Application。Avalonia 控件负责窗口、布局、文件选择器、平台输入和 presentation；不直接引用可写 `PixelDocument`/`PixelSurface`，不在 click handler 中实现 serializer/export/raster 算法。
 
 ## 2. 核心引用模型
 
@@ -92,6 +98,8 @@ Palette 是独立资源，有自己的 Revision。Transparent Index 属于 Palet
 ```text
 Input / UI Action
       ↓
+Application / ToolHost
+      ↓
 CommandBus
  ├── Apply Command
  ├── emit DocumentChange
@@ -106,7 +114,8 @@ CommandBus
 3. 像素修改记录 patch/dirty，不复制整个 Document。
 4. 新命令执行后清空 redo branch。
 5. Apply 前应尽可能完成全部验证，避免半提交。
-6. UI 不得绕过 CommandBus 修改 live document。
+6. UI/Application 不得绕过 CommandBus 修改 live document。
+7. Layer/Palette panel 若提供写入能力，必须调用相应 Command-backed session API。
 
 ## 5. Render / Effect / Cache
 
@@ -166,11 +175,19 @@ Migration 必须逐级确定性执行：1→2→3→4→5。Unknown JSON fields 
 
 Atomic Save 必须同目录 temp write、重新打开验证后再 replace；失败时旧文件保持有效。
 
+Recovery/autosave journal 属于 Batch14 workspace infrastructure，默认独立 version，不因为恢复元数据升级 `.pixelproj` schema。
+
 ## 10. Desktop / Action routing
 
-Batch13 起 UI 通过 `ActionId` 连接菜单、Toolbar、快捷键和 command handlers。快捷键只映射 ActionId，不直接绑定 domain mutation。Canvas Widget 只读 render output/snapshot；Timeline 必须虚拟化，不能按总 frame 数创建控件树。
+Batch13 起菜单、Toolbar、快捷键统一通过 `ActionId`。快捷键只映射 ActionId，不直接绑定 domain mutation。
 
-Dock/panel/theme/zoom/selection 等 workspace presentation state 默认不属于 `.pixelproj` 文档语义，除非未来明确设计独立 workspace persistence。
+`DocumentSession` 是受控 live-document 门面；Desktop 获得 Canvas/Layer/Timeline/Palette/Tool presentation 数据，不获得 mutable Document API。
+
+Canvas Widget 只读 `CanvasPresentation`；平台 pointer 转成 `EditorPointerEvent` 后由 Application 路由 ToolHost。Preview 是 transient overlay，pointer release 才通过 CommandBus commit。
+
+Timeline 使用 bounded `TimelineWindow`，不能按总 Frame 数创建控件树。
+
+Dock/panel/theme/zoom/selection/preview 等 workspace presentation state 默认不属于 `.pixelproj` 文档语义，除非未来明确设计独立 workspace persistence。
 
 ## 11. Plugin SDK
 
@@ -186,12 +203,13 @@ Batch15 才定义 versioned Public SDK。此前内部 Registry（Effect/Exporter
 - Undo 后语义状态恢复。
 - 保存文件可在无 UI 环境下通过 Validator。
 - Renderer / Exporter 不拥有 live document 写权限。
-- UI 不越过 CommandBus mutation。
-- Preview / Selection / GPU cache 不是文档真值。
+- Desktop/Application 不越过 CommandBus mutation。
+- Preview / Selection / GPU cache / recovery metadata 不是文档真值。
 
 ## 13. 禁止写法
 
 - Canvas pointer handler 直接改 `byte[]` / `PixelSurface`。
+- Desktop 直接引用 Core mutable document graph。
 - Cel 保存自己的 RGBA 副本。
 - Tilemap 用一张大图作为唯一源数据。
 - 每个 Tool 自己维护 Undo。
@@ -201,4 +219,4 @@ Batch15 才定义 versioned Public SDK。此前内部 Registry（Effect/Exporter
 - 数组下标作为长期 ID。
 - revision 变化但 dirty history 不完整时仍强行 partial redraw。
 - 直接序列化运行时对象图作为长期文件格式。
-- 把 transient docking/selection/preview/cache 状态混入 `.pixelproj`。
+- 把 transient docking/selection/preview/cache/recovery 状态混入 `.pixelproj`。
