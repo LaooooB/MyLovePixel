@@ -180,6 +180,7 @@ public sealed class ToolHostTests
         Assert.Throws<ToolInteractionConflictException>(() =>
             fixture.Host.Dispatch(Pointer(5, PointerEventKind.Released, 2, 0)));
 
+        Assert.Null(fixture.Host.Preview);
         Assert.Equal(Rgba32.Transparent, fixture.Surface.GetPixel(0, 0));
         Assert.Equal(Rgba32.Transparent, fixture.Surface.GetPixel(2, 0));
         Assert.Equal(Blue, fixture.Surface.GetPixel(3, 0));
@@ -187,15 +188,20 @@ public sealed class ToolHostTests
     }
 
     [Fact]
-    public void CelPosition_IsAppliedWhenConvertingCanvasPointerToSurfaceCoordinates()
+    public void TargetOrigin_IsAppliedWhenConvertingCanvasPointerToSurfaceCoordinates()
     {
         var document = PixelDocumentFactory.CreateBlank(4, 1);
         var cel = document.Cels.Single();
-        cel.Position = new IntPoint(10, 20);
         var surface = document.Resources.GetSurface(cel.SurfaceId);
         var bus = new CommandBus(document);
         var reader = new PixelDocumentToolReader(document);
-        var host = new ToolHost(reader, bus, ToolTarget.FromCel(cel), new PencilTool(), Red);
+        var target = new ToolTarget(
+            cel.Id,
+            cel.LayerId,
+            cel.FrameId,
+            cel.SurfaceId,
+            new IntPoint(10, 20));
+        var host = new ToolHost(reader, bus, target, new PencilTool(), Red);
 
         host.Dispatch(Pointer(20, PointerEventKind.Pressed, 11, 20, PointerButtons.Primary));
         host.Dispatch(Pointer(20, PointerEventKind.Released, 11, 20));
