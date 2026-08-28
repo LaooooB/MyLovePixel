@@ -28,7 +28,7 @@ public sealed class PalettePersistenceTests
             .Single(node => node["id"]!.GetValue<string>() == surfaceId.ToString());
         var surfaceEntry = surface["entry"]!.GetValue<string>();
 
-        Assert.Equal(3, manifest["schemaVersion"]!.GetValue<int>());
+        Assert.Equal(4, manifest["schemaVersion"]!.GetValue<int>());
         Assert.Equal("indexed8", surface["format"]!.GetValue<string>());
         Assert.Equal(paletteId.ToString(), surface["paletteId"]!.GetValue<string>());
         Assert.Equal(56, entries[surfaceEntry].Length); // 52-byte MLPX header + 4 indexed pixels.
@@ -47,7 +47,7 @@ public sealed class PalettePersistenceTests
     }
 
     [Fact]
-    public void Schema2Project_MigratesToSchema3WithEmptyPaletteCollection()
+    public void Schema2Project_MigratesThroughSchema4WithEmptyPaletteAndTileCollections()
     {
         var entries = SaveToEntries(new PixelProject(PixelDocumentFactory.CreateBlank(2, 2)));
         var manifest = ParseEntry(entries, PixelProjectFormat.ManifestEntry);
@@ -56,12 +56,17 @@ public sealed class PalettePersistenceTests
 
         manifest["schemaVersion"] = 2;
         document.Remove("palettes");
+        document.Remove("seed");
+        document.Remove("tilesets");
+        document.Remove("tilemaps");
         entries[documentEntry] = Encoding.UTF8.GetBytes(document.ToJsonString(ProjectJson.Options));
         Rehash(entries, manifest);
 
         using var oldProject = WriteEntries(entries);
         var loaded = PixelProjectFile.Load(oldProject);
         Assert.Empty(loaded.Document.Resources.PaletteIds);
+        Assert.Empty(loaded.Document.Resources.TilesetIds);
+        Assert.Empty(loaded.Document.Resources.TilemapIds);
 
         using var savedAgain = new MemoryStream();
         PixelProjectFile.Save(savedAgain, loaded);
@@ -72,8 +77,10 @@ public sealed class PalettePersistenceTests
             migratedEntries,
             migratedManifest["documentEntry"]!.GetValue<string>());
 
-        Assert.Equal(3, migratedManifest["schemaVersion"]!.GetValue<int>());
+        Assert.Equal(4, migratedManifest["schemaVersion"]!.GetValue<int>());
         Assert.Empty(migratedDocument["palettes"]!.AsArray());
+        Assert.Empty(migratedDocument["tilesets"]!.AsArray());
+        Assert.Empty(migratedDocument["tilemaps"]!.AsArray());
     }
 
     [Fact]
