@@ -17,7 +17,7 @@ public sealed class FrameCompositeRenderNode : IRenderNode
         if (target.Size != context.Snapshot.Canvas.Size)
             throw new ArgumentException("Render target size must match the document canvas.", nameof(target));
         if (context.Snapshot.Canvas.PixelFormat != PixelFormat.Rgba32)
-            throw new NotSupportedException($"Canvas pixel format '{context.Snapshot.Canvas.PixelFormat}' is not supported by the CPU compositor.");
+            throw new NotSupportedException($"Canvas compositing format '{context.Snapshot.Canvas.PixelFormat}' is not supported by the CPU compositor.");
 
         var clippedRegion = RenderMath.Intersect(region, RenderMath.Bounds(target.Size));
         if (clippedRegion.IsEmpty) return;
@@ -37,14 +37,12 @@ public sealed class FrameCompositeRenderNode : IRenderNode
             if (!celsByLayer.TryGetValue(layerId, out var cel) || cel.Opacity == 0) continue;
 
             var surface = context.Snapshot.GetSurface(cel.SurfaceId);
-            if (surface.Format != PixelFormat.Rgba32)
-                throw new NotSupportedException($"Surface pixel format '{surface.Format}' is not supported by the CPU compositor.");
-
-            CompositeCel(surface, cel, layer, target, clippedRegion);
+            CompositeCel(context.Snapshot, surface, cel, layer, target, clippedRegion);
         }
     }
 
     private static void CompositeCel(
+        DocumentSnapshot snapshot,
         PixelSurfaceSnapshot surface,
         CelSnapshot cel,
         LayerSnapshot layer,
@@ -55,12 +53,25 @@ public sealed class FrameCompositeRenderNode : IRenderNode
         var drawRegion = RenderMath.Intersect(region, celBounds);
         if (drawRegion.IsEmpty) return;
 
+        PaletteSnapshot? palette = null;
+        if (surface.Format == PixelFormat.Indexed8)
+        {
+            if (surface.PaletteId is not { } paletteId)
+                throw new InvalidOperationException($"Indexed8 surface '{cel.SurfaceId}' has no palette reference.");
+            palette = snapshot.GetPalette(paletteId);
+        }
+
         for (var canvasY = drawRegion.Y; canvasY < drawRegion.Bottom; canvasY++)
         for (var canvasX = drawRegion.X; canvasX < drawRegion.Right; canvasX++)
         {
             var sourceX = canvasX - cel.Position.X;
             var sourceY = canvasY - cel.Position.Y;
-            var source = surface.GetPixel(sourceX, sourceY);
+            var source = surface.Format switch
+            {
+                PixelFormat.Rgba32 => surface.GetPixel(sourceX, sourceY),
+                PixelFormat.Indexed8 => palette!.ResolveColor(surface.GetIndex(sourceX, sourceY)),
+                _ => throw new NotSupportedException($"Surface pixel format '{surface.Format}' has no CPU compositor implementation."),
+            };
             if (source.A == 0) continue;
 
             var effectiveAlpha = RenderMath.ScaleByte(source.A, cel.Opacity);
