@@ -26,6 +26,10 @@ internal static class ProjectMapper
                 Height = document.Canvas.Size.Height,
                 ExtensionData = ExtensionData.Clone(template?.Canvas.ExtensionData),
             },
+            Animation = AnimationDtoMapper.ToDto(
+                document.Animation,
+                document.FrameOrder,
+                template?.Animation),
             ExtensionData = ExtensionData.Clone(template?.ExtensionData),
         };
 
@@ -33,7 +37,7 @@ internal static class ProjectMapper
         {
             var layer = document.GetLayer(layerId);
             if (layer is not PixelLayer)
-                throw new PixelProjectException(PixelProjectErrorCode.ValidationFailed, $"Layer type '{layer.GetType().Name}' has no Batch 03 persistence mapping.");
+                throw new PixelProjectException(PixelProjectErrorCode.ValidationFailed, $"Layer type '{layer.GetType().Name}' has no persistence mapping.");
 
             layerTemplates.TryGetValue(layer.Id.ToString(), out var previous);
             dto.Layers.Add(new LayerDto
@@ -115,9 +119,11 @@ internal static class ProjectMapper
 
         try
         {
+            var animation = AnimationDtoMapper.CreateMetadata(dto.Animation);
             var document = new PixelDocument(
                 new DocumentId(ParseGuid(dto.Id, "document.id")),
-                new CanvasSpec(new IntSize(dto.Canvas.Width, dto.Canvas.Height)));
+                new CanvasSpec(new IntSize(dto.Canvas.Width, dto.Canvas.Height)),
+                animation);
 
             var layerIds = new HashSet<LayerId>();
             foreach (var item in dto.Layers)
@@ -143,6 +149,8 @@ internal static class ProjectMapper
                 if (!frameIds.Add(id)) throw InvalidReference($"Duplicate frame id '{item.Id}'.");
                 document.AddFrame(new Frame(id, item.DurationTicks));
             }
+
+            AnimationDtoMapper.Populate(animation, dto.Animation, frameIds);
 
             var surfaceIds = new HashSet<ResourceId>();
             var surfaceEntries = new HashSet<string>(StringComparer.Ordinal);
