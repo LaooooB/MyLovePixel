@@ -66,7 +66,7 @@ public sealed class MoveEffectCommand(CelId celId, EffectInstanceId effectId, in
     public CommandApplication Apply(PixelDocument document)
     {
         var graph = document.GetCel(celId).Effects;
-        var oldIndex = graph.EffectOrder.IndexOf(effectId);
+        var oldIndex = graph.EffectOrder.ToList().IndexOf(effectId);
         if (oldIndex < 0) throw new KeyNotFoundException($"Effect instance '{effectId}' does not exist.");
         graph.Move(effectId, newIndex);
         return new CommandApplication(new Undo(oldIndex), DocumentChange.Empty);
@@ -322,6 +322,8 @@ public sealed class BakeEffectsCommand : ICommand
         cel.SurfaceId = undo.OriginalSurfaceId;
         cel.Position = undo.OriginalPosition;
         cel.Effects = EffectGraph.FromSnapshot(undo.OriginalEffects);
+        if (document.IsSurfaceReferenced(_bakedSurfaceId))
+            throw new InvalidOperationException("Cannot remove baked surface while it is still referenced.");
         document.Resources.RemoveSurface(_bakedSurfaceId);
         return DocumentChange.Empty;
     }
