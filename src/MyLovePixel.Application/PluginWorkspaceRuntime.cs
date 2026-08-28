@@ -14,7 +14,7 @@ public sealed record PluginPanelSectionPresentation(string Title, IReadOnlyList<
 public sealed record PluginPanelPresentation(string Id, string DisplayName, string Title, IReadOnlyList<PluginPanelSectionPresentation> Sections);
 public sealed record PluginPanelActionResult(bool Succeeded, bool Mutated, string? Error);
 
-public sealed class PluginWorkspaceRuntime : IDisposable
+public sealed partial class PluginWorkspaceRuntime : IDisposable
 {
     private readonly EditorWorkspace _workspace;
     private readonly PluginHost.PluginHost _host = new();
@@ -45,6 +45,7 @@ public sealed class PluginWorkspaceRuntime : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed != 0, this);
         var result = _loader.Load(assemblyPath);
+        if (result.Succeeded) RefreshSessionRenderers();
         return new PluginLoadPresentation(
             result.Succeeded,
             result.PluginId?.Value,
@@ -62,6 +63,7 @@ public sealed class PluginWorkspaceRuntime : IDisposable
             _activePluginTools.Remove(pair.Key);
             _previews.Remove(pair.Key);
         }
+        RefreshSessionRenderers();
         return true;
     }
 
@@ -174,11 +176,7 @@ public sealed class PluginWorkspaceRuntime : IDisposable
             catch (Exception ex)
             {
                 var owner = _host.Panels.GetOwner(provider.Id);
-                _host.ReportExecutionFailure(
-                    owner,
-                    provider.Id,
-                    $"Plugin panel '{provider.Id}' failed while building presentation.",
-                    ex);
+                _host.ReportExecutionFailure(owner, provider.Id, $"Plugin panel '{provider.Id}' failed while building presentation.", ex);
             }
         }
         return result;
@@ -209,11 +207,7 @@ public sealed class PluginWorkspaceRuntime : IDisposable
         }
         catch (Exception ex)
         {
-            _host.ReportExecutionFailure(
-                owner,
-                panelId,
-                $"Plugin panel '{panelId}' action '{actionId}' failed.",
-                ex);
+            _host.ReportExecutionFailure(owner, panelId, $"Plugin panel '{panelId}' action '{actionId}' failed.", ex);
             return new PluginPanelActionResult(false, false, ex.Message);
         }
 
@@ -232,11 +226,7 @@ public sealed class PluginWorkspaceRuntime : IDisposable
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or KeyNotFoundException or NotSupportedException)
         {
-            _host.ReportInvalidMutation(
-                owner,
-                panelId,
-                $"Plugin panel '{panelId}' mutation was rejected.",
-                ex);
+            _host.ReportInvalidMutation(owner, panelId, $"Plugin panel '{panelId}' mutation was rejected.", ex);
             return new PluginPanelActionResult(false, false, ex.Message);
         }
     }
