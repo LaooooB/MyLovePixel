@@ -4,7 +4,7 @@ namespace MyLovePixel.Core.Pixel;
 
 public sealed class PixelSurface
 {
-    private readonly byte[] _pixels;
+    private byte[] _pixels;
 
     public PixelSurface(IntSize size, Rgba32? fill = null)
     {
@@ -41,8 +41,8 @@ public sealed class PixelSurface
     }
 
     public IntSize Size { get; }
-    public PixelFormat Format { get; }
-    public PaletteId? PaletteId { get; }
+    public PixelFormat Format { get; private set; }
+    public PaletteId? PaletteId { get; private set; }
     public long Revision { get; private set; }
 
     public static PixelSurface CreateIndexed(
@@ -100,6 +100,15 @@ public sealed class PixelSurface
             throw new ArgumentException($"Indexed8 byte length must be {expectedLength}, received {bytes.Length}.", nameof(bytes));
 
         return new PixelSurface(size, PixelFormat.Indexed8, paletteId, bytes.ToArray(), revision);
+    }
+
+    internal void ReplaceState(PixelFormat format, PaletteId? paletteId, ReadOnlySpan<byte> bytes)
+    {
+        var replacement = new PixelSurface(Size, format, paletteId, bytes.ToArray(), checked(Revision + 1));
+        Format = replacement.Format;
+        PaletteId = replacement.PaletteId;
+        _pixels = replacement._pixels;
+        Revision = replacement.Revision;
     }
 
     internal void SetPixel(int x, int y, Rgba32 color)
