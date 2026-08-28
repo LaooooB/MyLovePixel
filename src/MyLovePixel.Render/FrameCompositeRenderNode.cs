@@ -1,13 +1,20 @@
 using MyLovePixel.Core.Document;
 using MyLovePixel.Core.Pixel;
 using MyLovePixel.Core.Primitives;
+using MyLovePixel.Effects;
 
 namespace MyLovePixel.Render;
 
 public sealed class FrameCompositeRenderNode : IRenderNode
 {
+    public FrameCompositeRenderNode(EffectEngine? effects = null)
+    {
+        Effects = effects ?? EffectEngine.CreateDefault();
+    }
+
     public string Id => "core.frame-composite";
-    public long Revision => 0;
+    public long Revision => Effects.ConfigurationRevision;
+    public EffectEngine Effects { get; }
 
     public void Execute(RenderNodeContext context, IRenderTarget target, IntRect region)
     {
@@ -37,8 +44,37 @@ public sealed class FrameCompositeRenderNode : IRenderNode
                 throw new NotSupportedException($"Layer snapshot kind '{layer.Kind}' has no CPU compositor implementation.");
             if (!celsByLayer.TryGetValue(layerId, out var cel) || cel.Opacity == 0) continue;
 
+            if (cel.Effects.EffectOrder.Count != 0)
+            {
+                var evaluated = Effects.EvaluateCel(context.Snapshot, context.FrameId, cel);
+                CompositeEffectImage(evaluated.Image, cel, layer, target, clippedRegion);
+                continue;
+            }
+
             var surface = context.Snapshot.GetSurface(cel.SurfaceId);
             CompositeCel(context.Snapshot, surface, cel, layer, colorCycles, target, clippedRegion);
+        }
+    }
+
+    private static void CompositeEffectImage(
+        EffectImage image,
+        CelSnapshot cel,
+        LayerSnapshot layer,
+        IRenderTarget target,
+        IntRect region)
+    {
+        var origin = new IntPoint(
+            checked(cel.Position.X + image.Origin.X),
+            checked(cel.Position.Y + image.Origin.Y));
+        var bounds = new IntRect(origin.X, origin.Y, image.Size.Width, image.Size.Height);
+        var drawRegion = RenderMath.Intersect(region, bounds);
+        if (drawRegion.IsEmpty) return;
+
+        for (var canvasY = drawRegion.Y; canvasY < drawRegion.Bottom; canvasY++)
+        for (var canvasX = drawRegion.X; canvasX < drawRegion.Right; canvasX++)
+        {
+            var source = image.GetPixel(canvasX - origin.X, canvasY - origin.Y);
+            CompositeSourcePixel(source, cel.Opacity, layer.Opacity, target, canvasX, canvasY);
         }
     }
 
@@ -76,16 +112,25 @@ public sealed class FrameCompositeRenderNode : IRenderNode
                 PixelFormat.Indexed8 => ResolveIndexed(surface, sourceX, sourceY, paletteId!.Value, palette!, colorCycles),
                 _ => throw new NotSupportedException($"Surface pixel format '{surface.Format}' has no CPU compositor implementation."),
             };
-            if (source.A == 0) continue;
-
-            var effectiveAlpha = RenderMath.ScaleByte(source.A, cel.Opacity);
-            effectiveAlpha = RenderMath.ScaleByte(effectiveAlpha, layer.Opacity);
-            if (effectiveAlpha == 0) continue;
-
-            var effectiveSource = new Rgba32(source.R, source.G, source.B, effectiveAlpha);
-            var destination = target.GetPixel(canvasX, canvasY);
-            target.SetPixel(canvasX, canvasY, RenderMath.SourceOver(destination, effectiveSource));
+            CompositeSourcePixel(source, cel.Opacity, layer.Opacity, target, canvasX, canvasY);
         }
+    }
+
+    private static void CompositeSourcePixel(
+        Rgba32 source,
+        byte celOpacity,
+        byte layerOpacity,
+        IRenderTarget target,
+        int canvasX,
+        int canvasY)
+    {
+        if (source.A == 0) return;
+        var effectiveAlpha = RenderMath.ScaleByte(source.A, celOpacity);
+        effectiveAlpha = RenderMath.ScaleByte(effectiveAlpha, layerOpacity);
+        if (effectiveAlpha == 0) return;
+        var effectiveSource = new Rgba32(source.R, source.G, source.B, effectiveAlpha);
+        var destination = target.GetPixel(canvasX, canvasY);
+        target.SetPixel(canvasX, canvasY, RenderMath.SourceOver(destination, effectiveSource));
     }
 
     private static Rgba32 ResolveIndexed(
