@@ -264,7 +264,9 @@ public sealed partial class MainWindow : Window
     {
         var editorPage = InspectorScroll(
             SectionCard("Tool options", "Changes apply to the active drawing or selection tool.", _toolOptionsPanel),
-            SectionCard("Color", "Primary/secondary colors, palettes and color processing.", _palettePanel));
+            SectionCard("Color", "Primary/secondary colors and document color processing.", _palettePanel),
+            BuildStudioPaletteEditor(),
+            BuildInspectorQuickTools());
 
         var layersPage = InspectorScroll(
             SectionCard("Layers", "Select, rename, reorder, hide, lock and change opacity.", _layersPanel));
@@ -313,6 +315,11 @@ public sealed partial class MainWindow : Window
         };
         DockPanel.SetDock(title, Dock.Top);
         root.Children.Add(title);
+
+        var preview = BuildInspectorPreviewBox();
+        DockPanel.SetDock(preview, Dock.Top);
+        root.Children.Add(preview);
+
         root.Children.Add(tabs);
         return root;
     }
