@@ -13,7 +13,12 @@ public sealed class ProjectMigrationRegistry
 {
     private readonly Dictionary<int, IProjectMigration> _byFromVersion = [];
 
-    public static ProjectMigrationRegistry CreateDefault() => new();
+    public static ProjectMigrationRegistry CreateDefault()
+    {
+        var registry = new ProjectMigrationRegistry();
+        registry.Register(new Schema1To2AnimationMigration());
+        return registry;
+    }
 
     public void Register(IProjectMigration migration)
     {
