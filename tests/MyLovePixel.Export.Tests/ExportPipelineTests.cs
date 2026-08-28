@@ -72,7 +72,43 @@ public sealed class ExportPipelineTests
     }
 
     [Fact]
-    public void AtlasPacking_IsDeterministicAndMetadataKeepsStableFrameIds()
+    public void IndexedPaletteAndColorCycle_AreResolvedByRendererWithoutMutatingSourceResources()
+    {
+        var transparent = new Rgba32(0, 0, 0, 0);
+        var red = new Rgba32(255, 0, 0, 255);
+        var green = new Rgba32(0, 255, 0, 255);
+        var document = IndexedDocumentFactory.Create(
+            new IntSize(2, 1),
+            [transparent, red, green],
+            transparentIndex: 0,
+            indices: [1, 2]);
+        var cel = document.Cels.Single();
+        var surface = document.Resources.GetSurface(cel.SurfaceId);
+        var paletteId = surface.PaletteId!.Value;
+        var palette = document.Resources.GetPalette(paletteId);
+        var surfaceRevision = surface.Revision;
+        var paletteRevision = palette.Revision;
+        var sourceIndices = surface.Snapshot().Bytes.ToArray();
+        new CommandBus(document).Execute(new SetColorCyclesKeyframeCommand(
+            cel.FrameId,
+            new ColorCycleFrameValue([new PaletteCycle(paletteId, 1, 2, 1)])));
+
+        var bundle = ExportPipeline.CreateDefault().Execute(new ExportRequest(DocumentSnapshot.Capture(document), new ExportPreset
+        {
+            Layout = ExportLayout.SeparateFrames,
+            Trim = false,
+        }));
+        var decoded = PngCodec.Decode(bundle.Artifacts.Single(item => item.MediaType == "image/png").Content.Span);
+
+        Assert.Equal(green, decoded.GetPixel(0, 0));
+        Assert.Equal(red, decoded.GetPixel(1, 0));
+        Assert.Equal(surfaceRevision, surface.Revision);
+        Assert.Equal(paletteRevision, palette.Revision);
+        Assert.Equal(sourceIndices, surface.Snapshot().Bytes.ToArray());
+    }
+
+    [Fact]
+    public void AtlasPacking_IsDeterministicAndMetadataKeepsStableFrameOrder()
     {
         var document = PixelDocumentFactory.CreateBlank(2, 2);
         var firstFrame = document.FrameOrder.Single();
@@ -99,8 +135,92 @@ public sealed class ExportPipelineTests
             second.Artifacts.Select(item => (item.RelativePath, Bytes: Convert.ToHexString(item.Content.Span))).ToArray());
         using var json = JsonDocument.Parse(first.Artifacts.Single(item => item.MediaType == "application/json").Content);
         var ids = json.RootElement.GetProperty("frames").EnumerateArray().Select(frame => frame.GetProperty("id").GetString()).ToArray();
-        Assert.Contains(firstFrame.ToString(), ids);
-        Assert.Contains(copy.NewFrameId.ToString(), ids);
+        Assert.Equal(new[] { firstFrame.ToString(), copy.NewFrameId.ToString() }, ids);
+    }
+
+    [Fact]
+    public void ClipTagAndExplicitSelections_ResolveAgainstSnapshotFrameOrder()
+    {
+        var document = PixelDocumentFactory.CreateBlank(1, 1);
+        var first = document.FrameOrder.Single();
+        var bus = new CommandBus(document);
+        var copySecond = new CopyFrameCommand(first, FrameCopyMode.Linked);
+        bus.Execute(copySecond);
+        var second = copySecond.NewFrameId;
+        var copyThird = new CopyFrameCommand(second, FrameCopyMode.Linked);
+        bus.Execute(copyThird);
+        var third = copyThird.NewFrameId;
+        var clipId = AnimationClipId.New();
+        var tagId = AnimationTagId.New();
+        bus.Execute(new UpsertAnimationClipCommand(new AnimationClip(clipId, "Run", second, third)));
+        bus.Execute(new UpsertAnimationTagCommand(new AnimationTag(tagId, "Windup", first, second)));
+        var snapshot = DocumentSnapshot.Capture(document);
+        var pipeline = ExportPipeline.CreateDefault();
+
+        var clip = pipeline.Execute(new ExportRequest(snapshot, new ExportPreset
+        {
+            Layout = ExportLayout.SeparateFrames,
+            Trim = false,
+            Selection = ExportFrameSelection.ForClip(clipId),
+        }));
+        AssertMetadataFrameIds(clip, second, third);
+
+        var tag = pipeline.Execute(new ExportRequest(snapshot, new ExportPreset
+        {
+            Layout = ExportLayout.SeparateFrames,
+            Trim = false,
+            Selection = ExportFrameSelection.ForTag(tagId),
+        }));
+        AssertMetadataFrameIds(tag, first, second);
+
+        var explicitMiddle = pipeline.Execute(new ExportRequest(snapshot, new ExportPreset
+        {
+            Layout = ExportLayout.SeparateFrames,
+            Trim = false,
+            Selection = ExportFrameSelection.Explicit([second]),
+        }));
+        using var explicitJson = JsonDocument.Parse(explicitMiddle.Artifacts.Single(item => item.MediaType == "application/json").Content);
+        Assert.Single(explicitJson.RootElement.GetProperty("clips").EnumerateArray());
+        Assert.Single(explicitJson.RootElement.GetProperty("tags").EnumerateArray());
+    }
+
+    [Fact]
+    public void Metadata_ExportsGameplayTracksSlicesAndDocumentCoordinateSpace()
+    {
+        var document = PixelDocumentFactory.CreateBlank(8, 8);
+        var frame = document.FrameOrder.Single();
+        var bus = new CommandBus(document);
+        var sliceId = SliceId.New();
+        bus.Execute(new SetPivotKeyframeCommand(frame, new IntPoint(3, 4)));
+        bus.Execute(new SetHitboxesKeyframeCommand(frame, new BoxFrameValue([new NamedBox("body", new IntRect(1, 2, 3, 4))])));
+        bus.Execute(new SetHurtboxesKeyframeCommand(frame, new BoxFrameValue([new NamedBox("hurt", new IntRect(2, 3, 2, 2))])));
+        bus.Execute(new SetSocketsKeyframeCommand(frame, new SocketFrameValue([new SocketPose("hand", new IntPoint(6, 5))])));
+        bus.Execute(new SetAnimationEventsKeyframeCommand(frame, new EventFrameValue([new AnimationEventMarker("swing", "heavy")])));
+        bus.Execute(new UpsertSpriteSliceCommand(new SpriteSlice(
+            sliceId,
+            "ui",
+            new IntRect(1, 1, 6, 6),
+            new IntPoint(3, 3),
+            new NineSliceInsets(1, 1, 1, 1))));
+
+        var bundle = ExportPipeline.CreateDefault().Execute(new ExportRequest(DocumentSnapshot.Capture(document), new ExportPreset
+        {
+            Layout = ExportLayout.SeparateFrames,
+            Trim = false,
+        }));
+        using var json = JsonDocument.Parse(bundle.Artifacts.Single(item => item.MediaType == "application/json").Content);
+        var root = json.RootElement;
+        var metadataFrame = root.GetProperty("frames")[0];
+
+        Assert.Equal("document", root.GetProperty("coordinateSpace").GetString());
+        Assert.Equal(3, metadataFrame.GetProperty("pivot").GetProperty("x").GetInt32());
+        Assert.Equal("body", metadataFrame.GetProperty("hitboxes")[0].GetProperty("name").GetString());
+        Assert.Equal("hurt", metadataFrame.GetProperty("hurtboxes")[0].GetProperty("name").GetString());
+        Assert.Equal("hand", metadataFrame.GetProperty("sockets")[0].GetProperty("name").GetString());
+        Assert.Equal("swing", metadataFrame.GetProperty("events")[0].GetProperty("name").GetString());
+        Assert.Equal("heavy", metadataFrame.GetProperty("events")[0].GetProperty("payload").GetString());
+        Assert.Equal(sliceId.ToString(), root.GetProperty("slices")[0].GetProperty("id").GetString());
+        Assert.Equal(1, root.GetProperty("slices")[0].GetProperty("nineSlice").GetProperty("left").GetInt32());
     }
 
     [Fact]
@@ -123,9 +243,9 @@ public sealed class ExportPipelineTests
         Assert.Equal(new Rgba32(10, 20, 30, 255), decoded.GetPixel(1, 1));
         Assert.Equal(new Rgba32(10, 20, 30, 255), decoded.GetPixel(0, 0));
         using var json = JsonDocument.Parse(bundle.Artifacts.Single(item => item.MediaType == "application/json").Content);
-        var frame = json.RootElement.GetProperty("frames")[0];
-        Assert.Equal(2, frame.GetProperty("sourceRect").GetProperty("x").GetInt32());
-        Assert.Equal(2, frame.GetProperty("sourceRect").GetProperty("y").GetInt32());
+        var metadataFrame = json.RootElement.GetProperty("frames")[0];
+        Assert.Equal(2, metadataFrame.GetProperty("sourceRect").GetProperty("x").GetInt32());
+        Assert.Equal(2, metadataFrame.GetProperty("sourceRect").GetProperty("y").GetInt32());
     }
 
     [Fact]
@@ -161,5 +281,15 @@ public sealed class ExportPipelineTests
         Assert.Equal(preset.Crop, loaded.Crop);
         Assert.Equal(3, loaded.Scale);
         Assert.True(loaded.PowerOfTwoAtlas);
+    }
+
+    private static void AssertMetadataFrameIds(ExportBundle bundle, params FrameId[] expected)
+    {
+        Assert.Equal(expected.Length, bundle.Artifacts.Count(item => item.MediaType == "image/png"));
+        using var json = JsonDocument.Parse(bundle.Artifacts.Single(item => item.MediaType == "application/json").Content);
+        var ids = json.RootElement.GetProperty("frames").EnumerateArray()
+            .Select(item => item.GetProperty("id").GetString())
+            .ToArray();
+        Assert.Equal(expected.Select(id => id.ToString()).ToArray(), ids);
     }
 }
