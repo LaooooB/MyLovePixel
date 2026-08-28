@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - ui-dark-release-build
+      - ui-full-ux-build
     paths:
       - 'src/**'
       - 'tests/**'
@@ -27,19 +28,18 @@ jobs:
   build-release:
     runs-on: windows-2022
     timeout-minutes: 30
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Apply dark UI patch
+      - name: Apply full UX source overlay
         shell: pwsh
         run: |
-          $patchRoot = Join-Path $env:RUNNER_TEMP 'mylovepixel-ui-patch'
+          $patchRoot = Join-Path $env:RUNNER_TEMP 'mylovepixel-full-ui'
           if (Test-Path $patchRoot) { Remove-Item -Recurse -Force $patchRoot }
-          Expand-Archive -Path '.ci/MyLovePixel-ui-patch.zip' -DestinationPath $patchRoot -Force
-          Copy-Item -Force "$patchRoot/MyLovePixel-ui-patch/src/MyLovePixel.Desktop/*.cs" 'src/MyLovePixel.Desktop/'
-          if (-not (Test-Path 'src/MyLovePixel.Desktop/EditorStyles.cs')) { throw 'UI patch application failed.' }
+          Expand-Archive -Path '.ci/MyLovePixel-full-ui-patch.zip' -DestinationPath $patchRoot -Force
+          Copy-Item -Path "$patchRoot/src/*" -Destination 'src' -Recurse -Force
+          if (-not (Test-Path 'src/MyLovePixel.Desktop/EditorDialogs.cs')) { throw 'Full UI patch application failed.' }
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
@@ -103,5 +103,3 @@ jobs:
           path: release/MyLovePixel-Windows-x64.zip
           if-no-files-found: error
           retention-days: 30
-
-# Triggered build workflow for the dark UI release branch.
