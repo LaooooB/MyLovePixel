@@ -14,6 +14,7 @@ on:
       - 'global.json'
       - 'MyLovePixel.slnx'
       - '.github/workflows/windows-release.yml'
+      - '.ci/**'
 
 permissions:
   contents: read
