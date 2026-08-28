@@ -1,3 +1,4 @@
+using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -12,14 +13,16 @@ namespace MyLovePixel.Desktop;
 public sealed partial class MainWindow
 {
     private readonly PixelPreviewView _quickPreview = new();
-    private readonly WrapPanel _quickPaletteColors = new() { ItemWidth = 28, ItemHeight = 28 };
-    private readonly Border _quickPrimary = Swatch();
-    private readonly Border _quickSecondary = Swatch();
-    private readonly TextBlock _quickZoom = new();
-    private readonly TextBlock _quickPaletteHint = new() { TextWrapping = TextWrapping.Wrap };
+    private readonly WrapPanel _studioPaletteSwatches = new() { ItemWidth = 20, ItemHeight = 20 };
+    private readonly NumericUpDown _studioR = ChannelInput();
+    private readonly NumericUpDown _studioG = ChannelInput();
+    private readonly NumericUpDown _studioB = ChannelInput();
+    private readonly TextBox _studioHex = new() { Text = "#000000", MinWidth = 112 };
+    private readonly Border _studioColorPreview = Swatch();
     private readonly DispatcherTimer _convenienceTimer = new() { Interval = TimeSpan.FromMilliseconds(120) };
     private bool _convenienceInstalled;
-    private string? _quickPaletteSignature;
+    private bool _syncingStudioColor;
+    private Rgba32 _studioColor = new(0, 0, 0, 255);
 
     protected override void OnOpened(EventArgs e)
     {
@@ -27,35 +30,12 @@ public sealed partial class MainWindow
         if (_convenienceInstalled) return;
         _convenienceInstalled = true;
 
-        if (Content is Control shell)
-        {
-            // The shell is already parented by Window when OnOpened runs. Build the new
-            // utility panel first, then explicitly detach the shell before reparenting it.
-            // Avalonia rejects controls that are added to a second logical/visual parent.
-            var utility = BuildConveniencePanel();
-            var layout = new Grid { ColumnDefinitions = new ColumnDefinitions("*,224") };
-            Content = null;
-            try
-            {
-                layout.Children.Add(shell);
-                Grid.SetColumn(utility, 1);
-                layout.Children.Add(utility);
-                Content = layout;
-            }
-            catch (Exception ex)
-            {
-                layout.Children.Remove(shell);
-                Content = shell;
-                CrashLog.Write("ConvenienceLayout", ex);
-                throw;
-            }
-        }
-
+        _quickPreview.Source = _canvas;
         _canvas.PointerWheelChanged += OnConvenienceCanvasWheel;
         KeyDown += OnConvenienceKeyDown;
         _convenienceTimer.Tick += OnConvenienceTick;
         _convenienceTimer.Start();
-        RefreshConvenienceUi(forcePalette: true);
+        RefreshConvenienceUi();
         Dispatcher.UIThread.Post(FitCanvas, DispatcherPriority.Background);
     }
 
@@ -67,167 +47,263 @@ public sealed partial class MainWindow
         base.OnClosed(e);
     }
 
-    private Control BuildConveniencePanel()
+    private Control BuildInspectorPreviewBox()
     {
         _quickPreview.Source = _canvas;
-        _quickPreview.Height = 158;
+        _quickPreview.Height = 142;
         _quickPreview.HorizontalAlignment = HorizontalAlignment.Stretch;
-
-        _quickPrimary.Width = 32;
-        _quickPrimary.Height = 32;
-        _quickSecondary.Width = 32;
-        _quickSecondary.Height = 32;
-
-        var previewBody = new StackPanel { Spacing = 7 };
-        previewBody.Children.Add(_quickPreview);
-        _quickZoom.Classes.Add("muted");
-        previewBody.Children.Add(_quickZoom);
-        previewBody.Children.Add(Icons(
-            IconButton("−", "Zoom out", () => ChangeZoom(0.8d)),
-            TextIconButton("", "Fit", "Fit canvas in the editor", FitCanvas),
-            TextIconButton("", "100%", "Reset zoom to 100%", () => SetZoom(1d)),
-            IconButton("＋", "Zoom in", () => ChangeZoom(1.25d))));
-
-        var colorsBody = new StackPanel { Spacing = 8 };
-        var activeColors = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*,Auto"), ColumnSpacing = 6 };
-        activeColors.Children.Add(QuickColorButton(_quickPrimary, "Primary color", true));
-        activeColors.Children.Add(Place(QuickColorButton(_quickSecondary, "Secondary color", false), 1));
-        activeColors.Children.Add(Place(IconButton("⇄", "Swap primary and secondary colors", SwapColors), 2));
-        colorsBody.Children.Add(activeColors);
-        colorsBody.Children.Add(_quickPaletteColors);
-        _quickPaletteHint.Classes.Add("subtle");
-        colorsBody.Children.Add(_quickPaletteHint);
-
-        var toolsBody = new WrapPanel { ItemWidth = 94, ItemHeight = 36 };
-        toolsBody.Children.Add(TextIconButton("✎", "Pencil", "Pencil · B", () => SelectQuickTool("core.pencil")));
-        toolsBody.Children.Add(TextIconButton("⌫", "Eraser", "Eraser · E", () => SelectQuickTool("core.eraser")));
-        toolsBody.Children.Add(TextIconButton("▣", "Fill", "Fill · G", () => SelectQuickTool("core.fill")));
-        toolsBody.Children.Add(TextIconButton("▧", "Select", "Selection", SelectQuickSelection));
-
-        var help = new TextBlock
-        {
-            Text = "Wheel: zoom  ·  Right-click canvas: pick color\nB/E/G: pencil/eraser/fill  ·  F: fit  ·  X: swap colors",
-            TextWrapping = TextWrapping.Wrap,
-        };
-        help.Classes.Add("subtle");
-
-        var stack = new StackPanel { Spacing = 10, Margin = new Thickness(9) };
-        stack.Children.Add(SectionCard("Live Preview", "Always shows the whole canvas without the editor grid.", previewBody));
-        stack.Children.Add(SectionCard("Quick Colors", "Left-click a palette color for primary. Right-click sets secondary.", colorsBody));
-        stack.Children.Add(SectionCard("Quick Tools", null, toolsBody));
-        stack.Children.Add(help);
+        _quickPreview.ClipToBounds = true;
 
         return new Border
         {
-            Background = EditorThemeTokens.Surface,
-            BorderBrush = EditorThemeTokens.PanelBorder,
-            BorderThickness = new Thickness(1, 0, 0, 0),
-            Child = new ScrollViewer
-            {
-                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                Content = stack,
-            },
+            Height = 150,
+            Margin = new Thickness(10, 10, 10, 8),
+            CornerRadius = new CornerRadius(6),
+            ClipToBounds = true,
+            Background = EditorThemeTokens.PreviewBackground,
+            Child = _quickPreview,
         };
     }
 
-    private Button QuickColorButton(Border swatch, string tip, bool primary)
+    private Control BuildStudioPaletteEditor()
     {
-        var button = new Button
+        if (_studioPaletteSwatches.Children.Count == 0)
         {
-            Content = swatch,
-            Padding = new Thickness(5),
-            HorizontalContentAlignment = HorizontalAlignment.Center,
+            foreach (var color in BuildStudioPaletteColors())
+            {
+                var captured = color;
+                var button = new Button
+                {
+                    Width = 18,
+                    Height = 18,
+                    MinHeight = 18,
+                    Padding = new Thickness(1),
+                    CornerRadius = new CornerRadius(3),
+                    BorderBrush = EditorThemeTokens.PanelBorder,
+                    BorderThickness = new Thickness(1),
+                    Content = new Border
+                    {
+                        Background = Brush(captured),
+                        CornerRadius = new CornerRadius(2),
+                    },
+                };
+                ToolTip.SetTip(button, $"#{captured.R:X2}{captured.G:X2}{captured.B:X2} · left primary · right secondary");
+                button.Click += (_, _) => ApplyStudioColor(captured, secondary: false);
+                button.PointerPressed += (_, e) =>
+                {
+                    if (!e.GetCurrentPoint(button).Properties.IsRightButtonPressed) return;
+                    ApplyStudioColor(captured, secondary: true);
+                    e.Handled = true;
+                };
+                _studioPaletteSwatches.Children.Add(button);
+            }
+        }
+
+        _studioColorPreview.Width = 28;
+        _studioColorPreview.Height = 28;
+
+        _studioR.ValueChanged += (_, _) => ApplyStudioRgb();
+        _studioG.ValueChanged += (_, _) => ApplyStudioRgb();
+        _studioB.ValueChanged += (_, _) => ApplyStudioRgb();
+        _studioHex.KeyDown += (_, e) =>
+        {
+            if (e.Key != Key.Enter) return;
+            ApplyStudioHex();
+            e.Handled = true;
         };
-        ToolTip.SetTip(button, tip);
-        button.Click += async (_, _) => await EditColorAsync(primary);
-        return button;
+        _studioHex.LostFocus += (_, _) => ApplyStudioHex();
+
+        var rgb = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,*,Auto,*"), ColumnSpacing = 5 };
+        rgb.Children.Add(ChannelLabel("R"));
+        rgb.Children.Add(Place(_studioR, 1));
+        rgb.Children.Add(Place(ChannelLabel("G"), 2));
+        rgb.Children.Add(Place(_studioG, 3));
+        rgb.Children.Add(Place(ChannelLabel("B"), 4));
+        rgb.Children.Add(Place(_studioB, 5));
+
+        var hex = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), ColumnSpacing = 6 };
+        hex.Children.Add(ChannelLabel("HEX"));
+        hex.Children.Add(Place(_studioHex, 1));
+        hex.Children.Add(Place(_studioColorPreview, 2));
+
+        var body = new StackPanel { Spacing = 8 };
+        body.Children.Add(_studioPaletteSwatches);
+        body.Children.Add(rgb);
+        body.Children.Add(hex);
+
+        var expander = new Expander
+        {
+            Header = "Palette · 128 colors",
+            IsExpanded = true,
+            Content = body,
+        };
+
+        return new Border
+        {
+            Padding = new Thickness(10, 7),
+            CornerRadius = EditorThemeTokens.CardRadius,
+            Background = EditorThemeTokens.SurfaceRaised,
+            BorderBrush = EditorThemeTokens.PanelBorder,
+            BorderThickness = new Thickness(1),
+            Child = expander,
+        };
+    }
+
+    private Control BuildInspectorQuickTools()
+    {
+        var tools = new WrapPanel { ItemWidth = 82, ItemHeight = 34 };
+        tools.Children.Add(TextIconButton("✎", "Pencil", "Pencil · B", () => SelectQuickTool("core.pencil")));
+        tools.Children.Add(TextIconButton("⌫", "Eraser", "Eraser · E", () => SelectQuickTool("core.eraser")));
+        tools.Children.Add(TextIconButton("▣", "Fill", "Fill · G", () => SelectQuickTool("core.fill")));
+        tools.Children.Add(TextIconButton("▧", "Select", "Selection", SelectQuickSelection));
+        return SectionCard("Quick Tools", null, tools);
+    }
+
+    private static NumericUpDown ChannelInput() => new()
+    {
+        Value = 0,
+        Minimum = 0,
+        Maximum = 255,
+        Increment = 1,
+        FormatString = "0",
+        MinWidth = 54,
+    };
+
+    private static TextBlock ChannelLabel(string text)
+    {
+        var label = new TextBlock { Text = text, VerticalAlignment = VerticalAlignment.Center };
+        label.Classes.Add("muted");
+        return label;
     }
 
     private void OnConvenienceTick(object? sender, EventArgs e) => RefreshConvenienceUi();
 
-    private void RefreshConvenienceUi(bool forcePalette = false)
+    private void RefreshConvenienceUi()
     {
         _quickPreview.InvalidateVisual();
         var session = Current();
-        if (session is null)
+        if (session is null) return;
+
+        if (_studioHex.IsKeyboardFocusWithin || _studioR.IsKeyboardFocusWithin || _studioG.IsKeyboardFocusWithin || _studioB.IsKeyboardFocusWithin)
+            return;
+
+        var primary = session.GetToolColors().Primary;
+        if (primary != _studioColor) SyncStudioColor(primary);
+    }
+
+    private void ApplyStudioColor(Rgba32 color, bool secondary)
+    {
+        var session = Current();
+        if (session is null) return;
+        var current = session.GetToolColors();
+        session.SetToolColors(secondary ? current.Primary : color, secondary ? color : current.Secondary);
+        if (!secondary) SyncStudioColor(color);
+    }
+
+    private void ApplyStudioRgb()
+    {
+        if (_syncingStudioColor) return;
+        var color = new Rgba32(
+            (byte)(_studioR.Value ?? 0m),
+            (byte)(_studioG.Value ?? 0m),
+            (byte)(_studioB.Value ?? 0m),
+            _studioColor.A);
+        ApplyStudioColor(color, secondary: false);
+    }
+
+    private void ApplyStudioHex()
+    {
+        if (_syncingStudioColor || !_studioHex.IsInitialized) return;
+        if (!TryParseHex(_studioHex.Text, out var color))
         {
-            _quickZoom.Text = "No canvas";
-            _quickPaletteColors.Children.Clear();
-            _quickPaletteHint.Text = "Create or open a document to use colors.";
-            _quickPaletteSignature = null;
+            SetError("HEX color must be #RRGGBB or #RRGGBBAA.");
             return;
         }
+        ApplyStudioColor(color, secondary: false);
+    }
 
-        _quickZoom.Text = $"Zoom {session.Zoom * 100:0}% · F to fit";
-        var toolColors = session.GetToolColors();
-        _quickPrimary.Background = Brush(toolColors.Primary);
-        _quickSecondary.Background = Brush(toolColors.Secondary);
-
-        var editors = session.GetPaletteEditors();
-        var signature = string.Join("|", editors.SelectMany((palette, paletteIndex) =>
-            palette.Colors.Select(entry => $"{paletteIndex}:{entry.Index}:{entry.Color.R:X2}{entry.Color.G:X2}{entry.Color.B:X2}{entry.Color.A:X2}")));
-        if (!forcePalette && signature == _quickPaletteSignature) return;
-        _quickPaletteSignature = signature;
-        _quickPaletteColors.Children.Clear();
-
-        if (editors.Count == 0)
+    private void SyncStudioColor(Rgba32 color)
+    {
+        _syncingStudioColor = true;
+        try
         {
-            _quickPaletteHint.Text = "No palette yet.";
-            _quickPaletteColors.Children.Add(TextIconButton("＋", "Create Palette", "Create a 16-color grayscale palette", () =>
-            {
-                session.AddDefaultPalette();
-                RefreshConvenienceUi(forcePalette: true);
-            }));
-            return;
+            _studioColor = color;
+            _studioR.Value = color.R;
+            _studioG.Value = color.G;
+            _studioB.Value = color.B;
+            _studioHex.Text = color.A == 255
+                ? $"#{color.R:X2}{color.G:X2}{color.B:X2}"
+                : $"#{color.R:X2}{color.G:X2}{color.B:X2}{color.A:X2}";
+            _studioColorPreview.Background = Brush(color);
+        }
+        finally
+        {
+            _syncingStudioColor = false;
+        }
+    }
+
+    private static bool TryParseHex(string? text, out Rgba32 color)
+    {
+        color = default;
+        var value = (text ?? string.Empty).Trim();
+        if (value.StartsWith('#')) value = value[1..];
+        if (value.Length is not (6 or 8)) return false;
+        if (!byte.TryParse(value.AsSpan(0, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var r) ||
+            !byte.TryParse(value.AsSpan(2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var g) ||
+            !byte.TryParse(value.AsSpan(4, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var b)) return false;
+        var a = (byte)255;
+        if (value.Length == 8 && !byte.TryParse(value.AsSpan(6, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out a)) return false;
+        color = new Rgba32(r, g, b, a);
+        return true;
+    }
+
+    private static IReadOnlyList<Rgba32> BuildStudioPaletteColors()
+    {
+        var colors = new List<Rgba32>(128);
+        var variants = new (double Saturation, double Value)[]
+        {
+            (0.90, 0.38),
+            (0.82, 0.56),
+            (0.78, 0.72),
+            (0.68, 0.84),
+            (0.58, 0.94),
+            (0.42, 0.98),
+            (0.28, 0.92),
+        };
+
+        foreach (var variant in variants)
+        for (var hueIndex = 0; hueIndex < 16; hueIndex++)
+            colors.Add(HsvToRgba(hueIndex * 360d / 16d, variant.Saturation, variant.Value));
+
+        for (var i = 0; i < 16; i++)
+        {
+            var value = (byte)Math.Round(i * 255d / 15d);
+            colors.Add(new Rgba32(value, value, value, 255));
         }
 
-        var shown = 0;
-        foreach (var palette in editors)
-        {
-            foreach (var entry in palette.Colors)
-            {
-                if (shown >= 48) break;
-                var color = entry.Color;
-                var button = new Button
-                {
-                    Width = 26,
-                    Height = 26,
-                    Padding = new Thickness(2),
-                    Content = new Border
-                    {
-                        Background = Brush(color),
-                        CornerRadius = new CornerRadius(3),
-                        BorderBrush = EditorThemeTokens.StrongBorder,
-                        BorderThickness = new Thickness(1),
-                    },
-                };
-                ToolTip.SetTip(button, $"#{color.R:X2}{color.G:X2}{color.B:X2}{color.A:X2} · left primary · right secondary");
-                button.Click += (_, _) =>
-                {
-                    var current = session.GetToolColors();
-                    session.SetToolColors(color, current.Secondary);
-                    RefreshConvenienceUi();
-                };
-                button.PointerPressed += (_, e) =>
-                {
-                    var point = e.GetCurrentPoint(button);
-                    if (!point.Properties.IsRightButtonPressed) return;
-                    var current = session.GetToolColors();
-                    session.SetToolColors(current.Primary, color);
-                    e.Handled = true;
-                    RefreshConvenienceUi();
-                };
-                _quickPaletteColors.Children.Add(button);
-                shown++;
-            }
-            if (shown >= 48) break;
-        }
+        return colors;
+    }
 
-        var total = editors.Sum(value => value.Colors.Count);
-        _quickPaletteHint.Text = total > shown
-            ? $"Showing {shown} of {total} colors. Full palette editing remains in Inspector → Edit."
-            : $"{total} palette color{(total == 1 ? string.Empty : "s")}.";
+    private static Rgba32 HsvToRgba(double hue, double saturation, double value)
+    {
+        var c = value * saturation;
+        var h = (hue % 360d) / 60d;
+        var x = c * (1d - Math.Abs((h % 2d) - 1d));
+        var (r1, g1, b1) = h switch
+        {
+            < 1d => (c, x, 0d),
+            < 2d => (x, c, 0d),
+            < 3d => (0d, c, x),
+            < 4d => (0d, x, c),
+            < 5d => (x, 0d, c),
+            _ => (c, 0d, x),
+        };
+        var m = value - c;
+        return new Rgba32(
+            (byte)Math.Round((r1 + m) * 255d),
+            (byte)Math.Round((g1 + m) * 255d),
+            (byte)Math.Round((b1 + m) * 255d),
+            255);
     }
 
     private void OnConvenienceCanvasWheel(object? sender, PointerWheelEventArgs e)
@@ -302,7 +378,7 @@ public sealed partial class MainWindow
         var canvas = session.CaptureSnapshot().Canvas.Size;
         if (canvas.Width <= 0 || canvas.Height <= 0) return;
 
-        var availableWidth = Math.Max(240d, Bounds.Width - EditorThemeTokens.ToolRailWidth - EditorThemeTokens.RightPanelWidth - 224d - 120d);
+        var availableWidth = Math.Max(240d, Bounds.Width - EditorThemeTokens.ToolRailWidth - EditorThemeTokens.RightPanelWidth - 120d);
         var availableHeight = Math.Max(220d, Bounds.Height - EditorThemeTokens.TimelineHeight - 170d);
         var zoom = Math.Min(availableWidth / canvas.Width, availableHeight / canvas.Height) * 0.9d;
         SetZoom(Math.Clamp(zoom, 0.125d, 32d));
@@ -321,13 +397,9 @@ internal sealed class PixelPreviewView : Control
         var bounds = Bounds;
         if (bounds.Width <= 1d || bounds.Height <= 1d) return;
 
-        DrawChecker(context, bounds);
+        context.FillRectangle(EditorThemeTokens.PreviewBackground, bounds);
         var presentation = Source?.Presentation;
-        if (presentation is null || presentation.Size.Width <= 0 || presentation.Size.Height <= 0)
-        {
-            context.DrawRectangle(null, new Pen(EditorThemeTokens.StrongBorder, 1d), new Rect(0.5d, 0.5d, Math.Max(0d, bounds.Width - 1d), Math.Max(0d, bounds.Height - 1d)));
-            return;
-        }
+        if (presentation is null || presentation.Size.Width <= 0 || presentation.Size.Height <= 0) return;
 
         var padding = 8d;
         var usableWidth = Math.Max(1d, bounds.Width - padding * 2d);
@@ -356,25 +428,6 @@ internal sealed class PixelPreviewView : Control
             context.FillRectangle(
                 GetBrush(preview.Color.R, preview.Color.G, preview.Color.B, preview.Color.A),
                 new Rect(originX + preview.Point.X * scale, originY + preview.Point.Y * scale, scale, scale));
-        }
-
-        context.DrawRectangle(
-            null,
-            new Pen(EditorThemeTokens.StrongBorder, 1d),
-            new Rect(originX, originY, drawWidth, drawHeight));
-    }
-
-    private static void DrawChecker(DrawingContext context, Rect bounds)
-    {
-        const double cell = 8d;
-        var rows = (int)Math.Ceiling(bounds.Height / cell);
-        var columns = (int)Math.Ceiling(bounds.Width / cell);
-        for (var y = 0; y < rows; y++)
-        for (var x = 0; x < columns; x++)
-        {
-            context.FillRectangle(
-                ((x + y) & 1) == 0 ? EditorThemeTokens.CheckerLight : EditorThemeTokens.CheckerDark,
-                new Rect(x * cell, y * cell, cell, cell));
         }
     }
 
