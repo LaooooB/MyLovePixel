@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using MyLovePixel.Core.Effects;
 using MyLovePixel.Core.Pixel;
 using MyLovePixel.Core.Primitives;
 using MyLovePixel.Core.Tiles;
@@ -26,7 +27,10 @@ public sealed record CelSnapshot(
     FrameId FrameId,
     ResourceId SurfaceId,
     IntPoint Position,
-    byte Opacity);
+    byte Opacity)
+{
+    public EffectGraphSnapshot Effects { get; init; } = EffectGraphSnapshot.Empty;
+}
 
 public sealed class DocumentSnapshot
 {
@@ -171,7 +175,10 @@ public sealed class DocumentSnapshot
                 cel.FrameId,
                 cel.SurfaceId,
                 cel.Position,
-                cel.Opacity))
+                cel.Opacity)
+            {
+                Effects = cel.Effects.Snapshot(),
+            })
             .ToArray();
 
         return new DocumentSnapshot(
