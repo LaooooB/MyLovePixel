@@ -23,7 +23,7 @@ public static class EditorThemeTokens
     public static IBrush Danger { get; } = Rgb(255, 105, 121);
     public static IBrush Warning { get; } = Rgb(241, 196, 95);
 
-    public static IBrush CanvasWorkspace { get; } = Rgb(92, 95, 101);
+    public static IBrush CanvasWorkspace { get; } = Rgb(80, 84, 91);
     public static IBrush CanvasFrame { get; } = Rgb(226, 228, 231);
     public static IBrush CheckerLight { get; } = Rgb(246, 246, 246);
     public static IBrush CheckerDark { get; } = Rgb(216, 218, 221);
@@ -35,15 +35,15 @@ public static class EditorThemeTokens
     public static IBrush DirtyRegionOutline { get; } = Danger;
 
     public static CornerRadius ControlRadius { get; } = new(5);
-    public static CornerRadius CardRadius { get; } = new(7);
+    public static CornerRadius CardRadius { get; } = new(8);
 
     public const double CompactSpacing = 4d;
     public const double ControlSpacing = 6d;
-    public const double PanelSpacing = 8d;
-    public const double ShellPadding = 8d;
-    public const double ToolRailWidth = 52d;
-    public const double RightPanelWidth = 310d;
-    public const double TimelineHeight = 124d;
+    public const double PanelSpacing = 10d;
+    public const double ShellPadding = 10d;
+    public const double ToolRailWidth = 64d;
+    public const double RightPanelWidth = 380d;
+    public const double TimelineHeight = 148d;
 
     private static IBrush Rgb(byte r, byte g, byte b) => new SolidColorBrush(Color.FromRgb(r, g, b));
     private static IBrush Rgba(byte r, byte g, byte b, byte a) => new SolidColorBrush(Color.FromArgb(a, r, g, b));
