@@ -83,23 +83,35 @@ public sealed class PluginExtensionRegistry<T> where T : class, IPluginExtension
 
     private sealed record Entry(PluginId Owner, T Extension);
 
-    private sealed class Registration(
-        PluginExtensionRegistry<T> registry,
-        PluginId owner,
-        PluginExtensionKind kind,
-        string extensionId,
-        T extension) : IPluginRegistration
+    private sealed class Registration : IPluginRegistration
     {
+        private readonly PluginExtensionRegistry<T> _registry;
+        private readonly T _extension;
         private int _disposed;
-        public PluginId Owner { get; } = owner;
-        public PluginExtensionKind Kind { get; } = kind;
-        public string ExtensionId { get; } = extensionId;
+
+        public Registration(
+            PluginExtensionRegistry<T> registry,
+            PluginId owner,
+            PluginExtensionKind kind,
+            string extensionId,
+            T extension)
+        {
+            _registry = registry;
+            _extension = extension;
+            Owner = owner;
+            Kind = kind;
+            ExtensionId = extensionId;
+        }
+
+        public PluginId Owner { get; }
+        public PluginExtensionKind Kind { get; }
+        public string ExtensionId { get; }
         public bool IsDisposed => Volatile.Read(ref _disposed) != 0;
 
         public void Dispose()
         {
             if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
-            registry.Remove(extensionId, extension);
+            _registry.Remove(ExtensionId, _extension);
         }
     }
 }
