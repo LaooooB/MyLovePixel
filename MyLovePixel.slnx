@@ -6,6 +6,7 @@
     <Project Path="src/MyLovePixel.Raster/MyLovePixel.Raster.csproj" />
     <Project Path="src/MyLovePixel.Selection/MyLovePixel.Selection.csproj" />
     <Project Path="src/MyLovePixel.Render/MyLovePixel.Render.csproj" />
+    <Project Path="src/MyLovePixel.Tools/MyLovePixel.Tools.csproj" />
     <Project Path="src/MyLovePixel.Cli/MyLovePixel.Cli.csproj" />
   </Folder>
   <Folder Name="/tests/">
@@ -14,5 +15,6 @@
     <Project Path="tests/MyLovePixel.Raster.Tests/MyLovePixel.Raster.Tests.csproj" />
     <Project Path="tests/MyLovePixel.Selection.Tests/MyLovePixel.Selection.Tests.csproj" />
     <Project Path="tests/MyLovePixel.Render.Tests/MyLovePixel.Render.Tests.csproj" />
+    <Project Path="tests/MyLovePixel.Tools.Tests/MyLovePixel.Tools.Tests.csproj" />
   </Folder>
 </Solution>
