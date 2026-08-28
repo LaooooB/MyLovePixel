@@ -1,5 +1,6 @@
 using MyLovePixel.Commands;
 using MyLovePixel.Commands.Effects;
+using MyLovePixel.Commands.Timeline;
 using MyLovePixel.Core.Document;
 using MyLovePixel.Core.Effects;
 using MyLovePixel.Core.Pixel;
@@ -42,6 +43,41 @@ public sealed class EffectCommandTests
         Assert.False(effect.Parameters.ContainsKey("radius"));
         bus.Undo();
         Assert.Empty(cel.Effects.EffectOrder);
+    }
+
+    [Fact]
+    public void CopyFrame_CopiesEffectGraphWithNewTrackIdAndRemappedAnimatedFrame()
+    {
+        var document = PixelDocumentFactory.CreateBlank(1, 1);
+        var sourceCel = document.Cels.Single();
+        var effect = new EffectInstance(EffectInstanceId.New(), BuiltinEffectDescriptors.Outline.TypeId);
+        effect.SetParameter("radius", EffectValue.Integer(1), out _);
+        effect.SetKeyframe(
+            "radius",
+            sourceCel.FrameId,
+            EffectValue.Integer(3),
+            AnimationTrackId.New(),
+            out _,
+            out _);
+        sourceCel.Effects.Add(effect);
+        var sourceTrackId = effect.ParameterTracks["radius"].Id;
+        var bus = new CommandBus(document);
+        var copy = new CopyFrameCommand(sourceCel.FrameId, FrameCopyMode.Linked);
+
+        bus.Execute(copy);
+
+        var copiedCel = document.Cels.Single(cel => cel.FrameId == copy.NewFrameId);
+        Assert.Equal(sourceCel.SurfaceId, copiedCel.SurfaceId);
+        Assert.Single(copiedCel.Effects.EffectOrder);
+        var copiedEffect = copiedCel.Effects.GetEffect(effect.Id);
+        Assert.Equal(EffectValue.Integer(1), copiedEffect.Parameters["radius"]);
+        var copiedTrack = copiedEffect.ParameterTracks["radius"];
+        Assert.NotEqual(sourceTrackId, copiedTrack.Id);
+        Assert.False(copiedTrack.Values.ContainsKey(sourceCel.FrameId));
+        Assert.Equal(EffectValue.Integer(3), copiedTrack.Values[copy.NewFrameId]);
+
+        bus.Undo();
+        Assert.DoesNotContain(document.Cels, cel => cel.FrameId == copy.NewFrameId);
     }
 
     [Fact]
