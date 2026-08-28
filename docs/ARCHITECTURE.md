@@ -5,189 +5,200 @@
 ## 1. 依赖方向
 
 ```text
-App / CLI
-   ↓
-Tools ─────→ Commands ─────→ Core
-   ↓                         ↑
-Render ─── read Snapshot ────┘
+Desktop UI ─┬─→ Tools ─────→ Commands ─────→ Core
+            ├─→ Render ── read Snapshot ────→ Core
+            ├─→ Persistence ─ DTO/Migration → Core
+            └─→ Export ─────→ Render + Core
 
-Persistence ── DTO/Migration ─→ Core
-Plugins ───── Public SDK ─────→ Stable contracts
+CLI ─────────┬─→ Persistence
+             └─→ Export
+
+Color / Animation / Tilemap / Effects
+  provide domain algorithms and strategies around Core contracts
 ```
 
-### Core Model
+未来 Plugin SDK 只能接稳定公开契约，不能拿 Core internal mutable object graph。
 
-允许依赖：基础类型、数学、序列化抽象。
+### Core
 
-禁止依赖：Avalonia、SkiaSharp、GPU、窗口、文件对话框、具体 UI Widget。
+Core 保存文档语义和稳定引用模型。
+
+禁止依赖：Avalonia、SkiaSharp、GPU、窗口、文件对话框、具体 UI Widget、具体 Effect evaluator。
 
 ### Commands
 
-允许依赖：Core Model、Domain Service。
-
-禁止：菜单、按钮、Canvas 控件。所有文档 mutation 必须由这里进入。
+所有可撤销 live document mutation 的唯一入口。允许依赖 Core；禁止引用菜单、按钮、Canvas 控件。
 
 ### Render
 
-只读 `DocumentSnapshot` 或稳定读取接口。任何 Renderer 都不能改 live Document。
+只读 `DocumentSnapshot`。Renderer 不拥有文档真值，不能修改 live Document。Revision 决定缓存正确性，Dirty Region 只决定性能；缺完整 revision history 时必须 full fallback。
 
-### Tool
+### Tools
 
-接收统一 PointerEvent，使用 Command API 修改文档。工具不能获取可写 PixelBuffer。
+处理统一 Pointer/Input 状态机，preview 只生成 transient result；确认后通过 Command API 修改文档。Tool 不拿可写 PixelBuffer。
 
 ### Persistence
 
-只负责显式 DTO、Schema、Migration、Atomic Save、Recovery。不能把 UI 状态混入项目数据。
+负责 `.pixelproj` 显式 DTO、Schema、Migration、Atomic Save、Unknown Field / opaque plugin payload preservation。不能把 transient UI 状态或导出产物缓存写成文档语义。
 
-## 2. 核心对象
+### Export
+
+只吃 immutable `DocumentSnapshot`。最终帧像素复用 Render 的 Palette / Color Cycle / Effect 语义，之后再做 trim/crop/scale/extrude/sheet/atlas。`ExportPreset` 是独立 versioned JSON，不等同于 `.pixelproj` schema。
+
+### Desktop UI
+
+UI 负责 workspace、action routing、panels、view state、file dialogs 和 presentation。UI 不直接改 `PixelDocument`，不在 click handler 中实现导出算法，不持有 GPU/bitmap 作为文档真值。
+
+## 2. 核心引用模型
 
 ```text
-Workspace
- └── PixelDocument
-      ├── CanvasSpec
-      ├── LayerTree
-      ├── Frames
-      ├── Cels[layerId, frameId]
-      ├── ResourceStore
-      │    └── PixelSurface
-      ├── Palettes        (后续)
-      ├── Tilesets        (后续)
-      └── MetadataTracks  (后续)
+PixelDocument
+ ├── CanvasSpec
+ ├── Layer order / Frames
+ ├── Cels[layerId, frameId]
+ │    ├── SurfaceId
+ │    └── EffectGraph
+ ├── ResourceStore
+ │    ├── PixelSurface (RGBA32 / Indexed8)
+ │    ├── Palette
+ │    ├── Tileset -> TileId -> SurfaceId
+ │    └── Tilemap -> Cell -> TileId
+ └── AnimationMetadata
+      ├── Clip / Tag / Slice
+      └── stable AnimationTrack<T>
 ```
 
-### ID 规则
+ID 规则：Document / Layer / Frame / Cel / Resource / Palette / Tile / Tileset / Tilemap / Effect / Track / Clip / Tag / Slice 都使用稳定 ID；禁止数组下标充当长期身份。
 
-- Document / Layer / Frame / Cel / Resource 使用稳定 ID。
-- ID 可序列化，禁止把数组下标当长期身份。
-- Cel 只引用 `SurfaceId`，不直接拥有 RGBA 数组。
-- Linked Cel = 多个 Cel 指向同一个 SurfaceId。
-- 解除 Linked Cel = clone Surface + 替换当前 Cel 的 SurfaceId。
+Cel 只引用 `SurfaceId`，不直接拥有像素数组。Linked Cel = 多个 Cel 指向同一个 SurfaceId；解除 linked = 显式 clone + command 替换引用。
 
-## 3. PixelSurface
+Tilemap Cell 不拥有 tile 像素；Tile 只引用 Surface。修改一个 Cell 不复制像素。
 
-第一阶段只实现 RGBA32，但 API 不把 RGBA32 写死到文档上层。
+## 3. PixelSurface / Palette
 
-必须保持：
+`PixelSurface` 是像素真值：
 
-- Surface 可以比 Canvas 小，Cel 独立保存 Position。
-- mutation 增加 monotonically increasing Revision。
-- mutation 输出 Dirty Region。
-- 外部调用者只能读取；写入能力只开放给受控 mutation assembly。
-- Snapshot 必须是不可受 live mutation 影响的独立数据。
+- RGBA32 = 4 byte/pixel，无 PaletteId。
+- Indexed8 = 1 byte/pixel，必须引用存在的 PaletteId。
+- mutation 单调增加 Revision。
+- 外部读取，写入只开放给受控 mutation assembly。
+- Snapshot 是独立不可变副本。
+- GPU texture / thumbnail / composites 都是可重建缓存。
 
-未来 Indexed、Chunked surface 通过同一抽象扩展，不修改 Layer/Cel 的引用关系。
+Palette 是独立资源，有自己的 Revision。Transparent Index 属于 Palette。Palette reorder 必须原子 remap indexed bytes；存在 Color Cycle 引用时当前明确拒绝 reorder，而不是静默改变动画语义。
 
 ## 4. Command / Undo
 
 ```text
-Tool/Input
-   ↓
+Input / UI Action
+      ↓
 CommandBus
-   ├── Apply Command
-   ├── emit DocumentChange
-   ├── UndoStack
-   └── Transaction
+ ├── Apply Command
+ ├── emit DocumentChange
+ ├── UndoStack
+ └── Transaction
 ```
 
 规则：
 
-1. Command 必须可 `Apply → Revert`。
-2. 连续笔画、Transform 拖拽等使用 Transaction 合成一个 Undo 项。
-3. 像素修改记录脏区 patch，不复制整个 Document。
+1. Undoable mutation 必须可 `Apply → Revert`。
+2. 连续笔画/拖拽 Transform 使用 Transaction 合成一个 Undo entry。
+3. 像素修改记录 patch/dirty，不复制整个 Document。
 4. 新命令执行后清空 redo branch。
-5. Undo/Redo 后仍必须通过 `DocumentValidator`。
+5. Apply 前应尽可能完成全部验证，避免半提交。
+6. UI 不得绕过 CommandBus 修改 live document。
 
-## 5. Render / Cache
+## 5. Render / Effect / Cache
 
-后续 RenderGraph 使用：
+Renderer 输入是 `DocumentSnapshot + RenderRequest`。
 
-```text
-Surface.revision
-  ↓
-Cel composite key
-  ↓
-Layer composite key
-  ↓
-Frame composite key
-  ↓
-Canvas / thumbnail / onion-skin cache
-```
+Effect 是 Cel 上的 ordered non-destructive graph：参数变化不改源 Surface；Bake 通过 Command 创建新的 RGBA Surface，不能 in-place 破坏 linked source。未知 Effect 可以保存但不能在 Bake 时静默跳过。
 
-正确性依赖 Revision；性能优化依赖 Dirty Region。两者不能互相替代。
+Cache key 必须覆盖所有影响视觉结果的依赖：Surface/Palette revision、Color Cycle、Effect graph/parameter/backend revision、结构签名等。Effect-aware dirty expansion 不完整时 full fallback。
 
-GPU texture 永远是缓存。设备丢失或缓存清空后，必须能只靠 Document 重建画面。
-
-## 6. Timeline
+## 6. Timeline / Animation metadata
 
 - Frame 使用稳定 FrameId。
-- Duration 使用整数 tick/微秒，禁止 float 累积。
-- Cel = LayerId + FrameId + ResourceId + Position + Opacity。
-- Tags、Keyframes、Events 后续都引用稳定 ID，不依赖当前数组位置。
+- Duration 使用整数 tick，禁止 float 累积。
+- Clip/Tag 通过 stable FrameId range 表达。
+- Pivot / Hitbox / Hurtbox / Socket / Event / ColorCycle / Effect parameter animation 使用 `AnimationTrack<T>`。
+- Frame copy/remove 必须同步处理所有相关 tracks，并在 copy 时 remap source FrameId。
 
 ## 7. Tilemap
 
-Tilemap 是专用数据结构：
-
 ```text
-Tileset: TileId -> Tile Surface
-Tilemap Cell: TileId + flip/rotate/variant/flags
+Tileset: TileId -> SurfaceId
+Tilemap Cell: TileId + transform/variant flags
 ```
 
-禁止把地图直接烘焙成一张大 PixelSurface 作为源数据。
+禁止把地图源数据退化成一张大 PixelSurface。Runtime sparse chunk 是性能结构，不进入项目语义。AutoTile 通过规则/拓扑策略工作，随机 variant 由 document seed + coordinate 稳定复现。
 
-AutoTile 必须是 `Neighborhood -> TileChoice` 的规则接口，不能写死 47-tile。
+## 8. Import / Export
 
-## 8. 非破坏 Effect
-
-Effect 是参数化派生结果：
+Export 的顺序：
 
 ```text
-input revision + effect type + parameters -> output cache
+DocumentSnapshot
+   ↓
+FrameRenderer (RGBA/Indexed/Palette/ColorCycle/Effect)
+   ↓
+crop → trim → nearest scale
+   ↓
+sprite sheet / deterministic atlas packer
+   ↓
+PNG + JSON metadata artifacts
 ```
 
-需要永久修改时通过 Bake Command 写入 PixelLayer；Live Effect 自身不覆盖源像素。
+规则：
+
+- Export 期间 live document 后续编辑不能影响已经捕获的 snapshot。
+- CLI 与 Desktop UI 调同一个 `ExportPipeline`。
+- Stable Frame/Clip/Tag/Slice ID 不应在导出中丢失。
+- Artifact path 必须是安全 relative path。
+- ExportPreset 版本独立于 `.pixelproj` schema。
+- PNG import 当前建立新的 RGBA32 document；不会自动猜测用户希望重建 Indexed8 palette。
 
 ## 9. Persistence
 
-项目格式目标：
+当前 `.pixelproj` schema = 5。
 
-```text
-project.pixelproj
- ├── manifest.json/msgpack
- ├── document.json
- ├── surfaces/<id>.bin
- ├── audio/
- ├── refs/
- └── plugin-data/
-```
+Migration 必须逐级确定性执行：1→2→3→4→5。Unknown JSON fields 与 opaque plugin ZIP payload 必须 roundtrip preservation。Runtime revision/cache/chunk 不进入 semantic hash。
 
-必须具备：SchemaVersion、Migration、Atomic Save、Unknown Field Preserve、Autosave/Recovery。
+Atomic Save 必须同目录 temp write、重新打开验证后再 replace；失败时旧文件保持有效。
 
-## 10. Plugin SDK
+## 10. Desktop / Action routing
 
-核心从一开始保留注册点：Tool、Command、Effect、Importer、Exporter、Panel、Palette Algorithm、Dither、AutoTile Rule。
+Batch13 起 UI 通过 `ActionId` 连接菜单、Toolbar、快捷键和 command handlers。快捷键只映射 ActionId，不直接绑定 domain mutation。Canvas Widget 只读 render output/snapshot；Timeline 必须虚拟化，不能按总 frame 数创建控件树。
 
-插件持久化数据必须 namespace 化。未知 plugin payload 必须能原样保留，不能因为插件未安装导致项目打不开。
+Dock/panel/theme/zoom/selection 等 workspace presentation state 默认不属于 `.pixelproj` 文档语义，除非未来明确设计独立 workspace persistence。
 
-## 11. 永久不变量
+## 11. Plugin SDK
 
-- Cel 引用的 ResourceId 必须存在。
+Batch15 才定义 versioned Public SDK。此前内部 Registry（Effect/Exporter/Importer/Atlas/Palette/Dither/AutoTile 等）只是架构扩展边界，不宣称稳定外部 ABI。
+
+插件持久化数据必须 namespace 化；插件缺失时未知 payload 仍需保存。
+
+## 12. 永久不变量
+
+- 所有稳定引用必须存在且通过 Validator。
+- Indexed index 永远不越 Palette bounds。
 - Frame duration > 0。
-- LayerTree 不能形成环。
 - Undo 后语义状态恢复。
-- 保存文件能在无 UI 环境下通过 DocumentValidator。
-- Renderer 不拥有文档真值。
+- 保存文件可在无 UI 环境下通过 Validator。
+- Renderer / Exporter 不拥有 live document 写权限。
 - UI 不越过 CommandBus mutation。
+- Preview / Selection / GPU cache 不是文档真值。
 
-## 12. 禁止写法
+## 13. 禁止写法
 
-- Canvas 鼠标事件直接改 `byte[]`。
-- Cel 保存完整 RGBA 图并由每个帧复制。
-- Tilemap 用一张大图当唯一源数据。
+- Canvas pointer handler 直接改 `byte[]` / `PixelSurface`。
+- Cel 保存自己的 RGBA 副本。
+- Tilemap 用一张大图作为唯一源数据。
 - 每个 Tool 自己维护 Undo。
 - 导出逻辑写在按钮 click 回调。
-- 插件引用 Core internal 类。
+- UI/CLI 各实现一套 exporter。
 - Effect 调参直接破坏源像素。
 - 数组下标作为长期 ID。
-- 任意小修改都 full redraw。
+- revision 变化但 dirty history 不完整时仍强行 partial redraw。
 - 直接序列化运行时对象图作为长期文件格式。
+- 把 transient docking/selection/preview/cache 状态混入 `.pixelproj`。
