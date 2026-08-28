@@ -86,6 +86,26 @@ jobs:
           }
           Get-ChildItem $publish | Format-Table Name, Length
 
+      - name: Smoke test packaged app startup
+        shell: pwsh
+        run: |
+          $exe = Resolve-Path 'release/MyLovePixel-Windows-x64/MyLovePixel.Desktop.exe'
+          $crashLog = Join-Path $env:LOCALAPPDATA 'MyLovePixel/crash.log'
+          if (Test-Path $crashLog) { Remove-Item $crashLog -Force }
+          $process = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 6
+          if ($process.HasExited) {
+            if (Test-Path $crashLog) {
+              Write-Host '--- crash.log ---'
+              Get-Content $crashLog
+              Write-Host '--- end crash.log ---'
+            }
+            throw "Packaged app exited during startup smoke test with code $($process.ExitCode)."
+          }
+          Stop-Process -Id $process.Id -Force
+          Wait-Process -Id $process.Id -ErrorAction SilentlyContinue
+          Write-Host 'Packaged app stayed alive through startup smoke test.'
+
       - name: Package Windows release
         shell: pwsh
         run: |
