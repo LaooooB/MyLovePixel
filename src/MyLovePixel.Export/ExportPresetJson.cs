@@ -5,6 +5,8 @@ namespace MyLovePixel.Export;
 
 public static class ExportPresetJson
 {
+    public const int CurrentVersion = 1;
+
     private static readonly JsonSerializerOptions Options = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -14,21 +16,42 @@ public static class ExportPresetJson
     public static byte[] Serialize(ExportPreset preset)
     {
         ArgumentNullException.ThrowIfNull(preset);
-        preset.Validate();
-        return JsonSerializer.SerializeToUtf8Bytes(ToDto(preset), Options);
+        try
+        {
+            preset.Validate();
+            return JsonSerializer.SerializeToUtf8Bytes(ToDto(preset), Options);
+        }
+        catch (ArgumentException ex)
+        {
+            throw new AssetPipelineException(AssetPipelineErrorCode.InvalidRequest, "Export preset is invalid.", ex);
+        }
     }
 
     public static ExportPreset Deserialize(ReadOnlySpan<byte> json)
     {
-        var dto = JsonSerializer.Deserialize<PresetDto>(json, Options)
-            ?? throw new InvalidDataException("Export preset JSON is empty.");
-        var preset = FromDto(dto);
-        preset.Validate();
-        return preset;
+        try
+        {
+            var dto = JsonSerializer.Deserialize<PresetDto>(json, Options)
+                ?? throw new InvalidDataException("Export preset JSON is empty.");
+            if (dto.Version != CurrentVersion)
+                throw new InvalidDataException($"Export preset version {dto.Version} is not supported; expected {CurrentVersion}.");
+            var preset = FromDto(dto);
+            preset.Validate();
+            return preset;
+        }
+        catch (AssetPipelineException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidDataException or ArgumentException)
+        {
+            throw new AssetPipelineException(AssetPipelineErrorCode.InvalidRequest, "Export preset JSON is invalid or unsupported.", ex);
+        }
     }
 
     private static PresetDto ToDto(ExportPreset preset) => new()
     {
+        Version = CurrentVersion,
         Name = preset.Name,
         ExporterId = preset.ExporterId,
         Layout = preset.Layout.ToString(),
@@ -97,6 +120,7 @@ public static class ExportPresetJson
 
     private sealed class PresetDto
     {
+        public int Version { get; set; } = CurrentVersion;
         public string Name { get; set; } = "Default";
         public string ExporterId { get; set; } = BuiltinExporterIds.GameAssets;
         public string Layout { get; set; } = nameof(ExportLayout.SpriteSheet);
