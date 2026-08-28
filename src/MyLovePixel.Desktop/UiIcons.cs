@@ -28,7 +28,7 @@ internal static class UiIcons
             var v when v == "rectangle" => LucideIconKind.SquareDashedMousePointer,
             var v when v == "ellipse" => LucideIconKind.CircleDashed,
             var v when v == "lasso" => LucideIconKind.Lasso,
-            var v when v == "by color" => LucideIconKind.Eyedropper,
+            var v when v == "by color" => LucideIconKind.Pipette,
             var v when v.StartsWith("select all") => LucideIconKind.Scan,
             var v when v.StartsWith("invert selection") => LucideIconKind.Combine,
             var v when v.StartsWith("clear selection") => LucideIconKind.X,
@@ -58,7 +58,7 @@ internal static class UiIcons
 
             var v when v.StartsWith("add effect") => LucideIconKind.Plus,
             var v when v.StartsWith("remove") || v.StartsWith("delete") || v.StartsWith("dismiss") => LucideIconKind.Trash2,
-            var v when v.StartsWith("enable") => LucideIconKind.Power,
+            var v when v.StartsWith("enable") || v.StartsWith("disable") => LucideIconKind.Power,
             var v when v.Contains("keyframe") => LucideIconKind.Diamond,
             var v when v.StartsWith("edit") => LucideIconKind.PencilLine,
 
@@ -76,7 +76,7 @@ internal static class UiIcons
 
             var v when v.StartsWith("load plugin") => LucideIconKind.PlugZap,
             var v when v.StartsWith("unload") => LucideIconKind.Unplug,
-            var v when v.StartsWith("recover") => LucideIconKind.History,
+            var v when v.StartsWith("recover") => LucideIconKind.RotateCcwClock,
 
             _ => default,
         };
@@ -97,7 +97,8 @@ internal static class UiIcons
             "✎" => LucideIconKind.Pencil,
             "⌫" => LucideIconKind.Eraser,
             "▶" => LucideIconKind.Play,
-            "◇" or "◆" => LucideIconKind.Diamond,
+            "◇" => LucideIconKind.Diamond,
+            "◆" => LucideIconKind.Puzzle,
             _ => default,
         };
         return !EqualityComparer<LucideIconKind>.Default.Equals(kind, default);
