@@ -37,7 +37,9 @@ jobs:
         run: |
           $patchRoot = Join-Path $env:RUNNER_TEMP 'mylovepixel-full-ui'
           if (Test-Path $patchRoot) { Remove-Item -Recurse -Force $patchRoot }
-          Expand-Archive -Path '.ci/MyLovePixel-full-ui-patch.zip' -DestinationPath $patchRoot -Force
+          New-Item -ItemType Directory -Force $patchRoot | Out-Null
+          tar -xzf '.ci/MyLovePixel-full-ui-patch.tar.gz' -C $patchRoot
+          if ($LASTEXITCODE -ne 0) { throw "patch extraction failed with exit code $LASTEXITCODE" }
           Copy-Item -Path "$patchRoot/src/*" -Destination 'src' -Recurse -Force
           if (-not (Test-Path 'src/MyLovePixel.Desktop/EditorDialogs.cs')) { throw 'Full UI patch application failed.' }
 
