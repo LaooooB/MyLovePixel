@@ -5,6 +5,7 @@ using MyLovePixel.Core.Pixel;
 using MyLovePixel.Core.Primitives;
 using MyLovePixel.Core.Tiles;
 using Xunit;
+using TilemapModel = MyLovePixel.Core.Tiles.Tilemap;
 
 namespace MyLovePixel.Tilemap.Tests;
 
@@ -19,7 +20,7 @@ public sealed class LargeSparseTilemapTests
         document.Resources.AddTileset(tileset);
         var tileId = TileId.New();
         document.Resources.AddTile(tileset.Id, new TileDefinition(tileId, surfaceId));
-        var map = new Tilemap(TilemapId.New(), "Map", tileset.Id);
+        var map = new TilemapModel(TilemapId.New(), "Map", tileset.Id);
         document.Resources.AddTilemap(map);
         var surfaceCount = document.Resources.SurfaceIds.Count;
 
@@ -29,7 +30,7 @@ public sealed class LargeSparseTilemapTests
         for (var localY = 0; localY < 4; localY++)
         for (var localX = 0; localX < 4; localX++)
             writes.Add(new TileCellWrite(
-                new IntPoint(chunkX * Tilemap.ChunkSize + localX, chunkY * Tilemap.ChunkSize + localY),
+                new IntPoint(chunkX * TilemapModel.ChunkSize + localX, chunkY * TilemapModel.ChunkSize + localY),
                 new TileCell(tileId)));
 
         var bus = new CommandBus(document);
