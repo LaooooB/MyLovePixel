@@ -17,7 +17,9 @@ internal sealed record CelRenderState(
     IntPoint Position,
     byte Opacity,
     IntSize SurfaceSize,
-    PixelFormat SurfaceFormat);
+    PixelFormat SurfaceFormat,
+    PaletteId? PaletteId,
+    long PaletteRevision);
 
 internal sealed record ResourceRevisionState(ResourceId SurfaceId, long Revision);
 
@@ -54,13 +56,18 @@ internal sealed class FrameStructureSignature : IEquatable<FrameStructureSignatu
             if (cels.TryGetValue(layerId, out var cel))
             {
                 var surface = snapshot.GetSurface(cel.SurfaceId);
+                var paletteRevision = surface.PaletteId is { } paletteId
+                    ? snapshot.GetPalette(paletteId).Revision
+                    : 0;
                 celState = new CelRenderState(
                     cel.Id,
                     cel.SurfaceId,
                     cel.Position,
                     cel.Opacity,
                     surface.Size,
-                    surface.Format);
+                    surface.Format,
+                    surface.PaletteId,
+                    paletteRevision);
             }
 
             layers[index] = new LayerRenderState(
