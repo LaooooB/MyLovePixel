@@ -1,5 +1,4 @@
 using MyLovePixel.Core.Document;
-using MyLovePixel.Core.Pixel;
 
 namespace MyLovePixel.Export;
 
@@ -19,13 +18,7 @@ public sealed class PngImporter : IImporter
         ArgumentNullException.ThrowIfNull(request);
         if (!CanImport(request)) throw new InvalidDataException("Input is not a PNG image.");
         var image = PngCodec.Decode(request.Content.Span);
-        var document = PixelDocumentFactory.CreateBlank(image.Size.Width, image.Size.Height);
-        var cel = document.Cels.Single();
-        var surface = document.Resources.GetSurface(cel.SurfaceId);
-        for (var y = 0; y < image.Size.Height; y++)
-        for (var x = 0; x < image.Size.Width; x++)
-            surface.SetPixel(x, y, image.GetPixel(x, y));
-        return document;
+        return RgbaDocumentFactory.Create(image.Size, image.Bytes.Span);
     }
 }
 
