@@ -17,12 +17,15 @@ internal sealed class ManifestDto
 internal sealed class DocumentDto
 {
     public string Id { get; set; } = string.Empty;
+    public ulong Seed { get; set; }
     public CanvasDto Canvas { get; set; } = new();
     public List<LayerDto> Layers { get; set; } = [];
     public List<FrameDto> Frames { get; set; } = [];
     public List<CelDto> Cels { get; set; } = [];
     public List<PaletteDto> Palettes { get; set; } = [];
     public List<SurfaceDto> Surfaces { get; set; } = [];
+    public List<TilesetDto> Tilesets { get; set; } = [];
+    public List<TilemapDto> Tilemaps { get; set; } = [];
     public AnimationDto Animation { get; set; } = new();
 
     [JsonExtensionData]
@@ -103,6 +106,52 @@ internal sealed class SurfaceDto
     public int Height { get; set; }
     public string Format { get; set; } = "rgba32";
     public string? PaletteId { get; set; }
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+}
+
+internal sealed class TilesetDto
+{
+    public string Id { get; set; } = string.Empty;
+    public string Name { get; set; } = "Tileset";
+    public int TileWidth { get; set; }
+    public int TileHeight { get; set; }
+    public List<TileDto> Tiles { get; set; } = [];
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+}
+
+internal sealed class TileDto
+{
+    public string Id { get; set; } = string.Empty;
+    public string SurfaceId { get; set; } = string.Empty;
+    public string Name { get; set; } = "Tile";
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+}
+
+internal sealed class TilemapDto
+{
+    public string Id { get; set; } = string.Empty;
+    public string Name { get; set; } = "Tilemap";
+    public string TilesetId { get; set; } = string.Empty;
+    public string TopologyId { get; set; } = "rect";
+    public List<TileCellDto> Cells { get; set; } = [];
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+}
+
+internal sealed class TileCellDto
+{
+    public int X { get; set; }
+    public int Y { get; set; }
+    public string TileId { get; set; } = string.Empty;
+    public byte Flags { get; set; }
+    public ushort Variant { get; set; }
 
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? ExtensionData { get; set; }

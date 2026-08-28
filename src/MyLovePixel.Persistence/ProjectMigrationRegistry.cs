@@ -18,6 +18,7 @@ public sealed class ProjectMigrationRegistry
         var registry = new ProjectMigrationRegistry();
         registry.Register(new Schema1To2AnimationMigration());
         registry.Register(new Schema2To3PaletteMigration());
+        registry.Register(new Schema3To4TilemapMigration());
         return registry;
     }
 

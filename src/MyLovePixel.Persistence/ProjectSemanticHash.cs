@@ -15,6 +15,7 @@ public static class ProjectSemanticHash
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
 
         AppendGuid(hash, document.Id.Value);
+        AppendUInt64(hash, document.Seed);
         AppendInt32(hash, document.Canvas.Size.Width);
         AppendInt32(hash, document.Canvas.Size.Height);
 
@@ -84,6 +85,45 @@ public static class ProjectSemanticHash
                 AppendGuid(hash, paletteId.Value);
             AppendInt32(hash, snapshot.Bytes.Length);
             hash.AppendData(snapshot.Bytes.Span);
+        }
+
+        var tilesetIds = document.Resources.TilesetIds.OrderBy(id => id.Value).ToArray();
+        AppendInt32(hash, tilesetIds.Length);
+        foreach (var tilesetId in tilesetIds)
+        {
+            var tileset = document.Resources.GetTileset(tilesetId);
+            AppendGuid(hash, tileset.Id.Value);
+            AppendString(hash, tileset.Name);
+            AppendInt32(hash, tileset.TileSize.Width);
+            AppendInt32(hash, tileset.TileSize.Height);
+            AppendInt32(hash, tileset.TileOrder.Count);
+            foreach (var tileId in tileset.TileOrder)
+            {
+                var tile = tileset.GetTile(tileId);
+                AppendGuid(hash, tile.Id.Value);
+                AppendGuid(hash, tile.SurfaceId.Value);
+                AppendString(hash, tile.Name);
+            }
+        }
+
+        var tilemapIds = document.Resources.TilemapIds.OrderBy(id => id.Value).ToArray();
+        AppendInt32(hash, tilemapIds.Length);
+        foreach (var tilemapId in tilemapIds)
+        {
+            var tilemap = document.Resources.GetTilemap(tilemapId);
+            AppendGuid(hash, tilemap.Id.Value);
+            AppendString(hash, tilemap.Name);
+            AppendGuid(hash, tilemap.TilesetId.Value);
+            AppendString(hash, tilemap.TopologyId);
+            var cells = tilemap.EnumerateCells().ToArray();
+            AppendInt32(hash, cells.Length);
+            foreach (var pair in cells)
+            {
+                AppendPoint(hash, pair.Key);
+                AppendGuid(hash, pair.Value.TileId.Value);
+                AppendByte(hash, (byte)pair.Value.Flags);
+                AppendUInt16(hash, pair.Value.Variant);
+            }
         }
 
         return "sha256:" + Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
@@ -249,6 +289,20 @@ public static class ProjectSemanticHash
     {
         Span<byte> bytes = stackalloc byte[8];
         BinaryPrimitives.WriteInt64LittleEndian(bytes, value);
+        hash.AppendData(bytes);
+    }
+
+    private static void AppendUInt64(IncrementalHash hash, ulong value)
+    {
+        Span<byte> bytes = stackalloc byte[8];
+        BinaryPrimitives.WriteUInt64LittleEndian(bytes, value);
+        hash.AppendData(bytes);
+    }
+
+    private static void AppendUInt16(IncrementalHash hash, ushort value)
+    {
+        Span<byte> bytes = stackalloc byte[2];
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes, value);
         hash.AppendData(bytes);
     }
 

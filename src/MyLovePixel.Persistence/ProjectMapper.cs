@@ -21,6 +21,7 @@ internal static class ProjectMapper
         var dto = new DocumentDto
         {
             Id = document.Id.ToString(),
+            Seed = document.Seed,
             Canvas = new CanvasDto
             {
                 Width = document.Canvas.Size.Width,
@@ -142,6 +143,7 @@ internal static class ProjectMapper
             });
         }
 
+        TilemapDtoMapper.ToDto(document, dto, template);
         return dto;
     }
 
@@ -156,7 +158,8 @@ internal static class ProjectMapper
             var document = new PixelDocument(
                 new DocumentId(ParseGuid(dto.Id, "document.id")),
                 new CanvasSpec(new IntSize(dto.Canvas.Width, dto.Canvas.Height)),
-                animation);
+                animation,
+                dto.Seed);
 
             var layerIds = new HashSet<LayerId>();
             foreach (var item in dto.Layers)
@@ -224,6 +227,8 @@ internal static class ProjectMapper
                     throw new PixelProjectException(PixelProjectErrorCode.InvalidSurface, $"Surface descriptor dimensions do not match '{item.Entry}'.", item.Entry);
                 document.Resources.AddSurface(id, surface);
             }
+
+            TilemapDtoMapper.Populate(document, dto, surfaceIds);
 
             var celIds = new HashSet<CelId>();
             foreach (var item in dto.Cels)
