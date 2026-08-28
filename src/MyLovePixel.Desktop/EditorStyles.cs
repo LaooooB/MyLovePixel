@@ -21,8 +21,9 @@ public static class EditorStyles
                 new Setter(Button.BorderBrushProperty, EditorThemeTokens.PanelBorder),
                 new Setter(Button.BorderThicknessProperty, new Thickness(1)),
                 new Setter(Button.CornerRadiusProperty, EditorThemeTokens.ControlRadius),
-                new Setter(Button.PaddingProperty, new Thickness(8, 4)),
+                new Setter(Button.PaddingProperty, new Thickness(9, 5)),
                 new Setter(Button.FontSizeProperty, 12d),
+                new Setter(Button.MinHeightProperty, 30d),
             },
         });
         app.Styles.Add(new Style(x => x.OfType<Button>().Class(":pointerover"))
@@ -47,8 +48,8 @@ public static class EditorStyles
             {
                 new Setter(Button.WidthProperty, 34d),
                 new Setter(Button.HeightProperty, 34d),
+                new Setter(Button.MinHeightProperty, 34d),
                 new Setter(Button.PaddingProperty, new Thickness(0)),
-                new Setter(Button.FontSizeProperty, 17d),
                 new Setter(Button.HorizontalContentAlignmentProperty, Avalonia.Layout.HorizontalAlignment.Center),
                 new Setter(Button.VerticalContentAlignmentProperty, Avalonia.Layout.VerticalAlignment.Center),
             },
@@ -59,8 +60,34 @@ public static class EditorStyles
             {
                 new Setter(Button.WidthProperty, 28d),
                 new Setter(Button.HeightProperty, 28d),
+                new Setter(Button.MinHeightProperty, 28d),
                 new Setter(Button.PaddingProperty, new Thickness(0)),
-                new Setter(Button.FontSizeProperty, 14d),
+            },
+        });
+        app.Styles.Add(new Style(x => x.OfType<Button>().Class("text-icon"))
+        {
+            Setters =
+            {
+                new Setter(Button.PaddingProperty, new Thickness(9, 5)),
+                new Setter(Button.MinHeightProperty, 34d),
+            },
+        });
+        app.Styles.Add(new Style(x => x.OfType<Button>().Class("text-action"))
+        {
+            Setters =
+            {
+                new Setter(Button.MinWidthProperty, 58d),
+                new Setter(Button.PaddingProperty, new Thickness(8, 5)),
+            },
+        });
+        app.Styles.Add(new Style(x => x.OfType<Button>().Class("small-text-action"))
+        {
+            Setters =
+            {
+                new Setter(Button.MinWidthProperty, 44d),
+                new Setter(Button.MinHeightProperty, 28d),
+                new Setter(Button.PaddingProperty, new Thickness(6, 3)),
+                new Setter(Button.FontSizeProperty, 11d),
             },
         });
         app.Styles.Add(new Style(x => x.OfType<Button>().Class("ghost"))
@@ -112,11 +139,32 @@ public static class EditorStyles
         });
         app.Styles.Add(new Style(x => x.OfType<TextBlock>().Class("subtle"))
         {
-            Setters = { new Setter(TextBlock.ForegroundProperty, EditorThemeTokens.TextMuted) },
+            Setters =
+            {
+                new Setter(TextBlock.ForegroundProperty, EditorThemeTokens.TextMuted),
+                new Setter(TextBlock.FontSizeProperty, 11d),
+            },
         });
         app.Styles.Add(new Style(x => x.OfType<TextBlock>().Class("accent"))
         {
             Setters = { new Setter(TextBlock.ForegroundProperty, EditorThemeTokens.Accent) },
+        });
+        app.Styles.Add(new Style(x => x.OfType<TextBlock>().Class("toolbar-label"))
+        {
+            Setters =
+            {
+                new Setter(TextBlock.ForegroundProperty, EditorThemeTokens.TextMuted),
+                new Setter(TextBlock.FontSizeProperty, 10d),
+            },
+        });
+        app.Styles.Add(new Style(x => x.OfType<TextBlock>().Class("section-title"))
+        {
+            Setters =
+            {
+                new Setter(TextBlock.ForegroundProperty, EditorThemeTokens.TextPrimary),
+                new Setter(TextBlock.FontSizeProperty, 13d),
+                new Setter(TextBlock.FontWeightProperty, FontWeight.SemiBold),
+            },
         });
 
         AddInputStyle<TextBox>(app, TextBox.BackgroundProperty, TextBox.ForegroundProperty, TextBox.BorderBrushProperty, TextBox.BorderThicknessProperty);
@@ -140,8 +188,13 @@ public static class EditorStyles
             Setters =
             {
                 new Setter(TabItem.ForegroundProperty, EditorThemeTokens.TextSecondary),
-                new Setter(TabItem.PaddingProperty, new Thickness(8, 6)),
+                new Setter(TabItem.PaddingProperty, new Thickness(10, 7)),
+                new Setter(TabItem.FontSizeProperty, 12d),
             },
+        });
+        app.Styles.Add(new Style(x => x.OfType<TabItem>().Class(":selected"))
+        {
+            Setters = { new Setter(TabItem.ForegroundProperty, EditorThemeTokens.TextPrimary) },
         });
     }
 
