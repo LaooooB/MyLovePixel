@@ -88,7 +88,6 @@ public sealed record EffectParameterDescriptor
         if (maximum is { } max && !double.IsFinite(max)) throw new ArgumentOutOfRangeException(nameof(maximum));
         if (minimum is { } lower && maximum is { } upper && lower > upper)
             throw new ArgumentException("Effect parameter minimum cannot exceed maximum.");
-
         Key = key;
         DisplayName = displayName;
         Kind = kind;
@@ -113,17 +112,16 @@ public sealed record EffectParameterDescriptor
         if (value.Kind != Kind)
             throw new ArgumentException($"Effect parameter '{Key}' expects {Kind}, received {value.Kind}.", nameof(value));
 
-        var numericValue = Kind switch
+        double? numeric = Kind switch
         {
-            EffectParameterKind.Integer => (double)value.IntegerValue,
+            EffectParameterKind.Integer => value.IntegerValue,
             EffectParameterKind.Number => value.NumberValue,
-            _ => (double?)null,
+            _ => null,
         };
-
-        if (numericValue is not { } numeric) return;
-        if (Minimum is { } minimum && numeric < minimum)
+        if (numeric is not { } number) return;
+        if (Minimum is { } minimum && number < minimum)
             throw new ArgumentOutOfRangeException(nameof(value), $"Effect parameter '{Key}' cannot be less than {minimum}.");
-        if (Maximum is { } maximum && numeric > maximum)
+        if (Maximum is { } maximum && number > maximum)
             throw new ArgumentOutOfRangeException(nameof(value), $"Effect parameter '{Key}' cannot exceed {maximum}.");
     }
 }
@@ -132,15 +130,11 @@ public sealed class EffectDescriptor
 {
     private readonly ReadOnlyDictionary<string, EffectParameterDescriptor> _parameters;
 
-    public EffectDescriptor(
-        string typeId,
-        string displayName,
-        IEnumerable<EffectParameterDescriptor> parameters)
+    public EffectDescriptor(string typeId, string displayName, IEnumerable<EffectParameterDescriptor> parameters)
     {
         if (string.IsNullOrWhiteSpace(typeId)) throw new ArgumentException("Effect type id cannot be empty.", nameof(typeId));
         if (string.IsNullOrWhiteSpace(displayName)) throw new ArgumentException("Effect display name cannot be empty.", nameof(displayName));
         ArgumentNullException.ThrowIfNull(parameters);
-
         var values = new Dictionary<string, EffectParameterDescriptor>(StringComparer.Ordinal);
         foreach (var parameter in parameters)
         {
@@ -148,7 +142,6 @@ public sealed class EffectDescriptor
             if (!values.TryAdd(parameter.Key, parameter))
                 throw new ArgumentException($"Effect descriptor contains duplicate parameter key '{parameter.Key}'.", nameof(parameters));
         }
-
         TypeId = typeId;
         DisplayName = displayName;
         _parameters = new ReadOnlyDictionary<string, EffectParameterDescriptor>(values);
@@ -168,17 +161,15 @@ public sealed class EffectDescriptor
         ArgumentNullException.ThrowIfNull(instance);
         if (!string.Equals(instance.TypeId, TypeId, StringComparison.Ordinal))
             throw new ArgumentException($"Effect instance type '{instance.TypeId}' does not match descriptor '{TypeId}'.", nameof(instance));
-
         foreach (var pair in instance.Parameters)
             GetParameter(pair.Key).Validate(pair.Value);
-
         foreach (var pair in instance.ParameterTracks)
         {
-            var descriptor = GetParameter(pair.Key);
-            if (!descriptor.Animatable)
+            var parameter = GetParameter(pair.Key);
+            if (!parameter.Animatable)
                 throw new ArgumentException($"Effect parameter '{pair.Key}' is not animatable.", nameof(instance));
             foreach (var value in pair.Value.Values.Values)
-                descriptor.Validate(value);
+                parameter.Validate(value);
         }
     }
 }
@@ -201,10 +192,8 @@ public sealed class EffectInstance
     public string TypeId { get; }
     public bool Enabled { get; internal set; }
     public long Revision { get; private set; }
-    public IReadOnlyDictionary<string, EffectValue> Parameters =>
-        new ReadOnlyDictionary<string, EffectValue>(_parameters);
-    public IReadOnlyDictionary<string, AnimationTrack<EffectValue>> ParameterTracks =>
-        new ReadOnlyDictionary<string, AnimationTrack<EffectValue>>(_parameterTracks);
+    public IReadOnlyDictionary<string, EffectValue> Parameters => new ReadOnlyDictionary<string, EffectValue>(_parameters);
+    public IReadOnlyDictionary<string, AnimationTrack<EffectValue>> ParameterTracks => new ReadOnlyDictionary<string, AnimationTrack<EffectValue>>(_parameterTracks);
 
     public EffectValue ResolveParameter(string key, FrameId frameId, EffectDescriptor descriptor)
     {
@@ -251,10 +240,7 @@ public sealed class EffectInstance
         return true;
     }
 
-    internal AnimationTrack<EffectValue> GetOrCreateParameterTrack(
-        string key,
-        AnimationTrackId trackId,
-        out bool created)
+    internal AnimationTrack<EffectValue> GetOrCreateParameterTrack(string key, AnimationTrackId trackId, out bool created)
     {
         ValidateKey(key);
         if (_parameterTracks.TryGetValue(key, out var existing))
@@ -287,7 +273,13 @@ public sealed class EffectInstance
         Revision = checked(Revision + 1);
     }
 
-    internal bool SetKeyframe(string key, FrameId frameId, EffectValue value, AnimationTrackId newTrackId, out EffectValue? previous, out bool trackCreated)
+    internal bool SetKeyframe(
+        string key,
+        FrameId frameId,
+        EffectValue value,
+        AnimationTrackId newTrackId,
+        out EffectValue? previous,
+        out bool trackCreated)
     {
         ArgumentNullException.ThrowIfNull(value);
         var track = GetOrCreateParameterTrack(key, newTrackId, out trackCreated);
@@ -301,20 +293,17 @@ public sealed class EffectInstance
     internal bool RemoveKeyframe(string key, FrameId frameId, out EffectValue value)
     {
         ValidateKey(key);
-        if (!_parameterTracks.TryGetValue(key, out var track) || !track.Remove(frameId, out value!))
-            return false;
+        value = null!;
+        if (!_parameterTracks.TryGetValue(key, out var track)) return false;
+        if (!track.Remove(frameId, out value)) return false;
         Revision = checked(Revision + 1);
         return true;
     }
 
     internal EffectInstanceSnapshot Snapshot()
     {
-        var parameters = new ReadOnlyDictionary<string, EffectValue>(
-            new Dictionary<string, EffectValue>(_parameters, StringComparer.Ordinal));
-        var tracks = _parameterTracks.ToDictionary(
-            pair => pair.Key,
-            pair => pair.Value.Snapshot(),
-            StringComparer.Ordinal);
+        var parameters = new ReadOnlyDictionary<string, EffectValue>(new Dictionary<string, EffectValue>(_parameters, StringComparer.Ordinal));
+        var tracks = _parameterTracks.ToDictionary(pair => pair.Key, pair => pair.Value.Snapshot(), StringComparer.Ordinal);
         return new EffectInstanceSnapshot(
             Id,
             TypeId,
@@ -457,8 +446,7 @@ public sealed record EffectGraphSnapshot(
     public static EffectGraphSnapshot Empty { get; } = new(
         0,
         Array.Empty<EffectInstanceId>(),
-        new ReadOnlyDictionary<EffectInstanceId, EffectInstanceSnapshot>(
-            new Dictionary<EffectInstanceId, EffectInstanceSnapshot>()));
+        new ReadOnlyDictionary<EffectInstanceId, EffectInstanceSnapshot>(new Dictionary<EffectInstanceId, EffectInstanceSnapshot>()));
 
     public EffectInstanceSnapshot GetEffect(EffectInstanceId id) =>
         Effects.TryGetValue(id, out var value)
