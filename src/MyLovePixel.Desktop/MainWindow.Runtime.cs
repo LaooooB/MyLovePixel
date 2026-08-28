@@ -102,7 +102,9 @@ public sealed partial class MainWindow
         var session = Current(); if (session is null) return;
         try
         {
-            session.EnsureEditableCel();
+            if (e.Kind == EditorPointerKind.Pressed)
+                session.EnsureEditableCel();
+
             if (_selectionMode)
             {
                 if (_selectionGesture == SelectionGestureMode.ByColor && e.Kind == EditorPointerKind.Pressed && (e.Buttons & EditorPointerButtons.Primary) != 0)
@@ -129,16 +131,29 @@ public sealed partial class MainWindow
                 }
                 return;
             }
+
             _plugins.DispatchPointer(session, e);
+            QueueRefreshAll();
         }
-        catch (Exception ex) { _plugins.CancelTool(session); SetError(ex.Message); }
+        catch (Exception ex)
+        {
+            CrashLog.Write("CanvasPointer", ex);
+            try { _plugins.CancelTool(session); }
+            catch (Exception cancelEx) { CrashLog.Write("CanvasPointerCancel", cancelEx); }
+            SetError(ex.Message);
+        }
     }
 
     private void CancelCanvasInteraction()
     {
-        if (Current() is { } session) _plugins.CancelTool(session);
+        if (Current() is { } session)
+        {
+            try { _plugins.CancelTool(session); }
+            catch (Exception ex) { CrashLog.Write("CanvasPointerCaptureLost", ex); SetError(ex.Message); }
+        }
         _selectionStart = null;
         _selectionVertices.Clear();
+        QueueRefreshAll();
     }
 
     private void PickColorFromCanvas(int x, int y)
