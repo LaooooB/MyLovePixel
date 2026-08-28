@@ -12,6 +12,7 @@
   <ItemGroup>
     <ProjectReference Include="../../src/MyLovePixel.Core/MyLovePixel.Core.csproj" />
     <ProjectReference Include="../../src/MyLovePixel.Commands/MyLovePixel.Commands.csproj" />
+    <ProjectReference Include="../../src/MyLovePixel.Effects/MyLovePixel.Effects.csproj" />
     <ProjectReference Include="../../src/MyLovePixel.Export/MyLovePixel.Export.csproj" />
   </ItemGroup>
 </Project>
