@@ -42,10 +42,11 @@ public sealed partial class MainWindow
         var session = Current();
         var presentation = session is null
             ? null
-            : _onionSkin
-                ? session.RenderCanvasWithOnionSkin(new OnionSkinPresentationSettings(_onionPrevious, _onionNext, _onionOpacity, _onionFalloff))
-                : session.RenderCanvas();
-        if (session is not null && presentation is not null) presentation = _plugins.DecorateCanvas(session, presentation);
+            : _plugins.RenderCanvas(
+                session,
+                _onionSkin
+                    ? new OnionSkinPresentationSettings(_onionPrevious, _onionNext, _onionOpacity, _onionFalloff)
+                    : null);
         _canvas.SetPresentation(presentation, session?.Zoom ?? 1d, session is null ? null : _selection.GetOverlay(session));
         if (session is null || presentation?.Diagnostics is not { } d)
         {
