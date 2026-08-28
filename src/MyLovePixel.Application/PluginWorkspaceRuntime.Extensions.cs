@@ -82,7 +82,7 @@ public sealed partial class PluginWorkspaceRuntime
         var fullPath = Path.GetFullPath(path);
         var request = new ImportRequest(Path.GetFileName(fullPath), File.ReadAllBytes(fullPath));
         var document = _host.CreateImportPipeline().Execute(importerId, request);
-        return _workspace.OpenRecovered(new Persistence.PixelProject(document), fullPath, $"import-{Guid.NewGuid():N}");
+        return _workspace.OpenImported(new Persistence.PixelProject(document));
     }
 
     public IReadOnlyList<string> GetEffectTypes() =>
