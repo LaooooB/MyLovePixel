@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>MyLovePixel.Recovery</AssemblyName>
+    <RootNamespace>MyLovePixel.Recovery</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../MyLovePixel.Persistence/MyLovePixel.Persistence.csproj" />
+  </ItemGroup>
+</Project>
