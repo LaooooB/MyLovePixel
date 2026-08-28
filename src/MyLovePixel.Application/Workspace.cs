@@ -246,6 +246,16 @@ public sealed class DocumentSession
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    internal void MarkImported()
+    {
+        FilePath = null;
+        RecoverySourcePath = null;
+        RecoveryId = null;
+        IsRecovered = false;
+        IsDirty = true;
+        StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
     private IReadOnlyList<SurfaceInvalidation>? BuildPendingInvalidations(DocumentSnapshot snapshot)
     {
         if (_pendingDirtySurfaceRegions.Count == 0 || _lastRenderedSurfaceRevisions.Count == 0)
@@ -362,6 +372,15 @@ public sealed class EditorWorkspace
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         var fullPath = Path.GetFullPath(path);
         var session = new DocumentSession(PixelProjectFile.Load(fullPath), fullPath);
+        AddSession(session);
+        return session;
+    }
+
+    internal DocumentSession OpenImported(PixelProject project)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        var session = new DocumentSession(project);
+        session.MarkImported();
         AddSession(session);
         return session;
     }
