@@ -45,7 +45,7 @@ public sealed partial class MainWindow
             if (_selectedEffect == effect.Id) choose.Classes.Add("selected");
             choose.Click += (_, _) => { _selectedEffect = effect.Id; RefreshEffects(); };
             Grid.SetColumn(choose, 1); row.Children.Add(choose);
-            Grid.SetColumn(Place(SmallIcon("↑", "Move up", () => session.MoveEffect(effect.Id, -1)), 2), 2);
+            row.Children.Add(Place(SmallIcon("↑", "Move up", () => session.MoveEffect(effect.Id, -1)), 2));
             row.Children.Add(Place(SmallIcon("↓", "Move down", () => session.MoveEffect(effect.Id, 1)), 3));
             row.Children.Add(Place(SmallIcon("×", "Remove", () => session.RemoveEffect(effect.Id)), 4));
             _effectsPanel.Children.Add(row);
@@ -164,6 +164,7 @@ public sealed partial class MainWindow
             ToggleIcon("⌫", "Erase tile", () => _tileErase, v => { _tileErase = v; RefreshTiles(); }),
             ToggleFlag("↔", TileCellFlags.FlipX), ToggleFlag("↕", TileCellFlags.FlipY), ToggleFlag("↻", TileCellFlags.Rotate90),
             IconButton("✎", "Edit selected tile pixels", EditSelectedTileAsync),
+            IconButton("⌘", "AutoTile", async () => await AutoTileAsync(tilesetId, tilemapId)),
             IconButton("♲", "Collect unused tiles", () => { Safe(() => session.CollectUnusedTiles(tilesetId)); RefreshTiles(); }));
         if (_selectedTileCell is { } selectedCell)
             tileTools.Children.Add(IconButton("◇", "Make selected cell unique", () => { Safe(() => session.MakeUniqueTile(tilemapId, selectedCell.X, selectedCell.Y)); RefreshTiles(); }));
