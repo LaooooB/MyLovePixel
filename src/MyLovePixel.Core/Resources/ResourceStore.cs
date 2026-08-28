@@ -153,9 +153,7 @@ public sealed class ResourceStore
         if (cell is { } value)
         {
             var tileset = GetTileset(tilemap.TilesetId);
-            if (!tileset.ContainsTile(value.TileId))
-                throw new InvalidOperationException(
-                    $"Tilemap '{tilemapId}' cannot reference tile '{value.TileId}' outside tileset '{tileset.Id}'.");
+            ValidateTileCell(tileset, value, tilemapId, coordinate);
         }
         return tilemap.SetCell(coordinate, cell);
     }
@@ -205,11 +203,17 @@ public sealed class ResourceStore
         if (!_tilesets.TryGetValue(tilemap.TilesetId, out var tileset))
             throw new InvalidOperationException($"Tilemap '{tilemap.Id}' references missing tileset '{tilemap.TilesetId}'.");
         foreach (var pair in tilemap.EnumerateCells())
-        {
-            if (!tileset.ContainsTile(pair.Value.TileId))
-                throw new InvalidOperationException(
-                    $"Tilemap '{tilemap.Id}' cell {pair.Key} references missing tile '{pair.Value.TileId}'.");
-        }
+            ValidateTileCell(tileset, pair.Value, tilemap.Id, pair.Key);
+    }
+
+    private void ValidateTileCell(Tileset tileset, TileCell cell, TilemapId tilemapId, IntPoint coordinate)
+    {
+        if (!tileset.ContainsTile(cell.TileId))
+            throw new InvalidOperationException(
+                $"Tilemap '{tilemapId}' cell {coordinate} cannot reference tile '{cell.TileId}' outside tileset '{tileset.Id}'.");
+        if ((cell.Flags & TileCellFlags.Rotate90) != 0 && tileset.TileSize.Width != tileset.TileSize.Height)
+            throw new InvalidOperationException(
+                $"Tilemap '{tilemapId}' cell {coordinate} cannot rotate a non-square tile size {tileset.TileSize} by 90 degrees.");
     }
 
     private void ValidateTileSurface(Tileset tileset, ResourceId surfaceId)

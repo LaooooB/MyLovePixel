@@ -11,6 +11,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/MyLovePixel.Core/MyLovePixel.Core.csproj" />
+    <ProjectReference Include="../../src/MyLovePixel.Commands/MyLovePixel.Commands.csproj" />
     <ProjectReference Include="../../src/MyLovePixel.Tilemap/MyLovePixel.Tilemap.csproj" />
   </ItemGroup>
 </Project>
