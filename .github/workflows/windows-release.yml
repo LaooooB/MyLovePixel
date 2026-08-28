@@ -102,3 +102,5 @@ jobs:
           path: release/MyLovePixel-Windows-x64.zip
           if-no-files-found: error
           retention-days: 30
+
+# Triggered build workflow for the dark UI release branch.
