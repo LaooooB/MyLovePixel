@@ -37,7 +37,8 @@ public sealed class DocumentSnapshot
         IReadOnlyDictionary<LayerId, LayerSnapshot> layers,
         IReadOnlyDictionary<FrameId, FrameSnapshot> frames,
         IReadOnlyList<CelSnapshot> cels,
-        IReadOnlyDictionary<ResourceId, PixelSurfaceSnapshot> surfaces)
+        IReadOnlyDictionary<ResourceId, PixelSurfaceSnapshot> surfaces,
+        AnimationMetadataSnapshot animation)
     {
         Id = id;
         Canvas = canvas;
@@ -47,6 +48,7 @@ public sealed class DocumentSnapshot
         Frames = frames;
         Cels = cels;
         Surfaces = surfaces;
+        Animation = animation;
     }
 
     public DocumentId Id { get; }
@@ -57,6 +59,7 @@ public sealed class DocumentSnapshot
     public IReadOnlyDictionary<FrameId, FrameSnapshot> Frames { get; }
     public IReadOnlyList<CelSnapshot> Cels { get; }
     public IReadOnlyDictionary<ResourceId, PixelSurfaceSnapshot> Surfaces { get; }
+    public AnimationMetadataSnapshot Animation { get; }
 
     public LayerSnapshot GetLayer(LayerId id) => Layers.TryGetValue(id, out var layer)
         ? layer
@@ -136,6 +139,7 @@ public sealed class DocumentSnapshot
             new ReadOnlyDictionary<LayerId, LayerSnapshot>(layers),
             new ReadOnlyDictionary<FrameId, FrameSnapshot>(frames),
             Array.AsReadOnly(cels),
-            new ReadOnlyDictionary<ResourceId, PixelSurfaceSnapshot>(surfaces));
+            new ReadOnlyDictionary<ResourceId, PixelSurfaceSnapshot>(surfaces),
+            document.Animation.Snapshot());
     }
 }
