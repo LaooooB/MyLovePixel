@@ -84,9 +84,19 @@ public sealed class ToolHost
 
         var effectiveModifiers = pointerEvent.Modifiers | _keyboardModifiers;
         var effectiveEvent = pointerEvent.WithModifiers(effectiveModifiers);
-        var result = ActiveTool.HandlePointer(CreateContext(), Options, effectiveEvent);
-        Preview = result.Committed ? null : result.Preview;
-        return result;
+
+        try
+        {
+            var result = ActiveTool.HandlePointer(CreateContext(), Options, effectiveEvent);
+            Preview = result.Committed ? null : result.Preview;
+            return result;
+        }
+        catch
+        {
+            if (!ActiveTool.IsInteracting)
+                Preview = null;
+            throw;
+        }
     }
 
     public ToolDispatchResult CancelInteraction()
