@@ -5,6 +5,12 @@ using MyLovePixel.Tilemap;
 
 namespace MyLovePixel.Application;
 
+public enum AutoTileNeighborModePresentation
+{
+    Four = 4,
+    Eight = 8,
+}
+
 public sealed record AutoTileMappingPresentation(
     byte Mask,
     TileId TileId,
@@ -18,7 +24,7 @@ public static partial class AdvancedEditingExtensions
         this DocumentSession session,
         TilemapId tilemapId,
         IntRect area,
-        TileNeighborMode neighborMode,
+        AutoTileNeighborModePresentation neighborMode,
         IReadOnlyList<AutoTileMappingPresentation> mappings,
         TileId? fallbackTileId)
     {
@@ -47,11 +53,8 @@ public static partial class AdvancedEditingExtensions
         var fallbackVariants = fallbackTileId is { } fallbackId
             ? new[] { new WeightedTileVariant(fallbackId, 1) }
             : null;
-        var rule = new BitmaskAutoTileRule(
-            "desktop.autotile",
-            neighborMode,
-            variants,
-            fallbackVariants);
+        var mode = neighborMode == AutoTileNeighborModePresentation.Eight ? TileNeighborMode.Eight : TileNeighborMode.Four;
+        var rule = new BitmaskAutoTileRule("desktop.autotile", mode, variants, fallbackVariants);
 
         var coordinates = new List<IntPoint>(checked(area.Width * area.Height));
         for (var y = area.Y; y < area.Bottom; y++)
