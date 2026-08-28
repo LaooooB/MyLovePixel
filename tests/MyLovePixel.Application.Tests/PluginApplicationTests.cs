@@ -53,6 +53,110 @@ public sealed class PluginApplicationTests
         Assert.DoesNotContain("Avalonia", panel.GetType().Assembly.GetReferencedAssemblies().Select(value => value.Name));
     }
 
+    [Fact]
+    public void LoadedPlugin_ExposesEveryExecutableExtensionKind()
+    {
+        var workspace = new EditorWorkspace();
+        var session = workspace.NewDocument(2, 2);
+        var runtime = workspace.Plugins();
+        Assert.True(runtime.LoadAssembly(typeof(MyLovePixel.TestPlugin.TestPlugin).Assembly.Location).Succeeded);
+
+        Assert.Contains(runtime.Commands, value => value.Id == "com.mylovepixel.test-plugin.command-dot");
+        Assert.Contains(runtime.GetEffectTypes(), value => value == "com.mylovepixel.test-plugin.invert");
+        Assert.Contains(runtime.Exporters, value => value.Id == "com.mylovepixel.test-plugin.summary");
+        Assert.Contains(runtime.Importers, value => value.Id == "com.mylovepixel.test-plugin.tiny-import");
+        Assert.Contains(runtime.PaletteAlgorithms, value => value.Id == "com.mylovepixel.test-plugin.reverse-palette");
+        Assert.Contains(runtime.DitherAlgorithms, value => value.Id == "com.mylovepixel.test-plugin.identity-dither");
+        Assert.Contains(runtime.AutoTileRules, value => value.Id == "com.mylovepixel.test-plugin.mask-variant");
+        Assert.Contains(runtime.GetTools(session), value => value.Id == "com.mylovepixel.test-plugin.dot");
+        Assert.Single(runtime.GetPanels(session));
+    }
+
+    [Fact]
+    public void PluginCommand_MutatesThroughCommandBusAndCanUndo()
+    {
+        var workspace = new EditorWorkspace();
+        var session = workspace.NewDocument(2, 2);
+        var runtime = workspace.Plugins();
+        Assert.True(runtime.LoadAssembly(typeof(MyLovePixel.TestPlugin.TestPlugin).Assembly.Location).Succeeded);
+
+        var result = runtime.ExecuteCommand(session, "com.mylovepixel.test-plugin.command-dot");
+
+        Assert.True(result.Succeeded, result.Error);
+        Assert.True(result.Mutated);
+        Assert.Equal(new byte[] { 0, 255, 255, 255 }, Pixel(session.RenderCanvas().Rgba.Span, new IntSize(2, 2), 0, 0));
+        Assert.Equal(1, session.Commands.UndoCount);
+
+        session.Undo();
+        Assert.Equal(new byte[] { 0, 0, 0, 0 }, Pixel(session.RenderCanvas().Rgba.Span, new IntSize(2, 2), 0, 0));
+    }
+
+    [Fact]
+    public void PluginEffect_UsesPluginAwareApplicationRenderer()
+    {
+        var workspace = new EditorWorkspace();
+        var session = workspace.NewDocument(2, 2);
+        var runtime = workspace.Plugins();
+        Assert.True(runtime.LoadAssembly(typeof(MyLovePixel.TestPlugin.TestPlugin).Assembly.Location).Succeeded);
+        Assert.True(runtime.ExecuteCommand(session, "com.mylovepixel.test-plugin.command-dot").Succeeded);
+
+        runtime.AddEffect(session, "com.mylovepixel.test-plugin.invert");
+        var rendered = runtime.RenderCanvas(session);
+
+        Assert.Equal(new byte[] { 255, 0, 0, 255 }, Pixel(rendered.Rgba.Span, rendered.Size, 0, 0));
+    }
+
+    [Fact]
+    public void PluginImport_CreatesDirtyUntitledNonRecoverySession()
+    {
+        var workspace = new EditorWorkspace();
+        workspace.NewDocument(2, 2);
+        var runtime = workspace.Plugins();
+        Assert.True(runtime.LoadAssembly(typeof(MyLovePixel.TestPlugin.TestPlugin).Assembly.Location).Succeeded);
+        var path = Path.Combine(Path.GetTempPath(), $"mylovepixel-{Guid.NewGuid():N}.mlpx");
+        try
+        {
+            File.WriteAllBytes(path, [1, 2, 3]);
+            var imported = runtime.ImportFile("com.mylovepixel.test-plugin.tiny-import", path);
+
+            Assert.Same(imported, workspace.CurrentSession);
+            Assert.Null(imported.FilePath);
+            Assert.Null(imported.RecoverySourcePath);
+            Assert.False(imported.IsRecovered);
+            Assert.True(imported.IsDirty);
+            var rendered = imported.RenderCanvas();
+            Assert.Equal(new IntSize(1, 1), rendered.Size);
+            Assert.Equal(new byte[] { 255, 0, 255, 255 }, rendered.Rgba.ToArray());
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void PluginPaletteAndDitherAlgorithms_UseUndoableApplicationPaths()
+    {
+        var workspace = new EditorWorkspace();
+        var session = workspace.NewDocument(2, 2);
+        var runtime = workspace.Plugins();
+        Assert.True(runtime.LoadAssembly(typeof(MyLovePixel.TestPlugin.TestPlugin).Assembly.Location).Succeeded);
+        var paletteId = session.AddDefaultPalette();
+        var before = session.GetPaletteEditors().Single(value => value.Id == paletteId).Colors.Select(value => value.Color).ToArray();
+
+        runtime.ApplyPaletteAlgorithm(session, paletteId, "com.mylovepixel.test-plugin.reverse-palette");
+        var reversed = session.GetPaletteEditors().Single(value => value.Id == paletteId).Colors.Select(value => value.Color).ToArray();
+        Assert.Equal(before.Reverse(), reversed);
+
+        session.Undo();
+        Assert.Equal(before, session.GetPaletteEditors().Single(value => value.Id == paletteId).Colors.Select(value => value.Color).ToArray());
+
+        var undoBeforeDither = session.Commands.UndoCount;
+        runtime.ApplyDitherAlgorithm(session, paletteId, "com.mylovepixel.test-plugin.identity-dither");
+        Assert.Equal(undoBeforeDither + 1, session.Commands.UndoCount);
+        Assert.Equal(PixelFormat.Rgba32, session.GetCurrentSurfaceFormat());
+    }
+
     private static EditorPointerEvent Pointer(EditorPointerKind kind) => new(
         1,
         EditorPointerDevice.Mouse,
