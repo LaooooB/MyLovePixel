@@ -1,16 +1,22 @@
 using MyLovePixel.Commands;
 using MyLovePixel.Commands.Abstractions;
 using MyLovePixel.Core.Document;
+using MyLovePixel.Core.Pixel;
 using MyLovePixel.Core.Primitives;
 using MyLovePixel.Export;
 using MyLovePixel.Persistence;
 using MyLovePixel.Render;
+using MyLovePixel.Tools;
 
 namespace MyLovePixel.Application;
 
 public sealed class DocumentSession
 {
     private readonly FrameRenderer _renderer = new();
+    private ToolHost? _toolHost;
+    private string _activeToolId = BuiltinToolCatalog.DefaultToolId;
+    private Rgba32 _primaryColor = new(0, 0, 0, 255);
+    private Rgba32 _secondaryColor = new(255, 255, 255, 255);
 
     public DocumentSession(PixelProject project, string? filePath = null)
     {
@@ -20,12 +26,13 @@ public sealed class DocumentSession
         CurrentFrameId = project.Document.FrameOrder.First();
         CurrentLayerId = project.Document.LayerOrder.First();
         Commands.Changed += OnDocumentChanged;
+        RefreshToolTarget();
     }
 
     public event EventHandler? StateChanged;
 
-    public PixelProject Project { get; }
-    public PixelDocument Document => Project.Document;
+    internal PixelProject Project { get; }
+    internal PixelDocument Document => Project.Document;
     public CommandBus Commands { get; }
     public string? FilePath { get; private set; }
     public bool IsDirty { get; private set; }
@@ -33,22 +40,29 @@ public sealed class DocumentSession
     public bool CanRedo => Commands.CanRedo;
     public FrameId CurrentFrameId { get; private set; }
     public LayerId CurrentLayerId { get; private set; }
-    public string ActiveToolId { get; private set; } = "pencil";
+    public string ActiveToolId => _activeToolId;
     public double Zoom { get; private set; } = 16d;
+    public bool HasEditableCel => _toolHost is not null;
 
     public DocumentSnapshot CaptureSnapshot() => DocumentSnapshot.Capture(Document);
 
-    public DocumentChange Execute(ICommand command) => Commands.Execute(command);
+    public DocumentChange Execute(ICommand command)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        return Commands.Execute(command);
+    }
 
     public void Undo()
     {
         Commands.Undo();
+        RefreshToolTarget();
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public void Redo()
     {
         Commands.Redo();
+        RefreshToolTarget();
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -56,7 +70,9 @@ public sealed class DocumentSession
     {
         Document.GetFrame(frameId);
         if (CurrentFrameId == frameId) return;
+        _toolHost?.CancelInteraction();
         CurrentFrameId = frameId;
+        RefreshToolTarget();
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -64,17 +80,66 @@ public sealed class DocumentSession
     {
         Document.GetLayer(layerId);
         if (CurrentLayerId == layerId) return;
+        _toolHost?.CancelInteraction();
         CurrentLayerId = layerId;
+        RefreshToolTarget();
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public void SelectTool(string toolId)
     {
-        if (string.IsNullOrWhiteSpace(toolId)) throw new ArgumentException("Tool id cannot be empty.", nameof(toolId));
-        var normalized = toolId.Trim();
-        if (string.Equals(ActiveToolId, normalized, StringComparison.Ordinal)) return;
-        ActiveToolId = normalized;
+        var tool = BuiltinToolCatalog.Create(toolId);
+        if (string.Equals(_activeToolId, tool.Descriptor.Id, StringComparison.Ordinal)) return;
+        _activeToolId = tool.Descriptor.Id;
+        _toolHost?.SetActiveTool(tool);
         StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public IReadOnlyList<ToolPaletteItem> GetTools() => BuiltinToolCatalog.Describe(_activeToolId);
+
+    public IReadOnlyList<ToolOptionPresentation> GetToolOptions() =>
+        _toolHost is null
+            ? Array.Empty<ToolOptionPresentation>()
+            : ToolPresentationMapper.DescribeOptions(_toolHost);
+
+    public void SetToolOption(string id, object value)
+    {
+        if (_toolHost is null) throw new InvalidOperationException("The current Layer/Frame has no editable Cel.");
+        _toolHost.SetOption(id, value);
+        StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public ToolColorState GetToolColors() => new(_primaryColor, _secondaryColor);
+
+    public void SetToolColors(Rgba32 primary, Rgba32 secondary)
+    {
+        _primaryColor = primary;
+        _secondaryColor = secondary;
+        _toolHost?.SetColors(primary, secondary);
+        StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public ToolDispatchPresentation DispatchPointer(EditorPointerEvent pointerEvent)
+    {
+        if (_toolHost is null)
+            return new ToolDispatchPresentation(false, false, false);
+
+        var surface = Document.Resources.GetSurface(_toolHost.Target.SurfaceId);
+        if (surface.Format != PixelFormat.Rgba32)
+            throw new InvalidOperationException("Built-in raster tools currently require an RGBA32 Cel surface.");
+
+        var result = _toolHost.Dispatch(ToolPresentationMapper.ToToolEvent(pointerEvent));
+        if (!result.Committed)
+            StateChanged?.Invoke(this, EventArgs.Empty);
+        return new ToolDispatchPresentation(result.Consumed, result.Committed, result.Preview is not null);
+    }
+
+    public void CancelToolInteraction()
+    {
+        if (_toolHost is null) return;
+        var hadPreview = _toolHost.Preview is not null || _toolHost.ActiveTool.IsInteracting;
+        _toolHost.CancelInteraction();
+        if (hadPreview) StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public void SetZoom(double zoom)
@@ -90,7 +155,11 @@ public sealed class DocumentSession
     {
         var snapshot = CaptureSnapshot();
         var result = _renderer.Render(snapshot, new FrameRenderRequest(CurrentFrameId));
-        return new CanvasPresentation(CurrentFrameId, result.Surface.Size, result.Surface.Bytes);
+        return new CanvasPresentation(
+            CurrentFrameId,
+            result.Surface.Size,
+            result.Surface.Bytes,
+            BuildPreviewPixels(result.Surface.Size));
     }
 
     public IReadOnlyList<LayerListItem> GetLayers()
@@ -140,9 +209,52 @@ public sealed class DocumentSession
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    private IReadOnlyList<CanvasPreviewPixel> BuildPreviewPixels(IntSize canvasSize)
+    {
+        if (_toolHost?.Preview is not { } preview) return Array.Empty<CanvasPreviewPixel>();
+        var origin = _toolHost.Target.SurfaceOriginInCanvas;
+        var values = new List<CanvasPreviewPixel>(preview.Patch.Writes.Count);
+        foreach (var write in preview.Patch.Writes)
+        {
+            var x = checked(origin.X + write.X);
+            var y = checked(origin.Y + write.Y);
+            if ((uint)x >= (uint)canvasSize.Width || (uint)y >= (uint)canvasSize.Height) continue;
+            values.Add(new CanvasPreviewPixel(new IntPoint(x, y), write.Color));
+        }
+        return values.AsReadOnly();
+    }
+
+    private void RefreshToolTarget()
+    {
+        var cel = Document.FindCel(CurrentLayerId, CurrentFrameId);
+        if (cel is null)
+        {
+            _toolHost?.CancelInteraction();
+            _toolHost = null;
+            return;
+        }
+
+        var target = ToolTarget.FromCel(cel);
+        if (_toolHost is null)
+        {
+            _toolHost = new ToolHost(
+                new PixelDocumentToolReader(Document),
+                Commands,
+                target,
+                BuiltinToolCatalog.Create(_activeToolId),
+                _primaryColor,
+                _secondaryColor);
+        }
+        else
+        {
+            _toolHost.SetTarget(target);
+        }
+    }
+
     private void OnDocumentChanged(object? sender, DocumentChange change)
     {
         IsDirty = true;
+        RefreshToolTarget();
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 }
@@ -228,19 +340,26 @@ public sealed class EditorWorkspace
 public sealed class CanvasPresentation
 {
     private readonly byte[] _rgba;
+    private readonly CanvasPreviewPixel[] _previewPixels;
 
-    public CanvasPresentation(FrameId frameId, IntSize size, ReadOnlyMemory<byte> rgba)
+    public CanvasPresentation(
+        FrameId frameId,
+        IntSize size,
+        ReadOnlyMemory<byte> rgba,
+        IEnumerable<CanvasPreviewPixel>? previewPixels = null)
     {
         var expected = checked(size.Width * size.Height * 4);
         if (rgba.Length != expected) throw new ArgumentException("Canvas RGBA length does not match size.", nameof(rgba));
         FrameId = frameId;
         Size = size;
         _rgba = rgba.ToArray();
+        _previewPixels = (previewPixels ?? Array.Empty<CanvasPreviewPixel>()).ToArray();
     }
 
     public FrameId FrameId { get; }
     public IntSize Size { get; }
     public ReadOnlyMemory<byte> Rgba => _rgba;
+    public IReadOnlyList<CanvasPreviewPixel> PreviewPixels => Array.AsReadOnly(_previewPixels);
 }
 
 public sealed record LayerListItem(int Index, LayerId Id, string Name, bool Visible, bool Locked, byte Opacity, bool IsCurrent);
