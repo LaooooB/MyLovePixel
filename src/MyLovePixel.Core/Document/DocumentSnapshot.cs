@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using MyLovePixel.Core.Pixel;
 using MyLovePixel.Core.Primitives;
+using MyLovePixel.Core.Tiles;
 
 namespace MyLovePixel.Core.Document;
 
@@ -31,6 +32,7 @@ public sealed class DocumentSnapshot
 {
     private DocumentSnapshot(
         DocumentId id,
+        ulong seed,
         CanvasSpec canvas,
         IReadOnlyList<LayerId> layerOrder,
         IReadOnlyList<FrameId> frameOrder,
@@ -39,9 +41,12 @@ public sealed class DocumentSnapshot
         IReadOnlyList<CelSnapshot> cels,
         IReadOnlyDictionary<ResourceId, PixelSurfaceSnapshot> surfaces,
         IReadOnlyDictionary<PaletteId, PaletteSnapshot> palettes,
+        IReadOnlyDictionary<TilesetId, TilesetSnapshot> tilesets,
+        IReadOnlyDictionary<TilemapId, TilemapSnapshot> tilemaps,
         AnimationMetadataSnapshot animation)
     {
         Id = id;
+        Seed = seed;
         Canvas = canvas;
         LayerOrder = layerOrder;
         FrameOrder = frameOrder;
@@ -50,10 +55,13 @@ public sealed class DocumentSnapshot
         Cels = cels;
         Surfaces = surfaces;
         Palettes = palettes;
+        Tilesets = tilesets;
+        Tilemaps = tilemaps;
         Animation = animation;
     }
 
     public DocumentId Id { get; }
+    public ulong Seed { get; }
     public CanvasSpec Canvas { get; }
     public IReadOnlyList<LayerId> LayerOrder { get; }
     public IReadOnlyList<FrameId> FrameOrder { get; }
@@ -62,6 +70,8 @@ public sealed class DocumentSnapshot
     public IReadOnlyList<CelSnapshot> Cels { get; }
     public IReadOnlyDictionary<ResourceId, PixelSurfaceSnapshot> Surfaces { get; }
     public IReadOnlyDictionary<PaletteId, PaletteSnapshot> Palettes { get; }
+    public IReadOnlyDictionary<TilesetId, TilesetSnapshot> Tilesets { get; }
+    public IReadOnlyDictionary<TilemapId, TilemapSnapshot> Tilemaps { get; }
     public AnimationMetadataSnapshot Animation { get; }
 
     public LayerSnapshot GetLayer(LayerId id) => Layers.TryGetValue(id, out var layer)
@@ -79,6 +89,14 @@ public sealed class DocumentSnapshot
     public PaletteSnapshot GetPalette(PaletteId id) => Palettes.TryGetValue(id, out var palette)
         ? palette
         : throw new KeyNotFoundException($"Palette snapshot '{id}' does not exist.");
+
+    public TilesetSnapshot GetTileset(TilesetId id) => Tilesets.TryGetValue(id, out var tileset)
+        ? tileset
+        : throw new KeyNotFoundException($"Tileset snapshot '{id}' does not exist.");
+
+    public TilemapSnapshot GetTilemap(TilemapId id) => Tilemaps.TryGetValue(id, out var tilemap)
+        ? tilemap
+        : throw new KeyNotFoundException($"Tilemap snapshot '{id}' does not exist.");
 
     public static DocumentSnapshot Capture(PixelDocument document)
     {
@@ -131,6 +149,18 @@ public sealed class DocumentSnapshot
                 id => id,
                 id => document.Resources.GetSurface(id).Snapshot());
 
+        var tilesets = document.Resources.TilesetIds
+            .OrderBy(id => id.Value)
+            .ToDictionary(
+                id => id,
+                id => document.Resources.GetTileset(id).Snapshot());
+
+        var tilemaps = document.Resources.TilemapIds
+            .OrderBy(id => id.Value)
+            .ToDictionary(
+                id => id,
+                id => document.Resources.GetTilemap(id).Snapshot());
+
         var cels = document.Cels
             .OrderBy(cel => frameIndex[cel.FrameId])
             .ThenBy(cel => layerIndex[cel.LayerId])
@@ -146,6 +176,7 @@ public sealed class DocumentSnapshot
 
         return new DocumentSnapshot(
             document.Id,
+            document.Seed,
             document.Canvas,
             Array.AsReadOnly(layerOrder),
             Array.AsReadOnly(frameOrder),
@@ -154,6 +185,8 @@ public sealed class DocumentSnapshot
             Array.AsReadOnly(cels),
             new ReadOnlyDictionary<ResourceId, PixelSurfaceSnapshot>(surfaces),
             new ReadOnlyDictionary<PaletteId, PaletteSnapshot>(palettes),
+            new ReadOnlyDictionary<TilesetId, TilesetSnapshot>(tilesets),
+            new ReadOnlyDictionary<TilemapId, TilemapSnapshot>(tilemaps),
             document.Animation.Snapshot());
     }
 }

@@ -36,6 +36,24 @@ public readonly record struct PaletteId(Guid Value)
     public override string ToString() => Value.ToString("N");
 }
 
+public readonly record struct TilesetId(Guid Value)
+{
+    public static TilesetId New() => new(Guid.NewGuid());
+    public override string ToString() => Value.ToString("N");
+}
+
+public readonly record struct TileId(Guid Value)
+{
+    public static TileId New() => new(Guid.NewGuid());
+    public override string ToString() => Value.ToString("N");
+}
+
+public readonly record struct TilemapId(Guid Value)
+{
+    public static TilemapId New() => new(Guid.NewGuid());
+    public override string ToString() => Value.ToString("N");
+}
+
 public readonly record struct AnimationClipId(Guid Value)
 {
     public static AnimationClipId New() => new(Guid.NewGuid());

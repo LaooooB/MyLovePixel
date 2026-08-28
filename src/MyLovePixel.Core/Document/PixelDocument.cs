@@ -13,19 +13,25 @@ public sealed class PixelDocument
     private readonly Dictionary<CelId, Cel> _cels = [];
 
     public PixelDocument(DocumentId id, CanvasSpec canvas)
-        : this(id, canvas, new AnimationMetadata())
+        : this(id, canvas, new AnimationMetadata(), null)
     {
     }
 
-    internal PixelDocument(DocumentId id, CanvasSpec canvas, AnimationMetadata animation)
+    internal PixelDocument(
+        DocumentId id,
+        CanvasSpec canvas,
+        AnimationMetadata animation,
+        ulong? seed = null)
     {
         if (id.Value == Guid.Empty) throw new ArgumentException("DocumentId cannot be empty.", nameof(id));
         Id = id;
         Canvas = canvas ?? throw new ArgumentNullException(nameof(canvas));
         Animation = animation ?? throw new ArgumentNullException(nameof(animation));
+        Seed = seed ?? DocumentSeed.Derive(id);
     }
 
     public DocumentId Id { get; }
+    public ulong Seed { get; }
     public CanvasSpec Canvas { get; }
     public ResourceStore Resources { get; } = new();
     public AnimationMetadata Animation { get; }
@@ -115,7 +121,8 @@ public sealed class PixelDocument
     }
 
     internal bool IsSurfaceReferenced(ResourceId surfaceId) =>
-        _cels.Values.Any(cel => cel.SurfaceId == surfaceId);
+        _cels.Values.Any(cel => cel.SurfaceId == surfaceId) ||
+        Resources.IsSurfaceReferencedByTile(surfaceId);
 
     private void ValidateAnimationRanges(IReadOnlyList<FrameId> proposedOrder)
     {
@@ -142,6 +149,26 @@ public sealed class PixelDocument
                 throw new InvalidOperationException(
                     $"Moving the frame would invert animation tag '{tag.Name}' ({tag.Id}).");
         }
+    }
+}
+
+public static class DocumentSeed
+{
+    public static ulong Derive(DocumentId id)
+    {
+        if (id.Value == Guid.Empty) throw new ArgumentException("DocumentId cannot be empty.", nameof(id));
+        Span<byte> bytes = stackalloc byte[16];
+        if (!id.Value.TryWriteBytes(bytes)) throw new InvalidOperationException("Unable to encode DocumentId.");
+
+        const ulong offset = 14695981039346656037UL;
+        const ulong prime = 1099511628211UL;
+        var hash = offset;
+        foreach (var value in bytes)
+        {
+            hash ^= value;
+            hash *= prime;
+        }
+        return hash;
     }
 }
 

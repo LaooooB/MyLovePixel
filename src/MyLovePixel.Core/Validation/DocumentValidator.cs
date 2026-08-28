@@ -1,6 +1,7 @@
 using MyLovePixel.Core.Document;
 using MyLovePixel.Core.Pixel;
 using MyLovePixel.Core.Primitives;
+using MyLovePixel.Core.Tiles;
 
 namespace MyLovePixel.Core.Validation;
 
@@ -26,6 +27,7 @@ public static class DocumentValidator
         var occupied = new HashSet<(LayerId Layer, FrameId Frame)>();
 
         ValidateResources(document, issues);
+        ValidateTiles(document, issues);
 
         foreach (var frameId in document.FrameOrder)
         {
@@ -102,6 +104,61 @@ public static class DocumentValidator
                         "surface.pixelFormat.unsupported",
                         $"Surface {surfaceId} uses unsupported pixel format {surface.Format}."));
                     break;
+            }
+        }
+    }
+
+    private static void ValidateTiles(PixelDocument document, List<ValidationIssue> issues)
+    {
+        foreach (var tilesetId in document.Resources.TilesetIds)
+        {
+            var tileset = document.Resources.GetTileset(tilesetId);
+            var seen = new HashSet<TileId>();
+            foreach (var tileId in tileset.TileOrder)
+            {
+                if (!seen.Add(tileId))
+                {
+                    issues.Add(new("tileset.tile.duplicate", $"Tileset {tilesetId} contains duplicate tile id {tileId}."));
+                    continue;
+                }
+
+                var tile = tileset.GetTile(tileId);
+                if (!document.Resources.ContainsSurface(tile.SurfaceId))
+                {
+                    issues.Add(new(
+                        "tileset.tile.surface.missing",
+                        $"Tile {tile.Id} in tileset {tilesetId} references missing surface {tile.SurfaceId}."));
+                    continue;
+                }
+
+                var surface = document.Resources.GetSurface(tile.SurfaceId);
+                if (surface.Size != tileset.TileSize)
+                    issues.Add(new(
+                        "tileset.tile.surface.size.invalid",
+                        $"Tile {tile.Id} surface size {surface.Size} does not match tileset tile size {tileset.TileSize}."));
+            }
+        }
+
+        foreach (var tilemapId in document.Resources.TilemapIds)
+        {
+            var tilemap = document.Resources.GetTilemap(tilemapId);
+            if (string.IsNullOrWhiteSpace(tilemap.TopologyId))
+                issues.Add(new("tilemap.topology.invalid", $"Tilemap {tilemapId} has an empty topology id."));
+            if (!document.Resources.ContainsTileset(tilemap.TilesetId))
+            {
+                issues.Add(new(
+                    "tilemap.tileset.missing",
+                    $"Tilemap {tilemapId} references missing tileset {tilemap.TilesetId}."));
+                continue;
+            }
+
+            var tileset = document.Resources.GetTileset(tilemap.TilesetId);
+            foreach (var pair in tilemap.EnumerateCells())
+            {
+                if (!tileset.ContainsTile(pair.Value.TileId))
+                    issues.Add(new(
+                        "tilemap.cell.tile.missing",
+                        $"Tilemap {tilemapId} cell {pair.Key} references missing tile {pair.Value.TileId}."));
             }
         }
     }
