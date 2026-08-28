@@ -14,5 +14,6 @@
     <ProjectReference Include="../../src/MyLovePixel.Commands/MyLovePixel.Commands.csproj" />
     <ProjectReference Include="../../src/MyLovePixel.Core/MyLovePixel.Core.csproj" />
     <ProjectReference Include="../../src/MyLovePixel.Export/MyLovePixel.Export.csproj" />
+    <ProjectReference Include="../MyLovePixel.TestPlugin/MyLovePixel.TestPlugin.csproj" />
   </ItemGroup>
 </Project>
