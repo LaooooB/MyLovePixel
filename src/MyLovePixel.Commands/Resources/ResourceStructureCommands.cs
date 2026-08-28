@@ -127,7 +127,7 @@ public sealed class AddTilemapCommand : ICommand
     public CommandApplication Apply(PixelDocument document)
     {
         document.Resources.GetTileset(_tilesetId);
-        document.Resources.AddTilemap(new Tilemap(_id, _name, _tilesetId));
+        document.Resources.AddTilemap(new MyLovePixel.Core.Tiles.Tilemap(_id, _name, _tilesetId));
         return new CommandApplication(new Undo(), DocumentChange.Empty);
     }
 
