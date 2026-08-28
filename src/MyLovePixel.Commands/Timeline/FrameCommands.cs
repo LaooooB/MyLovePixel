@@ -97,7 +97,9 @@ public sealed class CopyFrameCommand : ICommand
             foreach (var cel in sourceCels)
             {
                 _celIds.Add(cel.Id, CelId.New());
-                _effectGraphs.Add(cel.Id, CloneEffectsWithNewTrackIds(cel.Effects.Snapshot()));
+                _effectGraphs.Add(
+                    cel.Id,
+                    CloneEffectsWithNewTrackIds(cel.Effects.Snapshot(), _sourceFrameId, _newFrameId));
             }
             if (_mode == FrameCopyMode.Independent)
             {
@@ -157,7 +159,10 @@ public sealed class CopyFrameCommand : ICommand
         return DocumentChange.Empty;
     }
 
-    private static EffectGraphSnapshot CloneEffectsWithNewTrackIds(EffectGraphSnapshot source)
+    private static EffectGraphSnapshot CloneEffectsWithNewTrackIds(
+        EffectGraphSnapshot source,
+        FrameId sourceFrameId,
+        FrameId targetFrameId)
     {
         var effects = new Dictionary<EffectInstanceId, EffectInstanceSnapshot>();
         foreach (var effectId in source.EffectOrder)
@@ -168,7 +173,9 @@ public sealed class CopyFrameCommand : ICommand
                 pair => new AnimationTrackSnapshot<EffectValue>(
                     AnimationTrackId.New(),
                     pair.Value.Name,
-                    pair.Value.Values),
+                    pair.Value.Values.ToDictionary(
+                        value => value.Key == sourceFrameId ? targetFrameId : value.Key,
+                        value => value.Value)),
                 StringComparer.Ordinal);
             effects.Add(
                 effectId,
