@@ -13,15 +13,22 @@ public sealed class PixelDocument
     private readonly Dictionary<CelId, Cel> _cels = [];
 
     public PixelDocument(DocumentId id, CanvasSpec canvas)
+        : this(id, canvas, new AnimationMetadata())
+    {
+    }
+
+    internal PixelDocument(DocumentId id, CanvasSpec canvas, AnimationMetadata animation)
     {
         if (id.Value == Guid.Empty) throw new ArgumentException("DocumentId cannot be empty.", nameof(id));
         Id = id;
         Canvas = canvas ?? throw new ArgumentNullException(nameof(canvas));
+        Animation = animation ?? throw new ArgumentNullException(nameof(animation));
     }
 
     public DocumentId Id { get; }
     public CanvasSpec Canvas { get; }
     public ResourceStore Resources { get; } = new();
+    public AnimationMetadata Animation { get; }
     public IReadOnlyList<LayerId> LayerOrder => _layerOrder;
     public IReadOnlyList<FrameId> FrameOrder => _frameOrder;
     public IReadOnlyCollection<Cel> Cels => _cels.Values;
@@ -41,6 +48,12 @@ public sealed class PixelDocument
     public Cel? FindCel(LayerId layerId, FrameId frameId) =>
         _cels.Values.FirstOrDefault(c => c.LayerId == layerId && c.FrameId == frameId);
 
+    public int GetFrameIndex(FrameId frameId)
+    {
+        var index = _frameOrder.IndexOf(frameId);
+        return index >= 0 ? index : throw new KeyNotFoundException($"Frame '{frameId}' does not exist.");
+    }
+
     internal void AddLayer(Layer layer)
     {
         ArgumentNullException.ThrowIfNull(layer);
@@ -48,11 +61,33 @@ public sealed class PixelDocument
         _layerOrder.Add(layer.Id);
     }
 
-    internal void AddFrame(Frame frame)
+    internal void AddFrame(Frame frame) => InsertFrame(_frameOrder.Count, frame);
+
+    internal void InsertFrame(int index, Frame frame)
     {
         ArgumentNullException.ThrowIfNull(frame);
+        if ((uint)index > (uint)_frameOrder.Count) throw new ArgumentOutOfRangeException(nameof(index));
         if (!_frames.TryAdd(frame.Id, frame)) throw new InvalidOperationException($"Frame '{frame.Id}' already exists.");
-        _frameOrder.Add(frame.Id);
+        _frameOrder.Insert(index, frame.Id);
+    }
+
+    internal void MoveFrame(FrameId frameId, int newIndex)
+    {
+        var oldIndex = GetFrameIndex(frameId);
+        if ((uint)newIndex >= (uint)_frameOrder.Count) throw new ArgumentOutOfRangeException(nameof(newIndex));
+        if (oldIndex == newIndex) return;
+        _frameOrder.RemoveAt(oldIndex);
+        _frameOrder.Insert(newIndex, frameId);
+    }
+
+    internal Frame RemoveFrame(FrameId frameId)
+    {
+        if (_cels.Values.Any(cel => cel.FrameId == frameId))
+            throw new InvalidOperationException("Remove all Cels from a Frame before removing the Frame.");
+        if (!_frames.Remove(frameId, out var frame))
+            throw new KeyNotFoundException($"Frame '{frameId}' does not exist.");
+        _frameOrder.Remove(frameId);
+        return frame;
     }
 
     internal void AddCel(Cel cel)
@@ -65,6 +100,16 @@ public sealed class PixelDocument
             throw new InvalidOperationException("Only one Cel may occupy a Layer/Frame slot.");
         if (!_cels.TryAdd(cel.Id, cel)) throw new InvalidOperationException($"Cel '{cel.Id}' already exists.");
     }
+
+    internal Cel RemoveCel(CelId celId)
+    {
+        if (!_cels.Remove(celId, out var cel))
+            throw new KeyNotFoundException($"Cel '{celId}' does not exist.");
+        return cel;
+    }
+
+    internal bool IsSurfaceReferenced(ResourceId surfaceId) =>
+        _cels.Values.Any(cel => cel.SurfaceId == surfaceId);
 }
 
 public static class PixelDocumentFactory
