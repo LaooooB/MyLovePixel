@@ -171,9 +171,14 @@ public sealed class PluginWorkspaceRuntime : IDisposable
                         section.Fields.Select(field => new PluginPanelFieldPresentation(field.Id, field.Label, field.Value, field.ReadOnly)).ToArray(),
                         section.Actions.Select(action => new PluginPanelActionPresentation(action.Id, action.Label, action.Enabled)).ToArray())).ToArray()));
             }
-            catch
+            catch (Exception ex)
             {
-                // Failure is isolated to this panel; host-level execution diagnostics cover domain adapters.
+                var owner = _host.Panels.GetOwner(provider.Id);
+                _host.ReportExecutionFailure(
+                    owner,
+                    provider.Id,
+                    $"Plugin panel '{provider.Id}' failed while building presentation.",
+                    ex);
             }
         }
         return result;
@@ -184,6 +189,7 @@ public sealed class PluginWorkspaceRuntime : IDisposable
         EnsureOwned(session);
         if (!_host.Panels.TryGet(panelId, out var panel))
             return new PluginPanelActionResult(false, false, $"Panel '{panelId}' is not registered.");
+        var owner = _host.Panels.GetOwner(panelId);
         var cel = session.Document.FindCel(session.CurrentLayerId, session.CurrentFrameId);
         var gateway = new PluginMutationGateway(session.Document, session.Commands);
         PluginRasterTarget? target = null;
@@ -192,18 +198,45 @@ public sealed class PluginWorkspaceRuntime : IDisposable
             try { target = gateway.CaptureRgbaTarget(cel.SurfaceId.Value); }
             catch (NotSupportedException) { }
         }
+
+        PluginPixelPatch? patch;
         try
         {
-            var patch = panel.Invoke(
+            patch = panel.Invoke(
                 actionId,
                 new PluginPanelContext(session.CaptureSnapshot().Id.Value, session.CurrentFrameId.Value, session.CurrentLayerId.Value),
                 target);
-            if (patch is null) return new PluginPanelActionResult(true, false, null);
-            gateway.Execute(patch);
-            return new PluginPanelActionResult(true, true, null);
         }
         catch (Exception ex)
         {
+            _host.ReportExecutionFailure(
+                owner,
+                panelId,
+                $"Plugin panel '{panelId}' action '{actionId}' failed.",
+                ex);
+            return new PluginPanelActionResult(false, false, ex.Message);
+        }
+
+        if (patch is null) return new PluginPanelActionResult(true, false, null);
+        if (target is null || patch.SurfaceId != target.SurfaceId || patch.ExpectedRevision != target.Revision)
+        {
+            var message = $"Plugin panel '{panelId}' produced a patch for a missing, different, or stale target.";
+            _host.ReportInvalidMutation(owner, panelId, message);
+            return new PluginPanelActionResult(false, false, message);
+        }
+
+        try
+        {
+            gateway.Execute(patch);
+            return new PluginPanelActionResult(true, true, null);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or KeyNotFoundException or NotSupportedException)
+        {
+            _host.ReportInvalidMutation(
+                owner,
+                panelId,
+                $"Plugin panel '{panelId}' mutation was rejected.",
+                ex);
             return new PluginPanelActionResult(false, false, ex.Message);
         }
     }

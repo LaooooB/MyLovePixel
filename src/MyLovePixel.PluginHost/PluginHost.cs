@@ -86,6 +86,43 @@ public sealed class PluginHost
 
     public void ClearDiagnostics() => _diagnostics.Clear();
 
+    public PluginDiagnostic ReportExecutionFailure(
+        PluginId pluginId,
+        string extensionId,
+        string message,
+        Exception exception)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(extensionId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(message);
+        ArgumentNullException.ThrowIfNull(exception);
+        var diagnostic = new PluginDiagnostic(
+            PluginDiagnosticCode.ExecutionFailed,
+            pluginId,
+            message,
+            extensionId,
+            exception);
+        Record(diagnostic);
+        return diagnostic;
+    }
+
+    public PluginDiagnostic ReportInvalidMutation(
+        PluginId pluginId,
+        string extensionId,
+        string message,
+        Exception? exception = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(extensionId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(message);
+        var diagnostic = new PluginDiagnostic(
+            PluginDiagnosticCode.InvalidMutation,
+            pluginId,
+            message,
+            extensionId,
+            exception);
+        Record(diagnostic);
+        return diagnostic;
+    }
+
     internal void Record(PluginDiagnostic diagnostic)
     {
         ArgumentNullException.ThrowIfNull(diagnostic);
