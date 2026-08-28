@@ -49,6 +49,8 @@ public static class PngCodec
         byte bitDepth = 0;
         byte colorType = 0;
         byte interlace = 0;
+        byte[]? palette = null;
+        byte[]? transparency = null;
         using var idat = new MemoryStream();
         var sawHeader = false;
         var sawEnd = false;
@@ -65,8 +67,7 @@ public static class PngCodec
             offset += length;
             var expectedCrc = BinaryPrimitives.ReadUInt32BigEndian(png.Slice(offset, 4));
             offset += 4;
-            var actualCrc = Crc32.Compute(type, data);
-            if (expectedCrc != actualCrc) throw new InvalidDataException("PNG chunk CRC mismatch.");
+            if (expectedCrc != Crc32.Compute(type, data)) throw new InvalidDataException("PNG chunk CRC mismatch.");
 
             if (type.SequenceEqual("IHDR"u8))
             {
@@ -78,6 +79,17 @@ public static class PngCodec
                 if (data[10] != 0 || data[11] != 0) throw new NotSupportedException("Unsupported PNG compression/filter method.");
                 interlace = data[12];
                 sawHeader = true;
+            }
+            else if (type.SequenceEqual("PLTE"u8))
+            {
+                if (!sawHeader) throw new InvalidDataException("PNG PLTE appears before IHDR.");
+                if (data.Length is 0 or > 768 || data.Length % 3 != 0) throw new InvalidDataException("PNG palette length is invalid.");
+                palette = data.ToArray();
+            }
+            else if (type.SequenceEqual("tRNS"u8))
+            {
+                if (!sawHeader) throw new InvalidDataException("PNG tRNS appears before IHDR.");
+                transparency = data.ToArray();
             }
             else if (type.SequenceEqual("IDAT"u8))
             {
@@ -93,20 +105,29 @@ public static class PngCodec
 
         if (!sawHeader || !sawEnd) throw new InvalidDataException("PNG is missing required chunks.");
         if (width <= 0 || height <= 0) throw new InvalidDataException("PNG dimensions must be positive.");
-        if (bitDepth != 8) throw new NotSupportedException("Only 8-bit PNG images are supported.");
-        if (colorType is not (2 or 6)) throw new NotSupportedException("Only RGB and RGBA PNG images are supported.");
         if (interlace != 0) throw new NotSupportedException("Interlaced PNG images are not supported.");
+        ValidateFormat(colorType, bitDepth, palette, transparency);
+
+        var bitsPerPixel = colorType switch
+        {
+            0 => bitDepth,
+            2 => 24,
+            3 => bitDepth,
+            4 => 16,
+            6 => 32,
+            _ => throw new NotSupportedException($"Unsupported PNG color type '{colorType}'."),
+        };
+        var filterBytesPerPixel = Math.Max(1, checked((bitsPerPixel + 7) / 8));
+        var stride = checked((width * bitsPerPixel + 7) / 8);
 
         idat.Position = 0;
         using var inflated = new MemoryStream();
         using (var zlib = new ZLibStream(idat, CompressionMode.Decompress, leaveOpen: true)) zlib.CopyTo(inflated);
         var scanlines = inflated.ToArray();
-        var channels = colorType == 6 ? 4 : 3;
-        var stride = checked(width * channels);
         var expectedLength = checked(height * (stride + 1));
         if (scanlines.Length != expectedLength) throw new InvalidDataException("PNG scanline data length is invalid.");
 
-        var decoded = new byte[checked(width * height * channels)];
+        var decodedRows = new byte[checked(height * stride)];
         var previous = new byte[stride];
         var current = new byte[stride];
         var inputOffset = 0;
@@ -115,30 +136,129 @@ public static class PngCodec
             var filter = scanlines[inputOffset++];
             scanlines.AsSpan(inputOffset, stride).CopyTo(current);
             inputOffset += stride;
-            Unfilter(current, previous, channels, filter);
-            current.CopyTo(decoded.AsSpan(y * stride, stride));
+            Unfilter(current, previous, filterBytesPerPixel, filter);
+            current.CopyTo(decodedRows.AsSpan(y * stride, stride));
             (previous, current) = (current, previous);
         }
 
         var rgba = new byte[checked(width * height * 4)];
-        if (channels == 4)
+        for (var y = 0; y < height; y++)
         {
-            decoded.CopyTo(rgba, 0);
-        }
-        else
-        {
-            for (var pixel = 0; pixel < width * height; pixel++)
-            {
-                var source = pixel * 3;
-                var target = pixel * 4;
-                rgba[target] = decoded[source];
-                rgba[target + 1] = decoded[source + 1];
-                rgba[target + 2] = decoded[source + 2];
-                rgba[target + 3] = byte.MaxValue;
-            }
+            var row = decodedRows.AsSpan(y * stride, stride);
+            for (var x = 0; x < width; x++)
+                DecodePixel(row, x, bitDepth, colorType, palette, transparency, rgba.AsSpan(((y * width) + x) * 4, 4));
         }
         return new ExportImage(new IntSize(width, height), rgba);
     }
+
+    private static void ValidateFormat(byte colorType, byte bitDepth, byte[]? palette, byte[]? transparency)
+    {
+        switch (colorType)
+        {
+            case 0 when bitDepth == 8:
+                if (transparency is { Length: not 2 }) throw new InvalidDataException("Grayscale PNG tRNS must contain one 16-bit sample.");
+                return;
+            case 2 when bitDepth == 8:
+                if (transparency is { Length: not 6 }) throw new InvalidDataException("RGB PNG tRNS must contain three 16-bit samples.");
+                return;
+            case 3 when bitDepth is 1 or 2 or 4 or 8:
+            {
+                if (palette is null) throw new InvalidDataException("Indexed PNG is missing PLTE.");
+                var paletteCount = palette.Length / 3;
+                var maximumEntries = 1 << bitDepth;
+                if (paletteCount > maximumEntries) throw new InvalidDataException("Indexed PNG palette exceeds bit-depth capacity.");
+                if (transparency is { } alpha && alpha.Length > paletteCount)
+                    throw new InvalidDataException("Indexed PNG tRNS has more entries than PLTE.");
+                return;
+            }
+            case 4 when bitDepth == 8:
+            case 6 when bitDepth == 8:
+                if (transparency is not null) throw new InvalidDataException("PNG color types with alpha cannot contain tRNS.");
+                return;
+            default:
+                throw new NotSupportedException($"PNG color type {colorType} with bit depth {bitDepth} is not supported.");
+        }
+    }
+
+    private static void DecodePixel(
+        ReadOnlySpan<byte> row,
+        int x,
+        byte bitDepth,
+        byte colorType,
+        byte[]? palette,
+        byte[]? transparency,
+        Span<byte> rgba)
+    {
+        switch (colorType)
+        {
+            case 0:
+            {
+                var gray = row[x];
+                rgba[0] = gray;
+                rgba[1] = gray;
+                rgba[2] = gray;
+                rgba[3] = transparency is not null && Read16(transparency, 0) == gray ? (byte)0 : byte.MaxValue;
+                return;
+            }
+            case 2:
+            {
+                var offset = x * 3;
+                var red = row[offset];
+                var green = row[offset + 1];
+                var blue = row[offset + 2];
+                rgba[0] = red;
+                rgba[1] = green;
+                rgba[2] = blue;
+                rgba[3] = transparency is not null &&
+                          Read16(transparency, 0) == red &&
+                          Read16(transparency, 2) == green &&
+                          Read16(transparency, 4) == blue
+                    ? (byte)0
+                    : byte.MaxValue;
+                return;
+            }
+            case 3:
+            {
+                var index = ReadPackedSample(row, x, bitDepth);
+                var paletteOffset = index * 3;
+                if (palette is null || paletteOffset + 2 >= palette.Length)
+                    throw new InvalidDataException($"Indexed PNG pixel references missing palette index {index}.");
+                rgba[0] = palette[paletteOffset];
+                rgba[1] = palette[paletteOffset + 1];
+                rgba[2] = palette[paletteOffset + 2];
+                rgba[3] = transparency is not null && index < transparency.Length ? transparency[index] : byte.MaxValue;
+                return;
+            }
+            case 4:
+            {
+                var offset = x * 2;
+                rgba[0] = row[offset];
+                rgba[1] = row[offset];
+                rgba[2] = row[offset];
+                rgba[3] = row[offset + 1];
+                return;
+            }
+            case 6:
+                row.Slice(x * 4, 4).CopyTo(rgba);
+                return;
+            default:
+                throw new NotSupportedException($"Unsupported PNG color type '{colorType}'.");
+        }
+    }
+
+    private static int ReadPackedSample(ReadOnlySpan<byte> row, int x, byte bitDepth)
+    {
+        if (bitDepth == 8) return row[x];
+        var bitOffset = checked(x * bitDepth);
+        var byteIndex = bitOffset / 8;
+        var withinByte = bitOffset % 8;
+        var shift = 8 - bitDepth - withinByte;
+        var mask = (1 << bitDepth) - 1;
+        return (row[byteIndex] >> shift) & mask;
+    }
+
+    private static ushort Read16(ReadOnlySpan<byte> values, int offset) =>
+        BinaryPrimitives.ReadUInt16BigEndian(values.Slice(offset, 2));
 
     private static void Unfilter(Span<byte> row, ReadOnlySpan<byte> previous, int bytesPerPixel, byte filter)
     {
