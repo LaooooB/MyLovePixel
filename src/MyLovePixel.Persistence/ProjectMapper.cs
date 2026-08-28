@@ -15,6 +15,7 @@ internal static class ProjectMapper
         var layerTemplates = IndexById(template?.Layers);
         var frameTemplates = IndexById(template?.Frames);
         var celTemplates = IndexById(template?.Cels);
+        var paletteTemplates = IndexById(template?.Palettes);
         var surfaceTemplates = IndexById(template?.Surfaces);
 
         var dto = new DocumentDto
@@ -85,6 +86,36 @@ internal static class ProjectMapper
             });
         }
 
+        foreach (var paletteId in document.Resources.PaletteIds.OrderBy(id => id.Value))
+        {
+            var palette = document.Resources.GetPalette(paletteId).Snapshot();
+            paletteTemplates.TryGetValue(paletteId.ToString(), out var previous);
+            var paletteDto = new PaletteDto
+            {
+                Id = paletteId.ToString(),
+                TransparentIndex = palette.TransparentIndex,
+                ExtensionData = ExtensionData.Clone(previous?.ExtensionData),
+            };
+
+            for (var index = 0; index < palette.Count; index++)
+            {
+                var color = palette.GetColor(checked((byte)index));
+                var previousColor = previous is not null && index < previous.Colors.Count
+                    ? previous.Colors[index]
+                    : null;
+                paletteDto.Colors.Add(new RgbaDto
+                {
+                    R = color.R,
+                    G = color.G,
+                    B = color.B,
+                    A = color.A,
+                    ExtensionData = ExtensionData.Clone(previousColor?.ExtensionData),
+                });
+            }
+
+            dto.Palettes.Add(paletteDto);
+        }
+
         foreach (var surfaceId in document.Resources.SurfaceIds.OrderBy(id => id.Value))
         {
             var surface = document.Resources.GetSurface(surfaceId);
@@ -103,8 +134,10 @@ internal static class ProjectMapper
                 Format = surface.Format switch
                 {
                     PixelFormat.Rgba32 => "rgba32",
+                    PixelFormat.Indexed8 => "indexed8",
                     _ => throw new PixelProjectException(PixelProjectErrorCode.ValidationFailed, $"Pixel format '{surface.Format}' is not persistable."),
                 },
+                PaletteId = surface.PaletteId?.ToString(),
                 ExtensionData = ExtensionData.Clone(previous?.ExtensionData),
             });
         }
@@ -152,6 +185,17 @@ internal static class ProjectMapper
 
             AnimationDtoMapper.Populate(animation, dto.Animation, frameIds);
 
+            var paletteIds = new HashSet<PaletteId>();
+            foreach (var item in dto.Palettes)
+            {
+                var id = new PaletteId(ParseGuid(item.Id, "palette.id"));
+                if (!paletteIds.Add(id)) throw InvalidReference($"Duplicate palette id '{item.Id}'.");
+                var colors = item.Colors
+                    .Select(color => new Rgba32(color.R, color.G, color.B, color.A))
+                    .ToArray();
+                document.Resources.AddPalette(id, Palette.FromState(colors, item.TransparentIndex));
+            }
+
             var surfaceIds = new HashSet<ResourceId>();
             var surfaceEntries = new HashSet<string>(StringComparer.Ordinal);
             foreach (var item in dto.Surfaces)
@@ -162,10 +206,20 @@ internal static class ProjectMapper
                 if (!surfaceEntries.Add(item.Entry)) throw InvalidReference($"Multiple surfaces reference entry '{item.Entry}'.");
                 if (!entries.TryGetValue(item.Entry, out var encoded))
                     throw new PixelProjectException(PixelProjectErrorCode.MissingEntry, $"Surface '{item.Id}' references missing entry '{item.Entry}'.", item.Entry);
-                if (!string.Equals(item.Format, "rgba32", StringComparison.Ordinal))
-                    throw InvalidJson($"Unsupported surface format '{item.Format}'.");
 
-                var surface = PixelSurfaceBinaryCodec.Decode(encoded, item.Entry);
+                PaletteId? paletteId = item.Format switch
+                {
+                    "rgba32" when item.PaletteId is null => null,
+                    "rgba32" => throw InvalidJson($"RGBA32 surface '{item.Id}' cannot reference palette '{item.PaletteId}'."),
+                    "indexed8" when string.IsNullOrWhiteSpace(item.PaletteId) => throw InvalidReference($"Indexed8 surface '{item.Id}' is missing paletteId."),
+                    "indexed8" => new PaletteId(ParseGuid(item.PaletteId!, "surface.paletteId")),
+                    _ => throw InvalidJson($"Unsupported surface format '{item.Format}'."),
+                };
+
+                if (paletteId is { } referencedPaletteId && !paletteIds.Contains(referencedPaletteId))
+                    throw InvalidReference($"Indexed8 surface '{item.Id}' references missing palette '{item.PaletteId}'.");
+
+                var surface = PixelSurfaceBinaryCodec.Decode(encoded, item.Entry, paletteId);
                 if (surface.Size.Width != item.Width || surface.Size.Height != item.Height)
                     throw new PixelProjectException(PixelProjectErrorCode.InvalidSurface, $"Surface descriptor dimensions do not match '{item.Entry}'.", item.Entry);
                 document.Resources.AddSurface(id, surface);
@@ -223,6 +277,7 @@ internal static class ProjectMapper
                 LayerDto x => x.Id,
                 FrameDto x => x.Id,
                 CelDto x => x.Id,
+                PaletteDto x => x.Id,
                 SurfaceDto x => x.Id,
                 _ => throw new NotSupportedException($"DTO type '{typeof(T).Name}' is not indexable."),
             },

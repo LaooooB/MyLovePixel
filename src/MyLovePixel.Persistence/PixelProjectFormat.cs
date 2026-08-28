@@ -3,7 +3,7 @@ namespace MyLovePixel.Persistence;
 public static class PixelProjectFormat
 {
     public const string FormatMarker = "MyLovePixel.Project";
-    public const int CurrentSchemaVersion = 2;
+    public const int CurrentSchemaVersion = 3;
     public const string ManifestEntry = "manifest.json";
     public const string DocumentEntry = "document.json";
     public const string SurfaceDirectory = "surfaces/";

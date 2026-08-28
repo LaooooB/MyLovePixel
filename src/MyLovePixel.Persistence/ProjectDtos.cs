@@ -21,6 +21,7 @@ internal sealed class DocumentDto
     public List<LayerDto> Layers { get; set; } = [];
     public List<FrameDto> Frames { get; set; } = [];
     public List<CelDto> Cels { get; set; } = [];
+    public List<PaletteDto> Palettes { get; set; } = [];
     public List<SurfaceDto> Surfaces { get; set; } = [];
     public AnimationDto Animation { get; set; } = new();
 
@@ -73,6 +74,27 @@ internal sealed class CelDto
     public Dictionary<string, JsonElement>? ExtensionData { get; set; }
 }
 
+internal sealed class PaletteDto
+{
+    public string Id { get; set; } = string.Empty;
+    public byte? TransparentIndex { get; set; }
+    public List<RgbaDto> Colors { get; set; } = [];
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+}
+
+internal sealed class RgbaDto
+{
+    public byte R { get; set; }
+    public byte G { get; set; }
+    public byte B { get; set; }
+    public byte A { get; set; }
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+}
+
 internal sealed class SurfaceDto
 {
     public string Id { get; set; } = string.Empty;
@@ -80,6 +102,7 @@ internal sealed class SurfaceDto
     public int Width { get; set; }
     public int Height { get; set; }
     public string Format { get; set; } = "rgba32";
+    public string? PaletteId { get; set; }
 
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? ExtensionData { get; set; }

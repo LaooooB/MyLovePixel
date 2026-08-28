@@ -31,7 +31,10 @@ internal static class PixelSurfaceBinaryCodec
         return result;
     }
 
-    public static PixelSurface Decode(ReadOnlySpan<byte> encoded, string entryName)
+    public static PixelSurface Decode(
+        ReadOnlySpan<byte> encoded,
+        string entryName,
+        PaletteId? paletteId = null)
     {
         if (encoded.Length < HeaderSize)
             throw Invalid(entryName, "Surface entry is shorter than the MLPX header.");
@@ -43,7 +46,7 @@ internal static class PixelSurfaceBinaryCodec
             throw Invalid(entryName, $"Unsupported MLPX codec version {version}.");
 
         var format = (PixelFormat)encoded[6];
-        if (format != PixelFormat.Rgba32)
+        if (format is not (PixelFormat.Rgba32 or PixelFormat.Indexed8))
             throw Invalid(entryName, $"Unsupported pixel format value {(byte)format}.");
         if (encoded[7] != 0)
             throw Invalid(entryName, "Reserved MLPX header byte must be zero.");
@@ -57,15 +60,20 @@ internal static class PixelSurfaceBinaryCodec
         int expectedPayloadLength;
         try
         {
-            expectedPayloadLength = checked(width * height * 4);
+            var bytesPerPixel = format == PixelFormat.Rgba32 ? 4 : 1;
+            expectedPayloadLength = checked(width * height * bytesPerPixel);
         }
         catch (OverflowException ex)
         {
-            throw new PixelProjectException(PixelProjectErrorCode.InvalidSurface, "Surface dimensions overflow RGBA storage.", entryName, ex);
+            throw new PixelProjectException(
+                PixelProjectErrorCode.InvalidSurface,
+                "Surface dimensions overflow pixel storage.",
+                entryName,
+                ex);
         }
 
         if (payloadLength != expectedPayloadLength || encoded.Length != HeaderSize + payloadLength)
-            throw Invalid(entryName, "Surface payload length does not match dimensions.");
+            throw Invalid(entryName, "Surface payload length does not match dimensions and format.");
 
         var payload = encoded[HeaderSize..];
         Span<byte> actualHash = stackalloc byte[32];
@@ -75,11 +83,25 @@ internal static class PixelSurfaceBinaryCodec
 
         try
         {
-            return PixelSurface.FromRgbaBytes(new IntSize(width, height), payload);
+            var size = new IntSize(width, height);
+            if (format == PixelFormat.Rgba32)
+            {
+                if (paletteId is not null)
+                    throw new ArgumentException("RGBA32 surface descriptors cannot reference a palette.", nameof(paletteId));
+                return PixelSurface.FromRgbaBytes(size, payload);
+            }
+
+            if (paletteId is not { } indexedPaletteId)
+                throw new ArgumentException("Indexed8 surface descriptors must reference a palette.", nameof(paletteId));
+            return PixelSurface.FromIndexedBytes(size, indexedPaletteId, payload);
         }
         catch (ArgumentException ex)
         {
-            throw new PixelProjectException(PixelProjectErrorCode.InvalidSurface, "Surface payload could not be reconstructed.", entryName, ex);
+            throw new PixelProjectException(
+                PixelProjectErrorCode.InvalidSurface,
+                "Surface payload could not be reconstructed.",
+                entryName,
+                ex);
         }
     }
 

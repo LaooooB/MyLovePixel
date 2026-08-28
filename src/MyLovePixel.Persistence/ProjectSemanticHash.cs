@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using MyLovePixel.Core.Document;
+using MyLovePixel.Core.Pixel;
 using MyLovePixel.Core.Primitives;
 
 namespace MyLovePixel.Persistence;
@@ -55,6 +56,20 @@ public static class ProjectSemanticHash
 
         AppendAnimation(hash, document);
 
+        var paletteIds = document.Resources.PaletteIds.OrderBy(id => id.Value).ToArray();
+        AppendInt32(hash, paletteIds.Length);
+        foreach (var paletteId in paletteIds)
+        {
+            AppendGuid(hash, paletteId.Value);
+            var palette = document.Resources.GetPalette(paletteId).Snapshot();
+            AppendInt32(hash, palette.Count);
+            AppendByte(hash, palette.TransparentIndex.HasValue ? (byte)1 : (byte)0);
+            if (palette.TransparentIndex is { } transparentIndex)
+                AppendByte(hash, transparentIndex);
+            foreach (var color in palette.Colors)
+                AppendColor(hash, color);
+        }
+
         var surfaceIds = document.Resources.SurfaceIds.OrderBy(id => id.Value).ToArray();
         AppendInt32(hash, surfaceIds.Length);
         foreach (var surfaceId in surfaceIds)
@@ -64,6 +79,9 @@ public static class ProjectSemanticHash
             AppendInt32(hash, snapshot.Size.Width);
             AppendInt32(hash, snapshot.Size.Height);
             AppendInt32(hash, (int)snapshot.Format);
+            AppendByte(hash, snapshot.PaletteId.HasValue ? (byte)1 : (byte)0);
+            if (snapshot.PaletteId is { } paletteId)
+                AppendGuid(hash, paletteId.Value);
             AppendInt32(hash, snapshot.Bytes.Length);
             hash.AppendData(snapshot.Bytes.Span);
         }
@@ -169,6 +187,14 @@ public static class ProjectSemanticHash
             AppendString(hash, marker.Name);
             AppendString(hash, marker.Payload);
         }
+    }
+
+    private static void AppendColor(IncrementalHash hash, Rgba32 color)
+    {
+        AppendByte(hash, color.R);
+        AppendByte(hash, color.G);
+        AppendByte(hash, color.B);
+        AppendByte(hash, color.A);
     }
 
     private static void AppendPoint(IncrementalHash hash, IntPoint value)
