@@ -4,7 +4,7 @@ namespace MyLovePixel.Core.Pixel;
 
 public sealed class Palette
 {
-    private readonly Rgba32[] _colors;
+    private Rgba32[] _colors;
 
     public Palette(IEnumerable<Rgba32> colors, byte? transparentIndex = null)
     {
@@ -40,11 +40,8 @@ public sealed class Palette
         return TransparentIndex == index ? Rgba32.Transparent : _colors[index];
     }
 
-    public PaletteSnapshot Snapshot() =>
-        new((Rgba32[])_colors.Clone(), TransparentIndex, Revision);
-
-    public Palette Clone() =>
-        new((Rgba32[])_colors.Clone(), TransparentIndex, Revision);
+    public PaletteSnapshot Snapshot() => new((Rgba32[])_colors.Clone(), TransparentIndex, Revision);
+    public Palette Clone() => new((Rgba32[])_colors.Clone(), TransparentIndex, Revision);
 
     internal void SetColor(byte index, Rgba32 color)
     {
@@ -57,9 +54,7 @@ public sealed class Palette
     internal void ReplaceState(ReadOnlySpan<Rgba32> colors, byte? transparentIndex)
     {
         if (colors.Length != _colors.Length)
-            throw new ArgumentException(
-                "Palette entry count cannot change through ReplaceState; use a remapping command for palette resize.",
-                nameof(colors));
+            throw new ArgumentException("Palette entry count cannot change through ReplaceState; use a remapping command for palette resize.", nameof(colors));
         ValidateTransparentIndex(transparentIndex, colors.Length);
         var nextRevision = checked(Revision + 1);
         colors.CopyTo(_colors);
@@ -67,10 +62,17 @@ public sealed class Palette
         Revision = nextRevision;
     }
 
-    internal static Palette FromState(
-        ReadOnlySpan<Rgba32> colors,
-        byte? transparentIndex,
-        long revision = 0)
+    internal void ReplaceResizedState(ReadOnlySpan<Rgba32> colors, byte? transparentIndex)
+    {
+        ValidateColorCount(colors.Length);
+        ValidateTransparentIndex(transparentIndex, colors.Length);
+        var nextRevision = checked(Revision + 1);
+        _colors = colors.ToArray();
+        TransparentIndex = transparentIndex;
+        Revision = nextRevision;
+    }
+
+    internal static Palette FromState(ReadOnlySpan<Rgba32> colors, byte? transparentIndex, long revision = 0)
     {
         if (revision < 0) throw new ArgumentOutOfRangeException(nameof(revision));
         var copy = colors.ToArray();
@@ -103,10 +105,8 @@ public sealed class PaletteSnapshot
     internal PaletteSnapshot(Rgba32[] colors, byte? transparentIndex, long revision)
     {
         _colors = colors ?? throw new ArgumentNullException(nameof(colors));
-        if (_colors.Length is < 1 or > 256)
-            throw new ArgumentOutOfRangeException(nameof(colors));
-        if (transparentIndex is { } index && index >= _colors.Length)
-            throw new ArgumentOutOfRangeException(nameof(transparentIndex));
+        if (_colors.Length is < 1 or > 256) throw new ArgumentOutOfRangeException(nameof(colors));
+        if (transparentIndex is { } index && index >= _colors.Length) throw new ArgumentOutOfRangeException(nameof(transparentIndex));
         if (revision < 0) throw new ArgumentOutOfRangeException(nameof(revision));
         TransparentIndex = transparentIndex;
         Revision = revision;
