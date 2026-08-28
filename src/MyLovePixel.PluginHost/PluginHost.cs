@@ -100,61 +100,68 @@ public sealed class PluginHost
 
     private sealed record LoadedState(IPlugin Plugin, PluginRegistrationScope Scope);
 
-    private sealed class RegistrationContext(
-        PluginHost host,
-        PluginManifest manifest,
-        PluginRegistrationScope scope) : IPluginRegistrationContext
+    private sealed class RegistrationContext : IPluginRegistrationContext
     {
-        public PluginManifest Manifest { get; } = manifest;
+        private readonly PluginHost _host;
+        private readonly PluginRegistrationScope _scope;
+
+        public RegistrationContext(PluginHost host, PluginManifest manifest, PluginRegistrationScope scope)
+        {
+            _host = host;
+            _scope = scope;
+            Manifest = manifest;
+        }
+
+        public PluginManifest Manifest { get; }
 
         public IPluginRegistration RegisterTool(IPluginTool tool) =>
-            Register(PluginCapability.Tool, () => host.Tools.Register(manifest.Id, PluginExtensionKind.Tool, tool));
+            Register(PluginCapability.Tool, () => _host.Tools.Register(Manifest.Id, PluginExtensionKind.Tool, tool));
 
         public IPluginRegistration RegisterCommand(IPluginCommand command) =>
-            Register(PluginCapability.Command, () => host.Commands.Register(manifest.Id, PluginExtensionKind.Command, command));
+            Register(PluginCapability.Command, () => _host.Commands.Register(Manifest.Id, PluginExtensionKind.Command, command));
 
         public IPluginRegistration RegisterEffect(IPluginEffectEvaluator effect) =>
-            Register(PluginCapability.Effect, () => host.Effects.Register(manifest.Id, PluginExtensionKind.Effect, effect));
+            Register(PluginCapability.Effect, () => _host.Effects.Register(Manifest.Id, PluginExtensionKind.Effect, effect));
 
         public IPluginRegistration RegisterExporter(IPluginExporter exporter) =>
-            Register(PluginCapability.Exporter, () => host.Exporters.Register(manifest.Id, PluginExtensionKind.Exporter, exporter));
+            Register(PluginCapability.Exporter, () => _host.Exporters.Register(Manifest.Id, PluginExtensionKind.Exporter, exporter));
 
         public IPluginRegistration RegisterImporter(IPluginImporter importer) =>
-            Register(PluginCapability.Importer, () => host.Importers.Register(manifest.Id, PluginExtensionKind.Importer, importer));
+            Register(PluginCapability.Importer, () => _host.Importers.Register(Manifest.Id, PluginExtensionKind.Importer, importer));
 
         public IPluginRegistration RegisterPanel(IPluginPanelProvider panel) =>
-            Register(PluginCapability.Panel, () => host.Panels.Register(manifest.Id, PluginExtensionKind.Panel, panel));
+            Register(PluginCapability.Panel, () => _host.Panels.Register(Manifest.Id, PluginExtensionKind.Panel, panel));
 
         public IPluginRegistration RegisterPaletteAlgorithm(IPluginPaletteAlgorithm algorithm) =>
-            Register(PluginCapability.Palette, () => host.PaletteAlgorithms.Register(manifest.Id, PluginExtensionKind.Palette, algorithm));
+            Register(PluginCapability.Palette, () => _host.PaletteAlgorithms.Register(Manifest.Id, PluginExtensionKind.Palette, algorithm));
 
         public IPluginRegistration RegisterDitherAlgorithm(IPluginDitherAlgorithm algorithm) =>
-            Register(PluginCapability.Dither, () => host.DitherAlgorithms.Register(manifest.Id, PluginExtensionKind.Dither, algorithm));
+            Register(PluginCapability.Dither, () => _host.DitherAlgorithms.Register(Manifest.Id, PluginExtensionKind.Dither, algorithm));
 
         public IPluginRegistration RegisterAutoTileRule(IPluginAutoTileRule rule) =>
-            Register(PluginCapability.AutoTile, () => host.AutoTileRules.Register(manifest.Id, PluginExtensionKind.AutoTile, rule));
+            Register(PluginCapability.AutoTile, () => _host.AutoTileRules.Register(Manifest.Id, PluginExtensionKind.AutoTile, rule));
 
         private IPluginRegistration Register(PluginCapability required, Func<IPluginRegistration> factory)
         {
-            if ((manifest.Capabilities & required) != required)
+            if ((Manifest.Capabilities & required) != required)
             {
                 var diagnostic = new PluginDiagnostic(
                     PluginDiagnosticCode.MissingCapability,
-                    manifest.Id,
-                    $"Plugin '{manifest.Id}' attempted to register capability '{required}' that is not declared in its manifest.");
-                host.Record(diagnostic);
+                    Manifest.Id,
+                    $"Plugin '{Manifest.Id}' attempted to register capability '{required}' that is not declared in its manifest.");
+                _host.Record(diagnostic);
                 throw new InvalidOperationException(diagnostic.Message);
             }
 
             try
             {
-                return scope.Track(factory());
+                return _scope.Track(factory());
             }
             catch (InvalidOperationException ex)
             {
-                host.Record(new PluginDiagnostic(
+                _host.Record(new PluginDiagnostic(
                     PluginDiagnosticCode.DuplicateExtension,
-                    manifest.Id,
+                    Manifest.Id,
                     ex.Message,
                     Exception: ex));
                 throw;
