@@ -11,6 +11,72 @@ internal sealed record LayerRenderState(
     byte Opacity,
     CelRenderState? Cel);
 
+internal sealed record EffectInstanceRenderState(
+    EffectInstanceId Id,
+    string TypeId,
+    bool Enabled,
+    long Revision);
+
+internal sealed record EffectPaletteRenderState(
+    PaletteId Id,
+    long Revision);
+
+internal sealed class EffectGraphRenderState : IEquatable<EffectGraphRenderState>
+{
+    private readonly EffectInstanceRenderState[] _effects;
+    private readonly EffectPaletteRenderState[] _palettes;
+
+    private EffectGraphRenderState(
+        long graphRevision,
+        EffectInstanceRenderState[] effects,
+        EffectPaletteRenderState[] palettes)
+    {
+        GraphRevision = graphRevision;
+        _effects = effects;
+        _palettes = palettes;
+    }
+
+    public long GraphRevision { get; }
+    public bool HasEffects => _effects.Length != 0;
+
+    public static EffectGraphRenderState Capture(DocumentSnapshot snapshot, CelSnapshot cel)
+    {
+        var effects = cel.Effects.EffectOrder
+            .Select(cel.Effects.GetEffect)
+            .Select(effect => new EffectInstanceRenderState(
+                effect.Id,
+                effect.TypeId,
+                effect.Enabled,
+                effect.Revision))
+            .ToArray();
+        var palettes = effects.Length == 0
+            ? Array.Empty<EffectPaletteRenderState>()
+            : snapshot.Palettes
+                .OrderBy(pair => pair.Key.Value)
+                .Select(pair => new EffectPaletteRenderState(pair.Key, pair.Value.Revision))
+                .ToArray();
+        return new EffectGraphRenderState(cel.Effects.Revision, effects, palettes);
+    }
+
+    public bool Equals(EffectGraphRenderState? other) =>
+        other is not null &&
+        GraphRevision == other.GraphRevision &&
+        _effects.AsSpan().SequenceEqual(other._effects) &&
+        _palettes.AsSpan().SequenceEqual(other._palettes);
+
+    public override bool Equals(object? obj) =>
+        obj is EffectGraphRenderState other && Equals(other);
+
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        hash.Add(GraphRevision);
+        foreach (var effect in _effects) hash.Add(effect);
+        foreach (var palette in _palettes) hash.Add(palette);
+        return hash.ToHashCode();
+    }
+}
+
 internal sealed record CelRenderState(
     CelId CelId,
     ResourceId SurfaceId,
@@ -19,7 +85,8 @@ internal sealed record CelRenderState(
     IntSize SurfaceSize,
     PixelFormat SurfaceFormat,
     PaletteId? PaletteId,
-    long PaletteRevision);
+    long PaletteRevision,
+    EffectGraphRenderState Effects);
 
 internal sealed record ResourceRevisionState(ResourceId SurfaceId, long Revision);
 
@@ -70,7 +137,8 @@ internal sealed class FrameStructureSignature : IEquatable<FrameStructureSignatu
                     surface.Size,
                     surface.Format,
                     surface.PaletteId,
-                    paletteRevision);
+                    paletteRevision,
+                    EffectGraphRenderState.Capture(snapshot, cel));
             }
 
             layers[index] = new LayerRenderState(
