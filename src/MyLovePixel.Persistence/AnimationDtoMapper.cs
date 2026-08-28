@@ -172,7 +172,7 @@ internal static class AnimationDtoMapper
         {
             var id = new SliceId(ParseGuid(item.Id, "animation.slice.id"));
             if (!sliceIds.Add(id)) throw InvalidReference($"Duplicate sprite slice id '{item.Id}'.");
-            var nineSlice = item.NineSlice is null
+            NineSliceInsets? nineSlice = item.NineSlice is null
                 ? null
                 : new NineSliceInsets(
                     item.NineSlice.Left,
