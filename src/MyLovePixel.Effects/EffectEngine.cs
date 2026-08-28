@@ -211,32 +211,29 @@ public sealed class EffectEngine
 internal sealed class EffectCacheSignature : IEquatable<EffectCacheSignature>
 {
     private readonly EffectState[] _effects;
+    private readonly PaletteState[] _palettes;
     private readonly ColorCycleFrameValue? _colorCycles;
 
     private EffectCacheSignature(
         ResourceId surfaceId,
         long surfaceRevision,
-        PaletteId? paletteId,
-        long paletteRevision,
         long graphRevision,
         long backendRevision,
         ColorCycleFrameValue? colorCycles,
-        EffectState[] effects)
+        EffectState[] effects,
+        PaletteState[] palettes)
     {
         SurfaceId = surfaceId;
         SurfaceRevision = surfaceRevision;
-        PaletteId = paletteId;
-        PaletteRevision = paletteRevision;
         GraphRevision = graphRevision;
         BackendRevision = backendRevision;
         _colorCycles = colorCycles;
         _effects = effects;
+        _palettes = palettes;
     }
 
     private ResourceId SurfaceId { get; }
     private long SurfaceRevision { get; }
-    private PaletteId? PaletteId { get; }
-    private long PaletteRevision { get; }
     private long GraphRevision { get; }
     private long BackendRevision { get; }
 
@@ -247,35 +244,34 @@ internal sealed class EffectCacheSignature : IEquatable<EffectCacheSignature>
         long backendRevision)
     {
         var surface = snapshot.GetSurface(cel.SurfaceId);
-        var paletteRevision = surface.PaletteId is { } paletteId
-            ? snapshot.GetPalette(paletteId).Revision
-            : 0;
         snapshot.Animation.ColorCycleTrack.Values.TryGetValue(frameId, out var colorCycles);
         var effects = cel.Effects.EffectOrder
             .Select(id => cel.Effects.GetEffect(id))
             .Select(effect => new EffectState(effect.Id, effect.TypeId, effect.Enabled, effect.Revision))
             .ToArray();
+        var palettes = snapshot.Palettes
+            .OrderBy(pair => pair.Key.Value)
+            .Select(pair => new PaletteState(pair.Key, pair.Value.Revision))
+            .ToArray();
         return new EffectCacheSignature(
             cel.SurfaceId,
             surface.Revision,
-            surface.PaletteId,
-            paletteRevision,
             cel.Effects.Revision,
             backendRevision,
             colorCycles,
-            effects);
+            effects,
+            palettes);
     }
 
     public bool Equals(EffectCacheSignature? other) =>
         other is not null &&
         SurfaceId == other.SurfaceId &&
         SurfaceRevision == other.SurfaceRevision &&
-        PaletteId == other.PaletteId &&
-        PaletteRevision == other.PaletteRevision &&
         GraphRevision == other.GraphRevision &&
         BackendRevision == other.BackendRevision &&
         Equals(_colorCycles, other._colorCycles) &&
-        _effects.AsSpan().SequenceEqual(other._effects);
+        _effects.AsSpan().SequenceEqual(other._effects) &&
+        _palettes.AsSpan().SequenceEqual(other._palettes);
 
     public override bool Equals(object? obj) => obj is EffectCacheSignature other && Equals(other);
 
@@ -284,12 +280,11 @@ internal sealed class EffectCacheSignature : IEquatable<EffectCacheSignature>
         var hash = new HashCode();
         hash.Add(SurfaceId);
         hash.Add(SurfaceRevision);
-        hash.Add(PaletteId);
-        hash.Add(PaletteRevision);
         hash.Add(GraphRevision);
         hash.Add(BackendRevision);
         hash.Add(_colorCycles);
         foreach (var effect in _effects) hash.Add(effect);
+        foreach (var palette in _palettes) hash.Add(palette);
         return hash.ToHashCode();
     }
 
@@ -297,5 +292,9 @@ internal sealed class EffectCacheSignature : IEquatable<EffectCacheSignature>
         EffectInstanceId Id,
         string TypeId,
         bool Enabled,
+        long Revision);
+
+    private readonly record struct PaletteState(
+        PaletteId Id,
         long Revision);
 }
