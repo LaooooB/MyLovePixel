@@ -101,6 +101,16 @@ public sealed class ExportRequest
         {
             throw new AssetPipelineException(AssetPipelineErrorCode.InvalidRequest, "Export preset is invalid.", ex);
         }
+
+        if (preset.Selection.Mode == ExportFrameSelectionMode.Explicit)
+        {
+            var available = snapshot.FrameOrder.ToHashSet();
+            var missing = preset.Selection.FrameIds.Where(id => !available.Contains(id)).ToArray();
+            if (missing.Length > 0)
+                throw new AssetPipelineException(
+                    AssetPipelineErrorCode.InvalidRequest,
+                    $"Explicit export selection references missing frame(s): {string.Join(", ", missing)}.");
+        }
     }
 
     public DocumentSnapshot Snapshot { get; }
