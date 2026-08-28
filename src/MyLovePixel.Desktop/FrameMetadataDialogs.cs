@@ -38,7 +38,7 @@ public sealed class AnimationBoxesDialog : Window
     private void AddRow(AnimationBoxPresentation value)
     {
         var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,58,58,58,58,30"), ColumnSpacing = 4 };
-        var name = new TextBox { Text = value.Name, Watermark = "name" };
+        var name = new TextBox { Text = value.Name, PlaceholderText = "name" };
         var x = Number(value.X, -8192, 8192); var y = Number(value.Y, -8192, 8192);
         var w = Number(value.Width, 1, 8192); var h = Number(value.Height, 1, 8192);
         row.Children.Add(name); row.Children.Add(Place(x, 1)); row.Children.Add(Place(y, 2)); row.Children.Add(Place(w, 3)); row.Children.Add(Place(h, 4));
@@ -89,7 +89,7 @@ public sealed class AnimationSocketsDialog : Window
     private void AddRow(AnimationSocketPresentation value)
     {
         var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,64,64,30"), ColumnSpacing = 4 };
-        var name = new TextBox { Text = value.Name, Watermark = "name" }; var x = Number(value.X); var y = Number(value.Y);
+        var name = new TextBox { Text = value.Name, PlaceholderText = "name" }; var x = Number(value.X); var y = Number(value.Y);
         row.Children.Add(name); row.Children.Add(Place(x, 1)); row.Children.Add(Place(y, 2));
         row.Children.Add(Place(Icon("×", "Remove", () => _rows.Children.Remove(row)), 3)); _rows.Children.Add(row);
     }
@@ -123,7 +123,7 @@ public sealed class AnimationEventsDialog : Window
     private void AddRow(AnimationEventPresentation value)
     {
         var row = new Grid { ColumnDefinitions = new ColumnDefinitions("150,*,30"), ColumnSpacing = 4 };
-        var name = new TextBox { Text = value.Name, Watermark = "event" }; var payload = new TextBox { Text = value.Payload, Watermark = "payload" };
+        var name = new TextBox { Text = value.Name, PlaceholderText = "event" }; var payload = new TextBox { Text = value.Payload, PlaceholderText = "payload" };
         row.Children.Add(name); row.Children.Add(Place(payload, 1)); row.Children.Add(Place(Icon("×", "Remove", () => _rows.Children.Remove(row)), 2)); _rows.Children.Add(row);
     }
 
