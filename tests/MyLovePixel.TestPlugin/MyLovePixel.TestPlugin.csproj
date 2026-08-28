@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>MyLovePixel.TestPlugin</AssemblyName>
+    <RootNamespace>MyLovePixel.TestPlugin</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/MyLovePixel.PluginSdk/MyLovePixel.PluginSdk.csproj" />
+  </ItemGroup>
+</Project>

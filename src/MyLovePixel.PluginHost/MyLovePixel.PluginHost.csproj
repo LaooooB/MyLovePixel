@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>MyLovePixel.PluginHost</AssemblyName>
+    <RootNamespace>MyLovePixel.PluginHost</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../MyLovePixel.PluginSdk/MyLovePixel.PluginSdk.csproj" />
+    <ProjectReference Include="../MyLovePixel.Core/MyLovePixel.Core.csproj" />
+    <ProjectReference Include="../MyLovePixel.Commands/MyLovePixel.Commands.csproj" />
+    <ProjectReference Include="../MyLovePixel.Effects/MyLovePixel.Effects.csproj" />
+    <ProjectReference Include="../MyLovePixel.Export/MyLovePixel.Export.csproj" />
+    <ProjectReference Include="../MyLovePixel.Persistence/MyLovePixel.Persistence.csproj" />
+    <ProjectReference Include="../MyLovePixel.Render/MyLovePixel.Render.csproj" />
+  </ItemGroup>
+</Project>
