@@ -13,6 +13,7 @@
     <Project Path="src/MyLovePixel.Effects/MyLovePixel.Effects.csproj" />
     <Project Path="src/MyLovePixel.Export/MyLovePixel.Export.csproj" />
     <Project Path="src/MyLovePixel.Application/MyLovePixel.Application.csproj" />
+    <Project Path="src/MyLovePixel.Desktop/MyLovePixel.Desktop.csproj" />
     <Project Path="src/MyLovePixel.Cli/MyLovePixel.Cli.csproj" />
   </Folder>
   <Folder Name="/tests/">
