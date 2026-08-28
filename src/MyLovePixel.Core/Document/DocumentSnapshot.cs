@@ -38,6 +38,7 @@ public sealed class DocumentSnapshot
         IReadOnlyDictionary<FrameId, FrameSnapshot> frames,
         IReadOnlyList<CelSnapshot> cels,
         IReadOnlyDictionary<ResourceId, PixelSurfaceSnapshot> surfaces,
+        IReadOnlyDictionary<PaletteId, PaletteSnapshot> palettes,
         AnimationMetadataSnapshot animation)
     {
         Id = id;
@@ -48,6 +49,7 @@ public sealed class DocumentSnapshot
         Frames = frames;
         Cels = cels;
         Surfaces = surfaces;
+        Palettes = palettes;
         Animation = animation;
     }
 
@@ -59,6 +61,7 @@ public sealed class DocumentSnapshot
     public IReadOnlyDictionary<FrameId, FrameSnapshot> Frames { get; }
     public IReadOnlyList<CelSnapshot> Cels { get; }
     public IReadOnlyDictionary<ResourceId, PixelSurfaceSnapshot> Surfaces { get; }
+    public IReadOnlyDictionary<PaletteId, PaletteSnapshot> Palettes { get; }
     public AnimationMetadataSnapshot Animation { get; }
 
     public LayerSnapshot GetLayer(LayerId id) => Layers.TryGetValue(id, out var layer)
@@ -72,6 +75,10 @@ public sealed class DocumentSnapshot
     public PixelSurfaceSnapshot GetSurface(ResourceId id) => Surfaces.TryGetValue(id, out var surface)
         ? surface
         : throw new KeyNotFoundException($"Surface snapshot '{id}' does not exist.");
+
+    public PaletteSnapshot GetPalette(PaletteId id) => Palettes.TryGetValue(id, out var palette)
+        ? palette
+        : throw new KeyNotFoundException($"Palette snapshot '{id}' does not exist.");
 
     public static DocumentSnapshot Capture(PixelDocument document)
     {
@@ -112,6 +119,12 @@ public sealed class DocumentSnapshot
             frames.Add(id, new FrameSnapshot(frame.Id, frame.DurationTicks));
         }
 
+        var palettes = document.Resources.PaletteIds
+            .OrderBy(id => id.Value)
+            .ToDictionary(
+                id => id,
+                id => document.Resources.GetPalette(id).Snapshot());
+
         var surfaces = document.Resources.SurfaceIds
             .OrderBy(id => id.Value)
             .ToDictionary(
@@ -140,6 +153,7 @@ public sealed class DocumentSnapshot
             new ReadOnlyDictionary<FrameId, FrameSnapshot>(frames),
             Array.AsReadOnly(cels),
             new ReadOnlyDictionary<ResourceId, PixelSurfaceSnapshot>(surfaces),
+            new ReadOnlyDictionary<PaletteId, PaletteSnapshot>(palettes),
             document.Animation.Snapshot());
     }
 }
