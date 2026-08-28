@@ -1,5 +1,4 @@
 using Avalonia;
-using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Themes.Fluent;
 
@@ -16,7 +15,7 @@ internal static class Program
             .UsePlatformDetect();
 }
 
-public sealed class EditorApp : Application
+public sealed class EditorApp : Avalonia.Application
 {
     public override void Initialize()
     {
