@@ -11,7 +11,8 @@ public sealed class PluginScriptRunnerTests
     {
         var result = await PluginScriptRunner.ExecuteAsync(
             new CatchingOperationProgram(),
-            new ScriptSandboxPolicy(OperationBudget: 5, MemoryBudgetBytes: 1024, TimeBudget: TimeSpan.FromSeconds(1)));
+            new ScriptSandboxPolicy(OperationBudget: 5, MemoryBudgetBytes: 1024, TimeBudget: TimeSpan.FromSeconds(1)),
+            TestContext.Current.CancellationToken);
 
         Assert.False(result.Succeeded);
         Assert.Equal("operation-budget-exceeded", result.ErrorCode);
@@ -22,7 +23,8 @@ public sealed class PluginScriptRunnerTests
     {
         var result = await PluginScriptRunner.ExecuteAsync(
             new MemoryProgram(),
-            new ScriptSandboxPolicy(OperationBudget: 100, MemoryBudgetBytes: 8, TimeBudget: TimeSpan.FromSeconds(1)));
+            new ScriptSandboxPolicy(OperationBudget: 100, MemoryBudgetBytes: 8, TimeBudget: TimeSpan.FromSeconds(1)),
+            TestContext.Current.CancellationToken);
 
         Assert.False(result.Succeeded);
         Assert.Equal("memory-budget-exceeded", result.ErrorCode);
@@ -33,7 +35,8 @@ public sealed class PluginScriptRunnerTests
     {
         var result = await PluginScriptRunner.ExecuteAsync(
             new WaitingProgram(),
-            new ScriptSandboxPolicy(OperationBudget: 100, MemoryBudgetBytes: 1024, TimeBudget: TimeSpan.FromMilliseconds(50)));
+            new ScriptSandboxPolicy(OperationBudget: 100, MemoryBudgetBytes: 1024, TimeBudget: TimeSpan.FromMilliseconds(50)),
+            TestContext.Current.CancellationToken);
 
         Assert.False(result.Succeeded);
         Assert.Equal("time-budget-exceeded", result.ErrorCode);
@@ -42,7 +45,7 @@ public sealed class PluginScriptRunnerTests
     [Fact]
     public async Task ExternalCancellation_IsDistinctFromBudgetTimeout()
     {
-        using var cancellation = new CancellationTokenSource();
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
         cancellation.Cancel();
 
         var result = await PluginScriptRunner.ExecuteAsync(
@@ -62,7 +65,8 @@ public sealed class PluginScriptRunnerTests
                 OperationBudget: 10,
                 MemoryBudgetBytes: 16,
                 TimeBudget: TimeSpan.FromSeconds(1),
-                Deterministic: false));
+                Deterministic: false),
+            TestContext.Current.CancellationToken);
 
         Assert.True(result.Succeeded);
         Assert.NotNull(result.Value);
