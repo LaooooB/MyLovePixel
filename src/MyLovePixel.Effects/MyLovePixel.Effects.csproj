@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>MyLovePixel.Effects</AssemblyName>
+    <RootNamespace>MyLovePixel.Effects</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../MyLovePixel.Core/MyLovePixel.Core.csproj" />
+  </ItemGroup>
+</Project>
