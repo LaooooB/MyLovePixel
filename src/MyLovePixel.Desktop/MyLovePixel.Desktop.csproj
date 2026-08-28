@@ -8,6 +8,7 @@
     <PackageReference Include="Avalonia" />
     <PackageReference Include="Avalonia.Desktop" />
     <PackageReference Include="Avalonia.Themes.Fluent" />
+    <PackageReference Include="Lucide.Avalonia" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../MyLovePixel.Application/MyLovePixel.Application.csproj" />
