@@ -4,7 +4,7 @@
 
 ## 1. 项目目标与永久边界
 
-MyLovePixel 是私人游戏开发使用的可扩展 Pixel Art / Sprite 资产编辑核心。当前优先建设稳定的数据模型、算法、渲染、动画、Tilemap、导出与插件；Avalonia UI 到 Batch13 才正式进入。
+MyLovePixel 是私人游戏开发使用的可扩展 Pixel Art / Sprite 资产编辑核心。当前优先建设稳定的数据模型、算法、渲染、动画、Tilemap、Effect、导出与插件；Avalonia UI 到 Batch13 才正式进入。
 
 技术基线：.NET 10 / C# 14、xUnit v3、SkiaSharp 4.151.1；Avalonia 12.1.1 留给后续 Desktop Shell。
 
@@ -13,14 +13,15 @@ MyLovePixel 是私人游戏开发使用的可扩展 Pixel Art / Sprite 资产编
 1. UI 不直接修改 `PixelDocument`；可撤销 mutation 统一经过 Commands / `CommandBus`。
 2. `Cel` 只持稳定 `ResourceId`；Linked Cel 通过共享同一 Surface 表达。
 3. Tilemap Cell 只引用稳定 `TileId`；Tile 只引用稳定 `ResourceId`；Cell 不拥有像素副本。
-4. `PixelSurface` 是像素真值；GPU texture、thumbnail、frame/tilemap composite 都是可重建缓存。
-5. Core 不引用 Avalonia/Skia/UI。
-6. Raster / AutoTile 只读 Snapshot 并输出 Patch；Renderer 只读 `DocumentSnapshot`。
+4. `PixelSurface` 是像素真值；GPU texture、thumbnail、frame/tilemap/effect composite 都是可重建缓存。
+5. Core 不引用 Avalonia/Skia/UI，也不包含具体 Effect evaluator 算法。
+6. Raster / AutoTile / Effect evaluation 只读 Snapshot；Renderer 只读 `DocumentSnapshot`。
 7. Selection/preview 是 transient state；确认后才形成 Command。
 8. Persistence 使用独立 DTO + `schemaVersion` + 逐级 Migration；未知 JSON/plugin ZIP payload 必须保留。
 9. Revision 决定缓存正确性，Dirty Region 只决定局部更新性能；缺完整 revision-history 时必须 full fallback。
 10. 高变化算法优先 Strategy/Registry，不把算法绑进 UI。
-11. 不重写 Git 历史；分支完整 CI 全绿后才 `force:false` fast-forward `main`。
+11. Effect preview 不修改 live Surface；Bake 必须经过 Command，并且不能破坏 linked source。
+12. 不重写 Git 历史；分支完整 CI 全绿后才 `force:false` fast-forward `main`。
 
 ## 2. 当前 solution
 
@@ -36,6 +37,7 @@ src/
   MyLovePixel.Animation/
   MyLovePixel.Color/
   MyLovePixel.Tilemap/
+  MyLovePixel.Effects/
   MyLovePixel.Cli/
 
 tests/
@@ -48,6 +50,7 @@ tests/
   MyLovePixel.Animation.Tests/
   MyLovePixel.Color.Tests/
   MyLovePixel.Tilemap.Tests/
+  MyLovePixel.Effects.Tests/
 ```
 
 ## 3. 已完成批次
@@ -57,8 +60,6 @@ Batch00–05：Repository Foundation、Document/Stable References、Command/Undo
 ### Batch06 — RenderGraph / Canvas Cache
 
 已完成 Snapshot-only Renderer、CPU compositor、RenderGraph、exact structure signature + resource revisions、dirty partial recompose、linked-cel dirty mapping、TextureUploadPlanner、ViewTransform、overlay passes、Skia cache/dirty upload、nearest-neighbor presentation、cache diagnostics。
-
-关键规则：缺少完整 revision→revision Dirty history 时 full fallback；hash 不是唯一 correctness 条件；overlay 不烘焙进 frame composite cache。
 
 ### Batch07 — Input / ToolHost / Brush Session
 
@@ -76,107 +77,120 @@ Batch00–05：Repository Foundation、Document/Stable References、Command/Undo
 
 ### Batch10 — Tileset / Tilemap / AutoTile
 
-**已完成。** Batch10 schema4/全 solution 功能 gate CI：`33143628422` — restore/build/test 全部 success。
+已完成 stable Tile/Tileset/Tilemap IDs、两级引用、sparse runtime chunk、Cell transforms、Tile commands/GC、GridTopology、AutoTile、Rect renderer、Tilemap revision cache、schema4 persistence/migration。
 
-完成内容：
+关键规则：Cell 不复制像素；Edit Tile 修改共享 Surface；Make Unique 显式 clone；revision history 不完整时 renderer full fallback；runtime chunk 不进入项目语义。
 
-- stable `TileId / TilesetId / TilemapId`；
-- `Tileset / TileDefinition / Tilemap / TileCell`；
-- Cell → TileId → SurfaceId 两级稳定引用，不复制 Tile pixels；
-- sparse 32x32 runtime chunk，支持负坐标；
-- `FlipX / FlipY / Rotate90 / Variant`；
-- non-square Tile 禁止 `Rotate90`，避免 Renderer/Exporter 尺寸语义分叉；
-- `SetTileCellCommand`；
-- `EditTilePixelsCommand`：修改共享 Surface，所有引用 Cell 同步观察；
-- `MakeUniqueTileCommand`：显式 clone Surface + 新 TileId，只重连目标 Cell；
-- undoable、安全引用检查的 Tile resource GC；
-- multi-cell patch 一次 Undo，所有目标先预验证再 mutation；
-- 新 `MyLovePixel.Tilemap` 算法程序集；
-- `IGridTopology`：Rect / Isometric Diamond / Hex Odd Row；
-- `IAutoTileRule`、4/8-neighbor bitmask；
-- weighted variant 使用 document seed + coordinate 稳定复现，不依赖进程 RNG/UI 时序；
-- AutoTile 只读 immutable Snapshot，输出 Cell patch；
-- Rect Tilemap CPU renderer；
-- Tilemap revision dirty-cell cache；
-- Tile Surface revision 反向映射所有引用 Cell；
-- Indexed8 Tile 通过 Palette 合成；
-- 缺 Tilemap/Surface revision invalidation history 时 full fallback；
-- cache clear 后可完全由 Snapshot 重建；
-- `.pixelproj` schema4：`document.seed`、`tilesets[]`、`tilemaps[]`、sparse `cells[]`；
-- runtime chunk 布局不进入项目文件/semantic hash；
-- deterministic schema3→4 migration；
-- Tileset/Tile/Tilemap/Cell unknown JSON roundtrip preserve；
-- duplicate cell coordinates / unknown transform flags 在 load 时结构化拒绝。
-
-Batch10 分阶段 CI：
-
-- Core resource/sparse map：`33142182783` success
-- Commands/resource lifetime：`33142334793` success
-- GridTopology/AutoTile：`33142493534` success
-- Patch/renderer 后最终功能基线：`33142919799` success
-- schema4 + Persistence tests：`33143628422` success
+最终功能 gate CI：`33143628422` success。
 
 架构决策：`docs/DECISIONS/ADR-0005-tilemap-reference-model.md`。
 
+### Batch11 — Effect Graph
+
+**功能代码已完成，分支 `batch11-effects`。** Batch11 最新完整 code/test gate CI：`33147765622` — restore/build/test 全部 success。
+
+完成内容：
+
+- stable `EffectInstanceId`；
+- Cel 拥有 ordered `EffectGraph`；
+- `EffectDescriptor / EffectParameterDescriptor / EffectValue` typed parameter schema；
+- static parameter + `AnimationTrack<EffectValue>` animated binding；
+- Effect snapshot isolation；
+- Effect palette/frame reference validation；
+- 新 `MyLovePixel.Effects` evaluator 程序集；
+- `IEffectEvaluatorBackend` CPU/GPU 共用契约；
+- Registry + CPU reference backend；
+- built-in Outline / Shadow / Palette Map；
+- `EffectImage` 保存 size + origin，允许效果扩张边界；
+- Indexed8 source 在同一 Snapshot 内解析 Palette + Color Cycle；
+- unknown/unavailable Effect runtime pass-through，并报告 unavailable type；
+- exact effect cache signature：source Surface revision、Palette revisions、Color Cycle、EffectGraph/instance revisions、backend revision；
+- Frame structure signature 包含 Effect state / Palette dependencies；
+- Effect Cel 的 source Surface dirty 当前 correctness-first full fallback，不做不完整的 effect dirty expansion；
+- Add / Remove / Move / Enable Effect Commands；
+- Set static parameter / Set-Clear animated keyframe Commands；
+- `EffectBakePlanner`：Snapshot 上生成 immutable plan；
+- `BakeEffectsCommand` apply 前重新核对 captured Surface/Palette/Effect/ColorCycle state，拒绝 stale preview；
+- Bake 创建新的 RGBA Surface，调整 Cel.Position，清空 EffectGraph，不修改可能共享的 source Surface；
+- Bake Undo 恢复旧 SurfaceId / Position / EffectGraph，并移除 baked Surface；
+- enabled unknown Effect 存在时 Bake 明确拒绝，避免 opaque semantics 被静默丢掉；
+- Frame Copy 复制 Cel EffectGraph，分配新的 effect parameter TrackId，并把 source-frame keyframe remap 到 copied FrameId；
+- `.pixelproj` schema5：`CelDto.effects[]`、static parameters、tracks、keyframes、typed values；
+- deterministic schema4→5 migration：legacy Cel 添加空 `effects`；
+- unknown Effect type 不要求 evaluator 才能 load/save；
+- Effect / parameter / value / color/point / track / keyframe nested extension JSON roundtrip preserve；
+- Project semantic hash 包含 effect order、stable IDs/type/enabled、parameters、track IDs/names/keyframes，不包含 runtime Revision；
+- 旧 schema2/schema3 migration chain 已继续验证到 schema5；
+- schema5 unknown payload、semantic hash、animated parameter roundtrip、Frame Copy remap 均有回归测试。
+
+Batch11 过程中有效 gate：
+
+- Effect evaluator engine + tests：`33144585507` success
+- 最新完整 code/test gate：`33147765622` success
+
+架构决策：`docs/DECISIONS/ADR-0006-effect-graph-evaluation.md`。
+
 ## 4. 当前 Persistence 事实
 
-Current schema = **4**。
+Current schema = **5**。
 
 Migration 链：
 
 - schema1→2：Animation metadata + stable built-in Track IDs。
 - schema2→3：Palette/Indexed + Color Cycle Track。
 - schema3→4：deterministic document seed + empty Tileset/Tilemap collections for legacy documents。
+- schema4→5：每个 legacy Cel 增加空 `effects[]`。
 
-schema4 新语义：
+schema5 Effect 语义：
 
-- `document.seed` 显式保存，AutoTile 等确定性算法不依赖运行时随机源；
-- `tilesets[]` 保存 stable Tile ID、Tile Surface reference 与 tile size；
-- `tilemaps[]` 保存 Tileset reference、topology ID 和排序后的 sparse `cells[]`；
-- 32x32 chunk 仅是 runtime storage，不序列化，因此未来可调整 chunk/storage 而不迁移文件；
-- Tilemap semantic hash 包含 Seed、Tileset/Tile/Cell 语义，但不包含 runtime Revision/chunk layout；
-- unknown JSON / opaque plugin ZIP payload 的向前兼容要求继续成立。
+- Effect Graph 存在于 Cel DTO，而不是 Surface resource；Linked Cels 可共享像素但拥有不同 EffectGraph。
+- Effect instance 保存 stable ID、namespaced `typeId`、enabled、static parameters、parameter tracks/keyframes。
+- typed Effect values 当前支持 integer / number / boolean / color / point / paletteReference / text。
+- 未安装 evaluator 不影响 load/save；未知 type 和 extension JSON 必须原样保留。
+- runtime Revision 不进入 persistence semantic hash。
 
 MLPX codec version 仍为 1：RGBA32 payload 4 byte/pixel；Indexed8 payload 1 byte/pixel。Palette 数据仍只在 document JSON 保存。
 
-## 5. Batch10 的核心不变量
+## 5. Batch11 核心不变量
 
-1. Cell 永远不持有 RGBA/index pixel arrays。
-2. Edit Tile Pixels 修改 Tile 引用的 Surface；共享引用是默认语义。
-3. Make Unique 是显式操作，不做隐式 copy-on-write。
-4. 被 Cell 引用的 Tile、被 Tile 引用的 Surface、被 Tilemap 引用的 Tileset 不得提前回收。
-5. AutoTile 计算与文档 mutation 分层：Snapshot → patch → CommandBus。
-6. `IGridTopology` 不改变 Core Tilemap 存储模型。
-7. Renderer correctness 由 exact structure + revisions + 连续 invalidation history 决定；Dirty 只是优化。
-8. Rect renderer 已完成；Iso/Hex 当前完成 topology math，不应误称已完成完整 Iso/Hex compositing。
-9. Persistence 保存 sparse cells，不保存 chunk。
+1. Effect evaluator 永远只拿 immutable Snapshot，不拿 live mutable Document/Surface。
+2. Effect preview/evaluation 不增加 Surface revision。
+3. 未知 Effect 可以 load/save；不能执行不等于不能保存。
+4. Bake unknown Effect 时失败，而不是跳过并清空它。
+5. Bake 不 in-place 修改 linked source；结果是新的 RGBA Surface。
+6. Effect 输出可改变 bounds，因此结果必须携带 origin。
+7. Cache correctness 必须包含 Effect/Palette/ColorCycle/backend dependencies；不能只看 source Surface revision。
+8. Effect-aware dirty propagation 尚未实现时必须 full fallback，不能漏重画 Outline/Shadow 扩张区域。
+9. animated Effect parameter 复用 `AnimationTrack<T>`，不建立第二套 timeline/time system。
+10. Plugin SDK 尚未到 Batch15；当前 Registry/evaluator contract 是内部扩展边界，不宣称稳定外部 ABI。
 
 ## 6. 已知事故 / 不要重复踩坑
 
-- 不要用陈旧整文件覆盖 Core；Batch05 曾因此误删 Persistence API 并触发 CI 回归。
-- 新增程序集名称可能与 Core 类型名冲突；Batch10 的 `MyLovePixel.Tilemap` 曾让测试里的 `Tilemap` 类型产生 namespace/type 歧义，必要时用完整类型名。
+- 不要用陈旧整文件覆盖 Core；Batch05 曾因此误删 Persistence API并触发回归。写文件前先 fetch 当前分支版本。
+- schema migration 必须逐级、确定性；升级 schema 后旧测试不要写死旧 CurrentSchemaVersion。
+- Frame Copy 除 built-in Animation tracks 外，还要考虑 Cel 内 Effect parameter tracks；复制 keyframe 时必须 remap source FrameId。
+- 新增程序集名称可能与 Core 类型名冲突；必要时用完整类型名。
 - Skia bitmap lifetime 由 `SkiaFrameCache` 明确拥有。
-- schema migration 必须逐级、确定性，禁止跳版本。
 - Indexed Surface index 与 Palette 是强引用不变量。
 - Palette reorder 在存在 Color Cycle 引用时当前明确失败；未来若支持必须原子 remap cycle semantics。
-- Tilemap partial renderer 不能只看 Dirty；revision 变了但 history 不完整必须 full fallback。
-- 不要把 `Tilemap.ChunkSize` 写进 exporter/project schema 作为资产语义。
+- Tilemap/Effect partial renderer 都不能只看 Dirty；revision 变了但 history/expansion 不完整必须 full fallback。
+- 不要把 runtime chunk/cache/revision 写进项目资产语义。
 
-## 7. 下一开发起点：Batch11 — Effect Graph
+## 7. 下一开发起点：Batch12 — Import / Export / Atlas / Headless Pipeline
 
-目标：Outline、Shadow、Palette Map 等作为非破坏参数存在，不改源 PixelSurface。
+目标：把当前 Document/Snapshot 真正接到游戏资产交付管线。
 
-进入实现前先解决：
+优先顺序：
 
-1. `EffectDescriptor / EffectInstance` 的 stable ID、生命周期与参数 schema。
-2. Effect 参数是 Document 数据还是 transient preview；哪些必须持久化。
-3. CPU/GPU evaluator 的共同输入/输出契约，禁止 evaluator 拿 live mutable document。
-4. Effect cache key：source revision、effect parameter revision、palette/metadata dependencies 如何进入 correctness。
-5. animated parameter binding 如何复用 `AnimationTrack<T>` 而不把 effect 特例塞进 Timeline。
-6. Bake Effect 必须通过 Command，Undo 恢复原 Surface/reference。
-7. 未安装未知 Effect 时项目仍能 load/save 并完整保留 payload。
-8. Persistence schema5 是否需要；先定义 migration 和 unknown-effect forward compatibility，再写 runtime model。
-9. Renderer 中 Effect Node 的位置与 cache invalidation 边界。
-10. Plugin SDK 还没到 Batch15，因此 Batch11 只建立可注册接口，不提前暴露不稳定公共插件 ABI。
+1. `IImporter / IExporter / ExportRequest / ExportPreset` 契约；Exporter 只读 immutable snapshot。
+2. PNG codec 与 RGBA/Indexed/Palette/ColorCycle/Effect 的明确导出语义。
+3. frame/tag/slice metadata export。
+4. Sprite sheet layout、trim/crop/scale/extrude。
+5. Atlas packer Strategy/Registry；保证 deterministic ordering/packing。
+6. JSON metadata schema；稳定 Frame/Tag/Slice IDs 不在导出过程中丢失。
+7. Effect 导出必须使用与编辑器 Renderer/Bake 一致的 snapshot evaluator contract，不能重新实现一套效果算法。
+8. CLI preset execution；UI 与 CLI 调同一 Export Pipeline。
+9. 导出过程中 live document 继续编辑不能影响已捕获 snapshot。
+10. 为未来 engine-specific exporters 保留 registry 边界，但不要提前实现 Batch15 Plugin SDK。
 
-继续时：先 fetch `main` 和最新 CI，再读本文件与 ADR。若 Batch10 已合入 main，则从 main 建 Batch11 分支。没有 CI 绿灯不要把 Batch11 标为完成。
+进入 Batch12 前仍先 fetch `main` + 最新 CI + 本文件。若 Batch11 已合入 main，则从 main 建 `batch12-export`。没有 CI 绿灯不要把 Batch12 标为完成。
