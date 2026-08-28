@@ -6,3 +6,4 @@ using System.Runtime.CompilerServices;
 [assembly: InternalsVisibleTo("MyLovePixel.Persistence.Tests")]
 [assembly: InternalsVisibleTo("MyLovePixel.Selection.Tests")]
 [assembly: InternalsVisibleTo("MyLovePixel.Render.Tests")]
+[assembly: InternalsVisibleTo("MyLovePixel.Tilemap.Tests")]

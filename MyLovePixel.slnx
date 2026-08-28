@@ -9,6 +9,7 @@
     <Project Path="src/MyLovePixel.Tools/MyLovePixel.Tools.csproj" />
     <Project Path="src/MyLovePixel.Animation/MyLovePixel.Animation.csproj" />
     <Project Path="src/MyLovePixel.Color/MyLovePixel.Color.csproj" />
+    <Project Path="src/MyLovePixel.Tilemap/MyLovePixel.Tilemap.csproj" />
     <Project Path="src/MyLovePixel.Cli/MyLovePixel.Cli.csproj" />
   </Folder>
   <Folder Name="/tests/">
@@ -20,5 +21,6 @@
     <Project Path="tests/MyLovePixel.Tools.Tests/MyLovePixel.Tools.Tests.csproj" />
     <Project Path="tests/MyLovePixel.Animation.Tests/MyLovePixel.Animation.Tests.csproj" />
     <Project Path="tests/MyLovePixel.Color.Tests/MyLovePixel.Color.Tests.csproj" />
+    <Project Path="tests/MyLovePixel.Tilemap.Tests/MyLovePixel.Tilemap.Tests.csproj" />
   </Folder>
 </Solution>
