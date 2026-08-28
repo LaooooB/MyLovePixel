@@ -26,7 +26,7 @@ public sealed class IndexedRenderTests
             DocumentSnapshot.Capture(fixture.Document),
             new FrameRenderRequest(fixture.FrameId));
 
-        Assert.Equal(RenderCacheOutcome.FullRecompose, result.Outcome);
+        Assert.Equal(RenderCacheOutcome.FullRecompose, result.CacheOutcome);
         Assert.Equal(Rgba32.Transparent, result.Surface.GetPixel(0, 0));
         Assert.Equal(Red, result.Surface.GetPixel(1, 0));
         Assert.Equal(Green, result.Surface.GetPixel(2, 0));
@@ -48,8 +48,8 @@ public sealed class IndexedRenderTests
             new FrameRenderRequest(fixture.FrameId));
 
         Assert.Equal(beforeSurfaceRevision, fixture.Surface.Revision);
-        Assert.Equal(RenderCacheOutcome.FullRecompose, first.Outcome);
-        Assert.Equal(RenderCacheOutcome.FullRecompose, second.Outcome);
+        Assert.Equal(RenderCacheOutcome.FullRecompose, first.CacheOutcome);
+        Assert.Equal(RenderCacheOutcome.FullRecompose, second.CacheOutcome);
         Assert.Equal(Blue, second.Surface.GetPixel(0, 0));
         Assert.Equal(Green, second.Surface.GetPixel(1, 0));
         Assert.Equal(2, renderer.Diagnostics.FullRecomposeCount);
@@ -75,7 +75,7 @@ public sealed class IndexedRenderTests
 
         Assert.NotEqual(rawBefore, fixture.Surface.Snapshot().Bytes.ToArray());
         Assert.Equal(before.Surface.Bytes.ToArray(), after.Surface.Bytes.ToArray());
-        Assert.Equal(RenderCacheOutcome.FullRecompose, after.Outcome);
+        Assert.Equal(RenderCacheOutcome.FullRecompose, after.CacheOutcome);
     }
 
     private static IndexedFixture CreateIndexedDocument(
