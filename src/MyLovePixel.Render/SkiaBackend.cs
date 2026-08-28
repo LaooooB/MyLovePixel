@@ -11,6 +11,10 @@ public sealed class SkiaFrameCache : IDisposable
 
     public int Count => _bitmaps.Count;
 
+    /// <summary>
+    /// Returns a cache-owned bitmap. Callers may draw/read it, but must not dispose it.
+    /// The cache owns the native lifetime and releases bitmaps through ClearCaches/Dispose.
+    /// </summary>
     public SKBitmap Update(
         DocumentId documentId,
         FrameId frameId,
@@ -23,7 +27,6 @@ public sealed class SkiaFrameCache : IDisposable
         var requiresFullUpload = false;
 
         if (!_bitmaps.TryGetValue(key, out var bitmap) ||
-            bitmap.IsDisposed ||
             bitmap.Width != result.Surface.Size.Width ||
             bitmap.Height != result.Surface.Size.Height)
         {
