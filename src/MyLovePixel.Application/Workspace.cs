@@ -246,4 +246,4 @@ public sealed class CanvasPresentation
 public sealed record LayerListItem(int Index, LayerId Id, string Name, bool Visible, bool Locked, byte Opacity, bool IsCurrent);
 public sealed record TimelineFrameItem(int Index, FrameId Id, long DurationTicks, bool IsCurrent);
 public sealed record TimelineWindow(int StartIndex, int TotalCount, IReadOnlyList<TimelineFrameItem> Items);
-public sealed record PaletteListItem(MyLovePixel.Core.Pixel.PaletteId Id, int ColorCount, byte? TransparentIndex, long Revision);
+public sealed record PaletteListItem(PaletteId Id, int ColorCount, byte? TransparentIndex, long Revision);
