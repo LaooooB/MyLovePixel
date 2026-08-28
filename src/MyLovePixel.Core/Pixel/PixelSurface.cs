@@ -78,19 +78,20 @@ public sealed class PixelSurface
     public PixelSurface Clone() =>
         new(Size, Format, PaletteId, (byte[])_pixels.Clone(), Revision);
 
-    internal static PixelSurface FromRgbaBytes(IntSize size, ReadOnlySpan<byte> bytes)
+    internal static PixelSurface FromRgbaBytes(IntSize size, ReadOnlySpan<byte> bytes, long revision = 0)
     {
         var expectedLength = checked(size.Width * size.Height * 4);
         if (bytes.Length != expectedLength)
             throw new ArgumentException($"RGBA byte length must be {expectedLength}, received {bytes.Length}.", nameof(bytes));
 
-        return new PixelSurface(size, PixelFormat.Rgba32, null, bytes.ToArray(), revision: 0);
+        return new PixelSurface(size, PixelFormat.Rgba32, null, bytes.ToArray(), revision);
     }
 
     internal static PixelSurface FromIndexedBytes(
         IntSize size,
         PaletteId paletteId,
-        ReadOnlySpan<byte> bytes)
+        ReadOnlySpan<byte> bytes,
+        long revision = 0)
     {
         if (paletteId.Value == Guid.Empty)
             throw new ArgumentException("PaletteId cannot be empty.", nameof(paletteId));
@@ -98,7 +99,7 @@ public sealed class PixelSurface
         if (bytes.Length != expectedLength)
             throw new ArgumentException($"Indexed8 byte length must be {expectedLength}, received {bytes.Length}.", nameof(bytes));
 
-        return new PixelSurface(size, PixelFormat.Indexed8, paletteId, bytes.ToArray(), revision: 0);
+        return new PixelSurface(size, PixelFormat.Indexed8, paletteId, bytes.ToArray(), revision);
     }
 
     internal void SetPixel(int x, int y, Rgba32 color)
