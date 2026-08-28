@@ -43,7 +43,9 @@ public sealed partial class MainWindow
 
     private Button SwatchButton(Border swatch, string tip, bool primary)
     {
-        var b = new Button { Content = swatch, Width = 34, Height = 34, Padding = new Thickness(3) };
+        var display = Swatch();
+        display.Background = swatch.Background;
+        var b = new Button { Content = display, Width = 34, Height = 34, Padding = new Thickness(3) };
         ToolTip.SetTip(b, tip); b.Click += async (_, _) => await EditColorAsync(primary); return b;
     }
 
