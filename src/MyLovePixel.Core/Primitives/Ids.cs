@@ -30,6 +30,12 @@ public readonly record struct ResourceId(Guid Value)
     public override string ToString() => Value.ToString("N");
 }
 
+public readonly record struct PaletteId(Guid Value)
+{
+    public static PaletteId New() => new(Guid.NewGuid());
+    public override string ToString() => Value.ToString("N");
+}
+
 public readonly record struct AnimationClipId(Guid Value)
 {
     public static AnimationClipId New() => new(Guid.NewGuid());
