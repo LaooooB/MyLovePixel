@@ -93,7 +93,14 @@ public sealed class ExportRequest
     {
         Snapshot = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
         Preset = preset ?? throw new ArgumentNullException(nameof(preset));
-        preset.Validate();
+        try
+        {
+            preset.Validate();
+        }
+        catch (ArgumentException ex)
+        {
+            throw new AssetPipelineException(AssetPipelineErrorCode.InvalidRequest, "Export preset is invalid.", ex);
+        }
     }
 
     public DocumentSnapshot Snapshot { get; }
@@ -160,8 +167,26 @@ public sealed class ExportPipeline
     {
         ArgumentNullException.ThrowIfNull(request);
         if (!_exporters.TryGetValue(request.Preset.ExporterId, out var exporter))
-            throw new KeyNotFoundException($"Exporter '{request.Preset.ExporterId}' is not registered.");
-        return exporter.Export(request);
+            throw new AssetPipelineException(
+                AssetPipelineErrorCode.ExporterNotFound,
+                $"Exporter '{request.Preset.ExporterId}' is not registered.");
+
+        try
+        {
+            return exporter.Export(request);
+        }
+        catch (AssetPipelineException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is ArgumentException or KeyNotFoundException or NotSupportedException)
+        {
+            throw new AssetPipelineException(AssetPipelineErrorCode.InvalidRequest, "Export request cannot be resolved.", ex);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new AssetPipelineException(AssetPipelineErrorCode.ExportFailed, "Export pipeline could not produce the requested artifacts.", ex);
+        }
     }
 
     public static ExportPipeline CreateDefault() => new([new GameAssetExporter()]);
@@ -206,9 +231,23 @@ public sealed class ImportPipeline
 
     public PixelDocument Execute(string importerId, ImportRequest request)
     {
-        if (!_importers.TryGetValue(importerId, out var importer)) throw new KeyNotFoundException($"Importer '{importerId}' is not registered.");
-        if (!importer.CanImport(request)) throw new InvalidOperationException($"Importer '{importerId}' cannot import '{request.Name}'.");
-        return importer.Import(request);
+        ArgumentNullException.ThrowIfNull(request);
+        if (!_importers.TryGetValue(importerId, out var importer))
+            throw new AssetPipelineException(AssetPipelineErrorCode.ImporterNotFound, $"Importer '{importerId}' is not registered.");
+        if (!importer.CanImport(request))
+            throw new AssetPipelineException(AssetPipelineErrorCode.UnsupportedInput, $"Importer '{importerId}' cannot import '{request.Name}'.");
+        try
+        {
+            return importer.Import(request);
+        }
+        catch (AssetPipelineException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or ArgumentException or InvalidOperationException)
+        {
+            throw new AssetPipelineException(AssetPipelineErrorCode.ImportFailed, $"Import of '{request.Name}' failed.", ex);
+        }
     }
 
     public static ImportPipeline CreateDefault() => new([new PngImporter()]);
