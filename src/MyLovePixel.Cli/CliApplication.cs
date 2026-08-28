@@ -29,6 +29,11 @@ public static class CliApplication
                 _ => UnknownCommand(args[0], error),
             };
         }
+        catch (AssetPipelineException ex)
+        {
+            error.WriteLine($"{ex.Code}: {ex.Message}");
+            return 1;
+        }
         catch (Exception ex) when (ex is ArgumentException or InvalidDataException or InvalidOperationException or IOException or PixelProjectException)
         {
             error.WriteLine(ex.Message);
