@@ -29,12 +29,26 @@ public sealed partial class MainWindow
 
         if (Content is Control shell)
         {
-            var layout = new Grid { ColumnDefinitions = new ColumnDefinitions("*,224") };
-            layout.Children.Add(shell);
+            // The shell is already parented by Window when OnOpened runs. Build the new
+            // utility panel first, then explicitly detach the shell before reparenting it.
+            // Avalonia rejects controls that are added to a second logical/visual parent.
             var utility = BuildConveniencePanel();
-            Grid.SetColumn(utility, 1);
-            layout.Children.Add(utility);
-            Content = layout;
+            var layout = new Grid { ColumnDefinitions = new ColumnDefinitions("*,224") };
+            Content = null;
+            try
+            {
+                layout.Children.Add(shell);
+                Grid.SetColumn(utility, 1);
+                layout.Children.Add(utility);
+                Content = layout;
+            }
+            catch (Exception ex)
+            {
+                layout.Children.Remove(shell);
+                Content = shell;
+                CrashLog.Write("ConvenienceLayout", ex);
+                throw;
+            }
         }
 
         _canvas.PointerWheelChanged += OnConvenienceCanvasWheel;
