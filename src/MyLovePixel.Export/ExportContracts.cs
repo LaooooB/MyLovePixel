@@ -236,7 +236,7 @@ internal static class ExportPath
     {
         if (string.IsNullOrWhiteSpace(value)) throw new ArgumentException("Relative file path cannot be empty.", paramName);
         var normalized = value.Replace('\\', '/');
-        if (normalized.StartsWith('/', StringComparison.Ordinal)) throw new ArgumentException("Path must be relative.", paramName);
+        if (normalized[0] == '/') throw new ArgumentException("Path must be relative.", paramName);
         var segments = normalized.Split('/');
         if (segments.Any(segment => segment is "" or "." or "..")) throw new ArgumentException("Path contains an unsafe segment.", paramName);
     }
