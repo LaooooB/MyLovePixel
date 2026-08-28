@@ -58,7 +58,7 @@ public sealed class AnimationBoxesDialog : Window
 
     private static NumericUpDown Number(decimal value, decimal min, decimal max) => new() { Value = value, Minimum = min, Maximum = max, Increment = 1, FormatString = "0" };
     private static T Place<T>(T control, int column) where T : Control { Grid.SetColumn(control, column); return control; }
-    private static Button Icon(string glyph, string tip, Action action) { var b = new Button { Content = glyph }; b.Classes.Add("small-icon"); b.Classes.Add("ghost"); ToolTip.SetTip(b, tip); b.Click += (_, _) => action(); return b; }
+    private new static Button Icon(string glyph, string tip, Action action) { var b = new Button { Content = glyph }; b.Classes.Add("small-icon"); b.Classes.Add("ghost"); ToolTip.SetTip(b, tip); b.Click += (_, _) => action(); return b; }
     private static Control Bar(Action add, Action accept, Action cancel)
     {
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, Margin = new Thickness(10, 8) };
@@ -100,7 +100,7 @@ public sealed class AnimationSocketsDialog : Window
 
     private static NumericUpDown Number(decimal value) => new() { Value = value, Minimum = -8192, Maximum = 8192, Increment = 1, FormatString = "0" };
     private static T Place<T>(T c, int column) where T : Control { Grid.SetColumn(c, column); return c; }
-    private static Button Icon(string glyph, string tip, Action action) { var b = new Button { Content = glyph }; b.Classes.Add("small-icon"); b.Classes.Add("ghost"); ToolTip.SetTip(b, tip); b.Click += (_, _) => action(); return b; }
+    private new static Button Icon(string glyph, string tip, Action action) { var b = new Button { Content = glyph }; b.Classes.Add("small-icon"); b.Classes.Add("ghost"); ToolTip.SetTip(b, tip); b.Click += (_, _) => action(); return b; }
     private static Control BuildBar(Action add, Action accept, Action cancel) { var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, Margin = new Thickness(10, 8) }; row.Children.Add(Icon("＋", "Add", add)); row.Children.Add(Icon("×", "Cancel", cancel)); var yes = Icon("✓", "Apply", accept); yes.Classes.Add("primary"); row.Children.Add(yes); return row; }
 }
 
@@ -132,7 +132,7 @@ public sealed class AnimationEventsDialog : Window
         .Where(value => !string.IsNullOrWhiteSpace(value.Name)).ToArray();
 
     private static T Place<T>(T c, int column) where T : Control { Grid.SetColumn(c, column); return c; }
-    private static Button Icon(string glyph, string tip, Action action) { var b = new Button { Content = glyph }; b.Classes.Add("small-icon"); b.Classes.Add("ghost"); ToolTip.SetTip(b, tip); b.Click += (_, _) => action(); return b; }
+    private new static Button Icon(string glyph, string tip, Action action) { var b = new Button { Content = glyph }; b.Classes.Add("small-icon"); b.Classes.Add("ghost"); ToolTip.SetTip(b, tip); b.Click += (_, _) => action(); return b; }
     private static Control BuildBar(Action add, Action accept, Action cancel) { var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, Margin = new Thickness(10, 8) }; row.Children.Add(Icon("＋", "Add", add)); row.Children.Add(Icon("×", "Cancel", cancel)); var yes = Icon("✓", "Apply", accept); yes.Classes.Add("primary"); row.Children.Add(yes); return row; }
 }
 
@@ -182,6 +182,6 @@ public sealed class AnimationCyclesDialog : Window
 
     private static NumericUpDown Number(decimal value, decimal min, decimal max) => new() { Value = value, Minimum = min, Maximum = max, Increment = 1, FormatString = "0" };
     private static T Place<T>(T c, int column) where T : Control { Grid.SetColumn(c, column); return c; }
-    private static Button Icon(string glyph, string tip, Action action) { var b = new Button { Content = glyph }; b.Classes.Add("small-icon"); b.Classes.Add("ghost"); ToolTip.SetTip(b, tip); b.Click += (_, _) => action(); return b; }
+    private new static Button Icon(string glyph, string tip, Action action) { var b = new Button { Content = glyph }; b.Classes.Add("small-icon"); b.Classes.Add("ghost"); ToolTip.SetTip(b, tip); b.Click += (_, _) => action(); return b; }
     private static Control BuildBar(Action add, Action accept, Action cancel) { var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, Margin = new Thickness(10, 8) }; row.Children.Add(Icon("＋", "Add", add)); row.Children.Add(Icon("×", "Cancel", cancel)); var yes = Icon("✓", "Apply", accept); yes.Classes.Add("primary"); row.Children.Add(yes); return row; }
 }
