@@ -126,7 +126,7 @@ public sealed class TilemapCommandTests
         document.Resources.AddTileset(tileset);
         var tile = new TileDefinition(TileId.New(), surfaceId, "Grass");
         document.Resources.AddTile(tileset.Id, tile);
-        var tilemap = new Tilemap(TilemapId.New(), "Ground", tileset.Id);
+        var tilemap = new MyLovePixel.Core.Tiles.Tilemap(TilemapId.New(), "Ground", tileset.Id);
         document.Resources.AddTilemap(tilemap);
         return new Fixture(document, tileset, tilemap, tileset.Id, tilemap.Id, tile.Id, surfaceId);
     }
@@ -134,7 +134,7 @@ public sealed class TilemapCommandTests
     private sealed record Fixture(
         PixelDocument Document,
         Tileset Tileset,
-        Tilemap Map,
+        MyLovePixel.Core.Tiles.Tilemap Map,
         TilesetId TilesetId,
         TilemapId TilemapId,
         TileId TileId,
