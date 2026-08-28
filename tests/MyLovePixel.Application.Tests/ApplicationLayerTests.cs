@@ -24,7 +24,7 @@ public sealed class ApplicationLayerTests
             return Task.CompletedTask;
         }));
 
-        await registry.ExecuteAsync(id, context);
+        await registry.ExecuteAsync(id, context, TestContext.Current.CancellationToken);
         Assert.Equal(1, calls);
         Assert.Throws<InvalidOperationException>(() => registry.Register(new ActionDescriptor(id, "Duplicate", (_, _) => Task.CompletedTask)));
     }
@@ -63,12 +63,13 @@ public sealed class ApplicationLayerTests
         session.Execute(new PixelPatchCommand(cel.SurfaceId, [new PixelWrite(0, 0, new Rgba32(10, 20, 30, 255))]));
         var registry = ActionRegistry.CreateDefault();
         var context = new EditorActionContext(workspace, new FakeInteraction());
+        var cancellationToken = TestContext.Current.CancellationToken;
 
         Assert.True(registry.CanExecute(BuiltinActionIds.Undo, context));
-        await registry.ExecuteAsync(BuiltinActionIds.Undo, context);
+        await registry.ExecuteAsync(BuiltinActionIds.Undo, context, cancellationToken);
         Assert.Equal(Rgba32.Transparent, session.Document.Resources.GetSurface(cel.SurfaceId).GetPixel(0, 0));
         Assert.True(registry.CanExecute(BuiltinActionIds.Redo, context));
-        await registry.ExecuteAsync(BuiltinActionIds.Redo, context);
+        await registry.ExecuteAsync(BuiltinActionIds.Redo, context, cancellationToken);
         Assert.Equal(new Rgba32(10, 20, 30, 255), session.Document.Resources.GetSurface(cel.SurfaceId).GetPixel(0, 0));
     }
 
@@ -110,13 +111,14 @@ public sealed class ApplicationLayerTests
             };
             var registry = ActionRegistry.CreateDefault();
             var context = new EditorActionContext(workspace, interaction);
+            var cancellationToken = TestContext.Current.CancellationToken;
 
-            await registry.ExecuteAsync(BuiltinActionIds.SaveProject, context);
+            await registry.ExecuteAsync(BuiltinActionIds.SaveProject, context, cancellationToken);
             Assert.True(File.Exists(projectPath));
             Assert.False(session.IsDirty);
             Assert.Equal(Path.GetFullPath(projectPath), session.FilePath);
 
-            await registry.ExecuteAsync(BuiltinActionIds.ExportProject, context);
+            await registry.ExecuteAsync(BuiltinActionIds.ExportProject, context, cancellationToken);
             Assert.True(File.Exists(Path.Combine(exportPath, "sprite.png")));
             Assert.True(File.Exists(Path.Combine(exportPath, "sprite.json")));
         }
