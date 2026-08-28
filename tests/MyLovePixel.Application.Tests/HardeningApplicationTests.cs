@@ -60,7 +60,7 @@ public sealed class HardeningApplicationTests
 
         var attempt = Assert.Single(coordinator.Tick(now));
         Assert.True(attempt.WroteCheckpoint);
-        var candidate = Assert.Single(coordinator.Discover().Where(value => value.IsRecoverable));
+        var candidate = Assert.Single(coordinator.Discover(), value => value.IsRecoverable);
 
         var recovered = coordinator.Recover(candidate.RecoveryId);
 
