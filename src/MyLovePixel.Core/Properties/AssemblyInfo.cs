@@ -5,3 +5,4 @@ using System.Runtime.CompilerServices;
 [assembly: InternalsVisibleTo("MyLovePixel.Persistence")]
 [assembly: InternalsVisibleTo("MyLovePixel.Persistence.Tests")]
 [assembly: InternalsVisibleTo("MyLovePixel.Selection.Tests")]
+[assembly: InternalsVisibleTo("MyLovePixel.Render.Tests")]
