@@ -2,6 +2,7 @@
   <ItemGroup>
     <ProjectReference Include="../MyLovePixel.Core/MyLovePixel.Core.csproj" />
     <ProjectReference Include="../MyLovePixel.Selection/MyLovePixel.Selection.csproj" />
+    <ProjectReference Include="../MyLovePixel.Tilemap/MyLovePixel.Tilemap.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="SkiaSharp" />
