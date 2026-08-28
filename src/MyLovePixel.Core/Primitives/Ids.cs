@@ -29,3 +29,27 @@ public readonly record struct ResourceId(Guid Value)
     public static ResourceId New() => new(Guid.NewGuid());
     public override string ToString() => Value.ToString("N");
 }
+
+public readonly record struct AnimationClipId(Guid Value)
+{
+    public static AnimationClipId New() => new(Guid.NewGuid());
+    public override string ToString() => Value.ToString("N");
+}
+
+public readonly record struct AnimationTagId(Guid Value)
+{
+    public static AnimationTagId New() => new(Guid.NewGuid());
+    public override string ToString() => Value.ToString("N");
+}
+
+public readonly record struct SliceId(Guid Value)
+{
+    public static SliceId New() => new(Guid.NewGuid());
+    public override string ToString() => Value.ToString("N");
+}
+
+public readonly record struct AnimationTrackId(Guid Value)
+{
+    public static AnimationTrackId New() => new(Guid.NewGuid());
+    public override string ToString() => Value.ToString("N");
+}
