@@ -1,0 +1,104 @@
+name: Windows Self-Contained Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - ui-dark-release-build
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'Directory.Build.props'
+      - 'Directory.Packages.props'
+      - 'global.json'
+      - 'MyLovePixel.slnx'
+      - '.github/workflows/windows-release.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-release:
+    runs-on: windows-2022
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply dark UI patch
+        shell: pwsh
+        run: |
+          $patchRoot = Join-Path $env:RUNNER_TEMP 'mylovepixel-ui-patch'
+          if (Test-Path $patchRoot) { Remove-Item -Recurse -Force $patchRoot }
+          Expand-Archive -Path '.ci/MyLovePixel-ui-patch.zip' -DestinationPath $patchRoot -Force
+          Copy-Item -Force "$patchRoot/MyLovePixel-ui-patch/src/MyLovePixel.Desktop/*.cs" 'src/MyLovePixel.Desktop/'
+          if (-not (Test-Path 'src/MyLovePixel.Desktop/EditorStyles.cs')) { throw 'UI patch application failed.' }
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.400'
+
+      - name: Restore
+        run: dotnet restore MyLovePixel.slnx
+
+      - name: Build solution
+        run: dotnet build MyLovePixel.slnx -c Release --no-restore
+
+      - name: Publish Windows x64 self-contained app
+        shell: pwsh
+        run: |
+          $publish = 'release/MyLovePixel-Windows-x64'
+          New-Item -ItemType Directory -Force $publish | Out-Null
+          dotnet publish src/MyLovePixel.Desktop/MyLovePixel.Desktop.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true `
+            -p:DebugType=None `
+            -p:DebugSymbols=false `
+            -o $publish
+          if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed with exit code $LASTEXITCODE" }
+
+      - name: Validate release payload
+        shell: pwsh
+        run: |
+          $publish = 'release/MyLovePixel-Windows-x64'
+          $exe = Join-Path $publish 'MyLovePixel.Desktop.exe'
+          if (-not (Test-Path $exe)) { throw 'MyLovePixel.Desktop.exe was not produced.' }
+          $exeInfo = Get-Item $exe
+          if ($exeInfo.Length -lt 1MB) { throw "MyLovePixel.Desktop.exe is unexpectedly small: $($exeInfo.Length) bytes" }
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          @(
+            "MyLovePixel Windows x64",
+            "Commit: $env:GITHUB_SHA",
+            "Built: $(Get-Date -Format 'yyyy-MM-ddTHH:mm:ssK')",
+            "Runtime: self-contained .NET 10",
+            "Executable: MyLovePixel.Desktop.exe"
+          ) | Set-Content -Encoding UTF8 (Join-Path $publish 'BUILD.txt')
+          "$hash  MyLovePixel.Desktop.exe" | Set-Content -Encoding ASCII (Join-Path $publish 'SHA256SUMS.txt')
+          Get-ChildItem $publish | Format-Table Name, Length
+
+      - name: Package Windows release
+        shell: pwsh
+        run: |
+          $zip = 'release/MyLovePixel-Windows-x64.zip'
+          if (Test-Path $zip) { Remove-Item -Force $zip }
+          Compress-Archive -Path 'release/MyLovePixel-Windows-x64/*' -DestinationPath $zip -Force
+          if (-not (Test-Path $zip)) { throw 'Release ZIP was not produced.' }
+
+      - name: Upload Windows release
+        uses: actions/upload-artifact@v4
+        with:
+          name: MyLovePixel-Windows-x64
+          path: release/MyLovePixel-Windows-x64.zip
+          if-no-files-found: error
+          retention-days: 30
