@@ -136,7 +136,7 @@ public sealed class ReorderPaletteCommand : ICommand
             oldToNew[oldIndex] = checked((byte)newIndex);
         }
 
-        var newTransparentIndex = oldPalette.TransparentIndex is { } transparentIndex
+        byte? newTransparentIndex = oldPalette.TransparentIndex is { } transparentIndex
             ? oldToNew[transparentIndex]
             : null;
         var surfaceStates = new SurfaceState[referenced.Count];
