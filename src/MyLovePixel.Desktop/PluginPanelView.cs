@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using MyLovePixel.Application;
 
@@ -11,8 +12,8 @@ public sealed class PluginPanelView : ScrollViewer
     public PluginPanelView()
     {
         Content = _content;
-        HorizontalScrollBarVisibility = Primitives.ScrollBarVisibility.Disabled;
-        VerticalScrollBarVisibility = Primitives.ScrollBarVisibility.Auto;
+        HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+        VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
     }
 
     public void SetPanels(
