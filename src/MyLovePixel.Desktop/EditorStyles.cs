@@ -12,6 +12,14 @@ public static class EditorStyles
     {
         ArgumentNullException.ThrowIfNull(app);
 
+        // Keep Fluent controls (checkboxes, expanders, scrollbars, etc.) on the
+        // same mint accent as the custom editor chrome.
+        app.Resources["SystemAccentColor"] = Color.FromRgb(91, 218, 176);
+        app.Resources["SystemAccentColorLight1"] = Color.FromRgb(119, 232, 195);
+        app.Resources["SystemAccentColorLight2"] = Color.FromRgb(143, 239, 207);
+        app.Resources["SystemAccentColorDark1"] = Color.FromRgb(69, 181, 145);
+        app.Resources["SystemAccentColorDark2"] = Color.FromRgb(52, 145, 116);
+
         app.Styles.Add(new Style(x => x.OfType<Button>())
         {
             Setters =
@@ -194,7 +202,7 @@ public static class EditorStyles
         });
         app.Styles.Add(new Style(x => x.OfType<TabItem>().Class(":selected"))
         {
-            Setters = { new Setter(TabItem.ForegroundProperty, EditorThemeTokens.TextPrimary) },
+            Setters = { new Setter(TabItem.ForegroundProperty, EditorThemeTokens.Accent) },
         });
     }
 
@@ -210,6 +218,10 @@ public static class EditorStyles
                 new Setter(borderBrush, EditorThemeTokens.PanelBorder),
                 new Setter(borderThickness, new Thickness(1)),
             },
+        });
+        app.Styles.Add(new Style(x => x.OfType<T>().Class(":focus"))
+        {
+            Setters = { new Setter(borderBrush, EditorThemeTokens.Accent) },
         });
     }
 }
