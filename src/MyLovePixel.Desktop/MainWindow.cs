@@ -19,7 +19,9 @@ public sealed class MainWindow : Window
     private readonly EditorActionContext _actionContext;
     private readonly Dictionary<ActionId, List<Control>> _actionControls = [];
     private readonly PixelCanvasView _canvas = new();
+    private readonly StackPanel _toolsPanel = new() { Spacing = 4 };
     private readonly StackPanel _layersPanel = new() { Spacing = 4 };
+    private readonly StackPanel _toolOptionsPanel = new() { Spacing = 6 };
     private readonly StackPanel _palettePanel = new() { Spacing = 4 };
     private readonly StackPanel _timelineFrames = new() { Orientation = Orientation.Horizontal, Spacing = 4 };
     private readonly TextBlock _toolStatus = new();
@@ -38,6 +40,8 @@ public sealed class MainWindow : Window
 
         _interaction = new AvaloniaEditorInteraction(this);
         _actionContext = new EditorActionContext(_workspace, _interaction);
+        _canvas.PointerInput = DispatchCanvasPointer;
+        _canvas.CancelPointerInput = () => _workspace.CurrentSession?.CancelToolInteraction();
         Content = BuildShell();
 
         _workspace.Changed += OnWorkspaceChanged;
@@ -135,7 +139,7 @@ public sealed class MainWindow : Window
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(220) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(260) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(280) });
 
         var left = BuildLeftPanel();
         Grid.SetColumn(left, 0);
@@ -167,14 +171,8 @@ public sealed class MainWindow : Window
     {
         var content = new StackPanel { Spacing = 8, Margin = new Thickness(8) };
         content.Children.Add(SectionTitle("Tools"));
-        _toolStatus.Text = "Active: pencil";
         content.Children.Add(_toolStatus);
-        content.Children.Add(new TextBlock
-        {
-            Text = "ToolHost pointer routing is provided by the application layer; this panel remains presentation-only.",
-            TextWrapping = TextWrapping.Wrap,
-            Opacity = 0.75,
-        });
+        content.Children.Add(_toolsPanel);
         content.Children.Add(SectionTitle("Layers"));
         content.Children.Add(_layersPanel);
         return PanelBorder(content, new Thickness(0, 0, 1, 0));
@@ -183,6 +181,8 @@ public sealed class MainWindow : Window
     private Control BuildRightPanel()
     {
         var content = new StackPanel { Spacing = 8, Margin = new Thickness(8) };
+        content.Children.Add(SectionTitle("Tool Options"));
+        content.Children.Add(_toolOptionsPanel);
         content.Children.Add(SectionTitle("Palette"));
         content.Children.Add(_palettePanel);
         content.Children.Add(SectionTitle("View"));
@@ -192,12 +192,6 @@ public sealed class MainWindow : Window
         zoomRow.Children.Add(CreateViewButton("+", () => ChangeZoom(2.0)));
         zoomRow.Children.Add(CreateViewButton("1:1", () => SetZoom(1d)));
         content.Children.Add(zoomRow);
-        content.Children.Add(new TextBlock
-        {
-            Text = "Palette edits and tool options will be enabled only through Commands/ToolHost adapters.",
-            TextWrapping = TextWrapping.Wrap,
-            Opacity = 0.75,
-        });
         return PanelBorder(content, new Thickness(1, 0, 0, 0));
     }
 
@@ -297,6 +291,21 @@ public sealed class MainWindow : Window
         await InvokeActionAsync(id);
     }
 
+    private void DispatchCanvasPointer(EditorPointerEvent pointerEvent)
+    {
+        var session = _workspace.CurrentSession;
+        if (session is null) return;
+        try
+        {
+            session.DispatchPointer(pointerEvent);
+        }
+        catch (Exception ex)
+        {
+            session.CancelToolInteraction();
+            _documentStatus.Text = ex.Message;
+        }
+    }
+
     private void OnWorkspaceChanged(object? sender, EventArgs e)
     {
         ObserveCurrentSession();
@@ -320,6 +329,8 @@ public sealed class MainWindow : Window
         RefreshActions();
         RefreshTitleAndStatus();
         RefreshCanvas();
+        RefreshTools();
+        RefreshToolOptions();
         RefreshLayers();
         RefreshPalette();
         RefreshTimeline();
@@ -347,13 +358,106 @@ public sealed class MainWindow : Window
         var name = session.FilePath is null ? "Untitled" : Path.GetFileName(session.FilePath);
         Title = $"MyLovePixel — {name}{(session.IsDirty ? " *" : string.Empty)}";
         _documentStatus.Text = $"Frame {session.CurrentFrameId} · Layer {session.CurrentLayerId} · Zoom {session.Zoom:0.###}×";
-        _toolStatus.Text = $"Active: {session.ActiveToolId}";
+        _toolStatus.Text = $"Active: {session.ActiveToolId}{(session.HasEditableCel ? string.Empty : " · no Cel")}";
     }
 
     private void RefreshCanvas()
     {
         var session = _workspace.CurrentSession;
         _canvas.SetPresentation(session?.RenderCanvas(), session?.Zoom ?? 1d);
+    }
+
+    private void RefreshTools()
+    {
+        _toolsPanel.Children.Clear();
+        var session = _workspace.CurrentSession;
+        if (session is null) return;
+        foreach (var tool in session.GetTools())
+        {
+            var button = new Button
+            {
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+                Content = $"{(tool.IsActive ? "●" : "○")} {tool.DisplayName}",
+                IsEnabled = session.HasEditableCel,
+            };
+            var toolId = tool.Id;
+            button.Click += (_, _) => session.SelectTool(toolId);
+            _toolsPanel.Children.Add(button);
+        }
+    }
+
+    private void RefreshToolOptions()
+    {
+        _toolOptionsPanel.Children.Clear();
+        var session = _workspace.CurrentSession;
+        if (session is null) return;
+        var options = session.GetToolOptions();
+        if (options.Count == 0)
+        {
+            _toolOptionsPanel.Children.Add(new TextBlock { Text = "No editable tool options" });
+            return;
+        }
+
+        foreach (var option in options)
+        {
+            switch (option.Kind)
+            {
+                case ToolOptionPresentationKind.Boolean:
+                {
+                    var check = new CheckBox
+                    {
+                        Content = option.DisplayName,
+                        IsChecked = (bool)option.Value,
+                    };
+                    var optionId = option.Id;
+                    check.Click += (_, _) => session.SetToolOption(optionId, check.IsChecked == true);
+                    _toolOptionsPanel.Children.Add(check);
+                    break;
+                }
+                case ToolOptionPresentationKind.Integer:
+                {
+                    var value = (int)option.Value;
+                    var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+                    row.Children.Add(new TextBlock
+                    {
+                        Text = $"{option.DisplayName}: {value}",
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Width = 150,
+                    });
+                    var optionId = option.Id;
+                    row.Children.Add(CreateViewButton("−", () =>
+                    {
+                        var next = Math.Max(option.Minimum ?? int.MinValue, value - 1);
+                        session.SetToolOption(optionId, next);
+                    }));
+                    row.Children.Add(CreateViewButton("+", () =>
+                    {
+                        var next = Math.Min(option.Maximum ?? int.MaxValue, value + 1);
+                        session.SetToolOption(optionId, next);
+                    }));
+                    _toolOptionsPanel.Children.Add(row);
+                    break;
+                }
+                case ToolOptionPresentationKind.Enum:
+                {
+                    var row = new StackPanel { Spacing = 2 };
+                    row.Children.Add(new TextBlock { Text = option.DisplayName });
+                    var combo = new ComboBox
+                    {
+                        ItemsSource = option.AllowedValues,
+                        SelectedItem = (string)option.Value,
+                    };
+                    var optionId = option.Id;
+                    combo.SelectionChanged += (_, _) =>
+                    {
+                        if (combo.SelectedItem is string selected) session.SetToolOption(optionId, selected);
+                    };
+                    row.Children.Add(combo);
+                    _toolOptionsPanel.Children.Add(row);
+                    break;
+                }
+            }
+        }
     }
 
     private void RefreshLayers()
