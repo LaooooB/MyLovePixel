@@ -72,6 +72,7 @@ internal sealed class CelDto
     public int X { get; set; }
     public int Y { get; set; }
     public byte Opacity { get; set; } = byte.MaxValue;
+    public List<EffectInstanceDto> Effects { get; set; } = [];
 
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? ExtensionData { get; set; }
