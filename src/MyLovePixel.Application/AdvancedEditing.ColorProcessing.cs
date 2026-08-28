@@ -1,6 +1,7 @@
 using MyLovePixel.Color;
 using MyLovePixel.Commands.Pixel;
 using MyLovePixel.Commands.Resources;
+using MyLovePixel.Core.Document;
 using MyLovePixel.Core.Pixel;
 using MyLovePixel.Core.Primitives;
 
@@ -79,7 +80,41 @@ public static partial class AdvancedEditingExtensions
             stepDelta >= 0 ? "Shade Indexed Surface" : "Lighten Indexed Surface"));
     }
 
-    private static (Core.Document.CelSnapshot Cel, PixelSurfaceSnapshot Surface) ResolveColorSurface(DocumentSession session)
+    public static void ConvertCurrentIndexedSurfaceToRgba(this DocumentSession session)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        var (cel, surface) = ResolveColorSurface(session);
+        if (surface.Format != PixelFormat.Indexed8 || surface.PaletteId is not { } paletteId)
+            throw new InvalidOperationException("The current Cel is not Indexed8.");
+        var palette = session.CaptureSnapshot().GetPalette(paletteId);
+        var indices = surface.Bytes.Span;
+        var rgba = new byte[checked(surface.Size.Width * surface.Size.Height * 4)];
+        for (var pixel = 0; pixel < indices.Length; pixel++)
+        {
+            var color = palette.ResolveColor(indices[pixel]);
+            var offset = pixel * 4;
+            rgba[offset] = color.R;
+            rgba[offset + 1] = color.G;
+            rgba[offset + 2] = color.B;
+            rgba[offset + 3] = color.A;
+        }
+        session.Execute(new ReplacePixelSurfaceCommand(
+            cel.SurfaceId,
+            PixelFormat.Rgba32,
+            null,
+            rgba,
+            "Convert Indexed Surface to RGBA"));
+    }
+
+    public static PixelFormat? GetCurrentSurfaceFormat(this DocumentSession session)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        var snapshot = session.CaptureSnapshot();
+        var cel = snapshot.Cels.FirstOrDefault(value => value.LayerId == session.CurrentLayerId && value.FrameId == session.CurrentFrameId);
+        return cel is null ? null : snapshot.GetSurface(cel.SurfaceId).Format;
+    }
+
+    private static (CelSnapshot Cel, PixelSurfaceSnapshot Surface) ResolveColorSurface(DocumentSession session)
     {
         var snapshot = session.CaptureSnapshot();
         var cel = snapshot.Cels.FirstOrDefault(value => value.LayerId == session.CurrentLayerId && value.FrameId == session.CurrentFrameId)
