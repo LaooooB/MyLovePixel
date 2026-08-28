@@ -16,9 +16,7 @@ public sealed class QuantizeDialog : Window
     {
         Title = "Quantize"; Width = 330; Height = 210; WindowStartupLocation = WindowStartupLocation.CenterOwner; Background = EditorThemeTokens.AppBackground;
         var max = Number(16, 1, 256); var transparent = new CheckBox { Content = "Transparent", IsChecked = true };
-        Content = Form(
-            Labeled("Colors", max), transparent,
-            Actions(() => Close(null), () => Close(new QuantizeDialogResult((int)(max.Value ?? 16), transparent.IsChecked == true))));
+        Content = Form(Labeled("Colors", max), transparent, Actions(() => Close(null), () => Close(new QuantizeDialogResult((int)(max.Value ?? 16), transparent.IsChecked == true))));
     }
 
     private static NumericUpDown Number(decimal value, decimal min, decimal max) => new() { Value = value, Minimum = min, Maximum = max, Increment = 1, FormatString = "0" };
@@ -36,13 +34,11 @@ public sealed class DitherDialog : Window
         var palette = new ComboBox { ItemsSource = palettes.Select((v, i) => $"Palette {i + 1} · {v.Colors.Count}").ToArray(), SelectedIndex = palettes.Count > 0 ? 0 : -1 };
         var matrix = new ComboBox { ItemsSource = new[] { "Bayer 2×2", "Bayer 4×4" }, SelectedIndex = 1 };
         var strength = Number(64, 0, 255);
-        Content = Form(
-            Labeled("Palette", palette), Labeled("Matrix", matrix), Labeled("Strength", strength),
-            Actions(() => Close(null), () =>
-            {
-                if ((uint)palette.SelectedIndex >= (uint)palettes.Count) return;
-                Close(new DitherDialogResult(palettes[palette.SelectedIndex].Id, matrix.SelectedIndex == 1, (int)(strength.Value ?? 64)));
-            }));
+        Content = Form(Labeled("Palette", palette), Labeled("Matrix", matrix), Labeled("Strength", strength), Actions(() => Close(null), () =>
+        {
+            if ((uint)palette.SelectedIndex >= (uint)palettes.Count) return;
+            Close(new DitherDialogResult(palettes[palette.SelectedIndex].Id, matrix.SelectedIndex == 1, (int)(strength.Value ?? 64)));
+        }));
     }
 
     private static NumericUpDown Number(decimal value, decimal min, decimal max) => new() { Value = value, Minimum = min, Maximum = max, Increment = 1, FormatString = "0" };
@@ -57,16 +53,14 @@ public sealed class ShadeDialog : Window
     public ShadeDialog(PaletteEditorPresentation palette)
     {
         Title = "Ramp"; Width = 390; Height = 230; WindowStartupLocation = WindowStartupLocation.CenterOwner; Background = EditorThemeTokens.AppBackground;
-        var ramp = new TextBox { Text = string.Join(",", Enumerable.Range(0, Math.Min(8, palette.Colors.Count))), Watermark = "0,1,2,3" };
+        var ramp = new TextBox { Text = string.Join(",", Enumerable.Range(0, Math.Min(8, palette.Colors.Count))), PlaceholderText = "0,1,2,3" };
         var step = Number(1, -255, 255);
-        Content = Form(
-            Labeled("Indices", ramp), Labeled("Step", step),
-            Actions(() => Close(null), () =>
-            {
-                var values = Parse(ramp.Text);
-                if (values.Count == 0) return;
-                Close(new ShadeDialogResult(values, (int)(step.Value ?? 1)));
-            }));
+        Content = Form(Labeled("Indices", ramp), Labeled("Step", step), Actions(() => Close(null), () =>
+        {
+            var values = Parse(ramp.Text);
+            if (values.Count == 0) return;
+            Close(new ShadeDialogResult(values, (int)(step.Value ?? 1)));
+        }));
     }
 
     private static IReadOnlyList<byte> Parse(string? text)
