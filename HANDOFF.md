@@ -12,27 +12,51 @@ MyLovePixel 是私人游戏开发使用的可扩展 Pixel Art / Sprite 编辑器
 2. Cel 只持稳定 `ResourceId`；Linked Cel 通过共享 Surface 表达。
 3. Tilemap Cell 只引用稳定 `TileId`；Tile 只引用 `ResourceId`；Cell 不拥有像素副本。
 4. `PixelSurface` 是像素真值；GPU texture、thumbnail、composite 都是可重建缓存。
-5. Core 不引用 Avalonia/Skia/UI/Recovery，也不包含具体 Effect evaluator。
+5. Core 不引用 Avalonia/Skia/UI/Recovery/Plugin SDK/Plugin Host，也不包含具体 Effect evaluator。
 6. Raster / AutoTile / Effect / Renderer / Export 只读 Snapshot 或 immutable input。
 7. Selection / preview / docking / zoom / recovery / diagnostics 是 transient workspace/runtime state，不进入 `.pixelproj`。
 8. Persistence 使用显式 DTO + schemaVersion + 逐级 Migration；unknown JSON/plugin ZIP payload 必须保留。
 9. Revision 决定缓存正确性，Dirty Region 只决定性能；历史不完整时 full fallback。
 10. 高变化算法优先 Strategy/Registry。
-11. Export UI/CLI 共用 `ExportPipeline`；click handler 不实现导出算法。
-12. Desktop 只依赖 Application；Application 协调 Tools/Commands/Render/Persistence/Recovery/Export。
-13. 不重写 Git 历史；feature branch 全 CI 绿后才 `force:false` fast-forward `main`。
+11. Export UI/CLI/Plugin adapter 复用正常 Render/Export 语义；不能重写 Palette/ColorCycle/Effect composition。
+12. Desktop 只依赖 Application；Application 协调 Tools/Commands/Render/Persistence/Recovery/Export/PluginHost。
+13. Public Plugin SDK 只能暴露稳定 immutable/declarative contract，不能给插件裸 mutable document、GPU lifetime、Avalonia control 或任意 filesystem handle。
+14. Plugin raster mutation 必须绑定 Host 提供的 SurfaceId + Revision，最终仍经 CommandBus。
+15. 不重写 Git 历史；feature branch 全 CI 绿后才 `force:false` fast-forward `main`。
 
 ## 2. 当前 solution / schema
 
-核心与算法项目：Core、Commands、Persistence、Recovery、Raster、Selection、Render、Tools、Animation、Color、Tilemap、Effects、Export、Application、Desktop、Cli。
+核心与算法项目：
 
-测试项目覆盖 Core、Persistence、Recovery、Raster、Selection、Render、Tools、Animation、Color、Tilemap、Effects、Export、Application。
+- `MyLovePixel.Core`
+- `MyLovePixel.Commands`
+- `MyLovePixel.Persistence`
+- `MyLovePixel.Recovery`
+- `MyLovePixel.Raster`
+- `MyLovePixel.Selection`
+- `MyLovePixel.Render`
+- `MyLovePixel.Tools`
+- `MyLovePixel.Animation`
+- `MyLovePixel.Color`
+- `MyLovePixel.Tilemap`
+- `MyLovePixel.Effects`
+- `MyLovePixel.Export`
+- `MyLovePixel.PluginSdk`
+- `MyLovePixel.PluginHost`
+- `MyLovePixel.Application`
+- `MyLovePixel.Desktop`
+- `MyLovePixel.Cli`
+
+测试项目覆盖以上核心模块，并包含：
+
+- `MyLovePixel.PluginHost.Tests`
+- `MyLovePixel.TestPlugin`（out-of-tree style，**只引用 PluginSdk**）
 
 当前 `.pixelproj` schema = **5**。
 
 Migration：1→2 Animation；2→3 Palette/Indexed/ColorCycle；3→4 seed + Tileset/Tilemap；4→5 Cel effects。
 
-Recovery journal 是独立 versioned workspace format，**没有**升级 `.pixelproj` schema。
+Batch14 Recovery journal 是独立 versioned workspace format；Batch15 namespaced plugin opaque payload 复用现有 unknown ZIP preservation。两者都**没有**升级 `.pixelproj` schema。
 
 ## 3. 已完成批次概览
 
@@ -45,133 +69,258 @@ Recovery journal 是独立 versioned workspace format，**没有**升级 `.pixel
 - Batch11：EffectGraph、typed/animated parameters、CPU evaluator、Bake、unknown effect preservation、schema5。ADR-0006。
 - Batch12：Import/Export/Atlas/Headless Pipeline、PNG、sheet/atlas、JSON metadata、CLI。ADR-0007。
 - Batch13：Avalonia Desktop/Application boundary、ActionId/Shortcut、Canvas/ToolHost、bounded Timeline、Layer/Palette facade、theme tokens。ADR-0008。
+- Batch14：Autosave/Recovery、Undo memory budget、thumbnail LRU、dirty diagnostics、stress/crash fixtures。ADR-0009。
+- **Batch15：Versioned Plugin / Script SDK、Host adapters、out-of-tree plugin、opaque plugin persistence、UI-neutral panels、runtime-neutral script budgets。ADR-0010。**
 
-Batch13 merged main baseline：`3257ff64c20b61a2a3f65febe2e8c33c53a1022a`；merge 后 main CI `33153498128` success。
+Batch14 merged main baseline：`61678b0fcb490e7dfaf6bd1df9a6af9dbadce8f8`；main CI `33160382618` success。
 
-## 4. Batch14 — Autosave / Recovery / Performance Hardening：完成
+## 4. Batch15 — Plugin / Script SDK：完成
 
-分支：`batch14-hardening`。
+开发分支：`batch15-plugin-sdk`。
 
-### Recovery subsystem
+### 4.1 Public SDK 1.0
 
-新增 `MyLovePixel.Recovery`：
-
-- `RecoveryOptions / RecoveryCandidate / RecoveryDiscovery`；
-- versioned recovery journal；
-- autosave checkpoint 复用正常 `.pixelproj` writer；
-- checkpoint 保存后重新 Load + semantic hash 验证；
-- verified checkpoint 之后才 atomically publish journal；
-- 新 journal commit 后才 retention rotation；
-- candidate structured states：Valid / InvalidJournal / MissingCheckpoint / CorruptCheckpoint / SemanticMismatch；
-- older valid candidate 不会被损坏的新 candidate 遮蔽；
-- `RecoveryStore.Recover`；
-- `RecoveryStore.Discard` 先删 journal、再删 checkpoint；
-- failure injection stages：BeforeCheckpoint / AfterCheckpointValidated / BeforeJournalCommit / AfterJournalCommit / BeforeRotation / AfterRotation。
-
-Crash matrix 已覆盖所有六个 injection stage：任一步失败后至少仍有一个 verified recovery point 可加载；journal 已提交后的失败必须能发现新 checkpoint，提交前失败则旧 checkpoint 仍是有效恢复点。
-
-### Application / Desktop Recovery workflow
-
-新增 `RecoveryWorkspaceCoordinator`：
-
-- `AutosavePolicy` 默认 2 分钟，retention 默认 3；
-- 只 autosave dirty sessions；
-- per-document interval tracking；
-- structured autosave result；
-- recovery discovery presentation；
-- recover / dismiss workflow。
-
-Recovered session 语义：
-
-- `IsRecovered = true`；
-- `IsDirty = true`；
-- `FilePath = null`；
-- original source path 只作为 `RecoverySourcePath` 提示；
-- 用户显式 Save/Save As 后才清除 recovery state 并建立正常 FilePath。
-
-Desktop：
-
-- 30 秒 timer 触发 Application autosave tick；真正 policy 仍是 2 分钟；
-- startup/Autosave/Recover/Dismiss 边界刷新 Recovery panel；
-- 高频 `RefreshAll` / pointer move **不**做 recovery disk scan；
-- Recovery panel 提供 Recover/Dismiss；
-- recovered title/status 明确显示 recovery copy。
-
-### Undo memory budget
-
-`CommandBus` 支持 `UndoHistoryOptions`：
-
-- configurable byte budget；
-- `IUndoMemoryCost`；
-- PixelPatch 按 retained undo patch 估算成本；
-- 超预算从最旧 committed undo entries 回收；
-- redo branch accounting；
-- transaction 语义不变；
-- 单个最新 entry 可暂时超软预算，确保刚执行的动作仍可 Undo；
-- `UndoHistoryDiagnostics` 暴露 budget / estimated bytes / evictions / counts / over-budget。
-
-### Thumbnail LRU
-
-Render 新增 `ThumbnailCache`：
-
-- immutable rendered RGBA thumbnails；
-- `MaxEntries + MaxBytes` 双预算；
-- true LRU；
-- stable FrameId + visual structure/revision-aware key；
-- nearest-neighbor resize；
-- oversize bypass；
-- hit/miss/eviction/bytes/hit ratio diagnostics。
-
-新增 `RenderCacheRates / GetRates()`，从 FrameRenderer diagnostics 对外提供 request/miss/hit/hit-ratio summary。
-
-### Dirty render diagnostics
-
-`DocumentSession` 现在累计 `DocumentChange.DirtySurfaces`，并基于 last-rendered Surface revision 生成 revision-covering `SurfaceInvalidation`。
+新增 `MyLovePixel.PluginSdk`，当前 Public Plugin API = **1.0**。
 
 关键规则：
 
-- 多个 revision 在下一次 render 前可合并 dirty region，但 revision coverage 不能丢；
-- Renderer 仍负责最终安全判断；history 不完整就 full fallback；
-- render 成功后才清 pending invalidations；
-- dirty visualization 来自实际 Partial `TextureUploadPlan.Regions`；
-- overlay 是 transient，不改 Surface/Project/Export。
+- Plugin SDK 是唯一外部插件稳定 contract assembly。
+- SDK 只依赖 BCL，不引用 Core / Commands / PluginHost / Avalonia / SkiaSharp。
+- `PluginApiVersion` 决定兼容性；**不**用 implementation assembly version 代替 public API version。
+- `PluginId` 必须稳定、namespace 化。
+- `PluginManifest` 声明 plugin version、API min/max、capabilities。
 
-Desktop Diagnostics 显示 render cache outcome、partial/full/hit、upload pixels、Undo memory/evictions；可切换 dirty-region overlay。
+Public registration contracts：
 
-### Stress fixtures
+- Tool
+- Command
+- Effect
+- Exporter
+- Importer
+- Panel
+- Palette algorithm
+- Dither algorithm
+- AutoTile rule
 
-Headless stress coverage：
+Capability 未声明却尝试注册时明确失败。
 
-- 1000-frame `TimelineWindow`：总帧 1000 时仍只物化请求的 24 items；
-- 1000-frame thumbnail sweep：64-entry / 256-byte cache 最终严格保持预算，936 次 LRU eviction；
-- 10,000 sparse Tilemap cells：625 chunks、一个 shared Tile Surface、一个 patch Undo entry，Undo 后 chunks 清空且 Surface 数不变；
-- 5,000 repeated pixel Commands：Undo history 始终受 4096-byte budget 限制，旧 entries 被回收；
-- Recovery 六阶段 crash matrix。
+### 4.2 PluginHost / lifecycle / registry
 
-测试不依赖 wall-clock timing 阈值，只验证资源上限、引用模型和恢复正确性。
+新增 `MyLovePixel.PluginHost`：
 
-### Key Batch14 CI
+- version compatibility validation；
+- duplicate PluginId / extension ID policy；
+- capability enforcement；
+- scoped registration tokens；
+- registration 中途失败自动 rollback；
+- unload 反向 dispose registrations；
+- optional `IPluginLifecycle.OnUnload`；
+- structured `PluginDiagnostic`；
+- collectible `AssemblyLoadContext` DLL loader。
 
-- Recovery Stage1：`33153809269` success。
-- Undo/Thumbnail corrected Stage2：`33154253929` success。
-- Recovery UI / partial render Stage3：`33159499189` success。
-- Final stress/code gate：`33160003149` success。
+Unload 顺序固定为：
 
-Batch14 final code HEAD（文档收口前）：`fe3b944c3657447b92719caf501cc1e3aad86c26`。
+1. 从 Host registries 移除 extension registrations；
+2. 调用 plugin lifecycle cleanup；
+3. 释放 collectible load context。
 
-ADR：`docs/DECISIONS/ADR-0009-recovery-performance-hardening.md`。
+Registry 不允许在 unload 后保留 dangling plugin instance。
 
-## 5. Persistence / Recovery facts
+### 4.3 Mutation boundary
+
+Plugin Tool / Command / Panel 不获得 `PixelDocument` 或 writable `PixelSurface`。
+
+Host 只给 extension copied immutable `PluginRasterTarget`：
+
+- SurfaceId
+- Surface Revision
+- Size
+- copied RGBA bytes
+
+插件最终编辑返回 declarative `PluginPixelPatch`。Host 只有在以下条件全部满足时接受：
+
+- patch SurfaceId 与 Host 给 extension 的 target 完全一致；
+- `ExpectedRevision` 仍等于当前 target revision；
+- target 仍为 RGBA32；
+- 所有写入坐标合法。
+
+接受后转换成正常 `PixelPatchCommand` 并由 `CommandBus` 执行。
+
+因此 Plugin mutation 继续拥有：
+
+- Undo / Redo；
+- Surface revision；
+- DirtySurfaceRegion；
+- stale revision protection；
+- transaction/history 的既有语义。
+
+Tool preview 永远只作为 transient presentation，不改 live Surface。
+
+Plugin API 1.0 刻意只开放 RGBA raster mutation。Indexed-specific mutation 以后要新增明确 public contract，不能直接暴露 internal Surface API。
+
+### 4.4 Effect integration
+
+Plugin Effect evaluator：
+
+- 只吃 immutable plugin image/value DTO；
+- Host 转接现有 Effect descriptor/backend；
+- plugin registry/backend revision 参与 Effect/Renderer configuration revision；
+- 最终仍由正常 FrameRenderer composition。
+
+未知/缺失 plugin effect 仍遵守既有 Effect 规则：可保存，但不能在 Bake 时 silent skip。
+
+### 4.5 Export / Import integration
+
+Plugin Exporter：
+
+- Host 先用正常 `FrameRenderer` 渲染选中 Frames；
+- 插件只收到 immutable rendered RGBA frames；
+- 不得自行重写 Indexed/Palette/ColorCycle/Effect 解释；
+- artifact path 仍走现有安全 relative-path validation/writer。
+
+Plugin Importer：
+
+- `CanImport` 只拿 name + 最多前 64 bytes probe；
+- Import 返回 immutable `PluginImage`；
+- Host 用 `RgbaDocumentFactory` 建正常 RGBA Document；
+- API 1.0 要求 image origin = 0；
+- API 1.0 暂无 metadata 的 lossless Document mapping，因此 nonempty metadata **明确失败而不是 silent drop**；
+- plugin exception 转 `AssetPipelineException(ImportFailed)` 并记录 diagnostic。
+
+### 4.6 Namespaced plugin persistence
+
+Plugin project data 使用 PluginId namespace 下的 opaque project entries。
+
+规则：
+
+- Persistence 不解释 plugin bytes；
+- plugin 缺失时仍 load/save roundtrip；
+- plugin 重新安装后可再次解释原 payload；
+- 不把 plugin runtime object graph 序列化进 project；
+- Batch15 不升级 schema，仍为 **5**。
+
+### 4.7 UI-neutral Panel
+
+SDK Panel contract 只定义：
+
+- Panel model
+- Section
+- Field
+- Action
+- Context
+
+不返回 Avalonia Control。
+
+Application 的 `PluginWorkspaceRuntime` 将其转成 Application presentation DTO；Desktop 的 `PluginPanelView` 只消费这些 DTO。
+
+Panel action 返回的 patch 同样必须匹配 Host 提供的 SurfaceId/revision，然后才进 CommandBus。Panel build/action throw 被隔离并记录 structured diagnostic。
+
+### 4.8 Application / Desktop integration
+
+Application `PluginWorkspaceRuntime` 支持：
+
+- DLL load/unload；
+- loaded plugin presentation；
+- diagnostics presentation；
+- builtin + plugin Tool unified palette；
+- plugin Tool pointer routing；
+- transient preview decoration；
+- UI-neutral Panel presentation/action；
+- plugin-aware Export。
+
+Desktop 不引用 PluginSdk/PluginHost；Avalonia 仍在 Application boundary 后面。
+
+### 4.9 Script contract
+
+SDK 已定义 runtime-neutral Script API：
+
+- `ScriptSandboxPolicy`
+  - operation budget
+  - accounted-memory budget
+  - time budget
+  - determinism flag
+- `IPluginScriptContext`
+- `IPluginScriptProgram`
+- `PluginScriptExecutionResult`
+- deterministic `PluginScriptValueCodec`
+
+Host `PluginScriptRunner`：
+
+- structured `operation-budget-exceeded`；
+- structured `memory-budget-exceeded`；
+- structured `time-budget-exceeded`；
+- structured external `cancelled`；
+- unhandled extension error -> `script-failed`；
+- operation/memory violation 会 **latch**：program 即使 catch accounting exception，最终执行仍失败；
+- memory accounting 不允许 release 超过已 reserve bytes。
+
+**重要：Batch15 没有选择 Lua / JS / WASM。**
+
+当前 Script runner 是 in-process **cooperative runtime contract**，不是 hostile-code security sandbox，也不宣称可 preempt 任意 CLR code。未来真正选择 runtime 时必须把 runtime 的 instruction/allocation/preemption 能力接到这些 budget/cancellation contract。
+
+### 4.10 Failure isolation
+
+覆盖：
+
+- registration throw → scope rollback；
+- missing capability → load fail + no residual registration；
+- Tool throw → no document mutation；
+- Command throw / invalid patch → no mutation；
+- Panel build/action throw → isolated diagnostic；
+- stale/different target patch → rejected before Command；
+- Exporter/Importer throw → structured asset-pipeline failure；
+- unload throw → registry 已先清理；
+- opaque plugin data survives missing implementation。
+
+### 4.11 Out-of-tree test plugin
+
+`tests/MyLovePixel.TestPlugin` 只引用 `MyLovePixel.PluginSdk`。
+
+测试明确验证它不引用：
+
+- MyLovePixel.Core
+- MyLovePixel.Commands
+- MyLovePixel.PluginHost
+- Avalonia
+
+TestPlugin 注册：
+
+- Tool
+- Effect
+- Exporter
+- Panel
+
+Tool preview/commit、Effect rendering、Exporter、Panel 和 unload 都通过正常 Host/Application adapter 测试。
+
+### 4.12 Batch15 CI
+
+关键 gates：
+
+- Stage1 SDK/Host：`33161836016` success。
+- Stage2 DLL/Application/Desktop adapters：`33162437739` success。
+- Script/Importer final code gate：`33163278347` success。
+
+Batch15 final code HEAD（文档/最终边界测试收口前）：
+
+`da264088735793ba59e7171c1b40c9d7d9c0fc82`
+
+ADR：`docs/DECISIONS/ADR-0010-plugin-sdk.md`。
+
+Plugin author guide：`docs/PLUGIN_SDK.md`。
+
+## 5. Persistence / Recovery / Plugin facts
 
 Current `.pixelproj` schema = **5**。
 
 MLPX codec version 仍为 1：RGBA32 4 byte/pixel；Indexed8 1 byte/pixel；Palette 在 document JSON。
 
-Unknown JSON 和 opaque plugin ZIP payload 必须 roundtrip。Runtime revision/cache/chunks、Desktop workspace state、ExportPreset、Recovery journal 都不属于 `.pixelproj` semantic state。
+Unknown JSON 和 opaque plugin ZIP payload 必须 roundtrip。Runtime revision/cache/chunks、Desktop workspace state、ExportPreset、Recovery journal、Plugin runtime registrations/diagnostics 都不属于 `.pixelproj` semantic state。
 
 Normal project save 的 atomic guarantees 未改变：同目录 temp、write-through、reopen validation、atomic replace；失败时旧正式项目保持有效。
 
 Autosave 发布顺序固定为：checkpoint atomic save → reload/semantic verification → journal atomic publish → rotation。
+
+Plugin project bytes 的原则：Persistence 只保存 opaque namespaced bytes；插件缺失不影响保存。
 
 ## 6. 已知事故 / 不要重复踩坑
 
@@ -188,34 +337,26 @@ Autosave 发布顺序固定为：checkpoint atomic save → reload/semantic veri
 - Recovery copy 不能自动继承正式 FilePath；必须显式 Save。
 - Rotation 不能先删最后一个 verified checkpoint 再写新 generation。
 - Stress test 不用机器相关 elapsed-time threshold 判 correctness。
+- Plugin SDK 不得为了方便引用 Core/Commands/Application/Desktop。
+- PluginHost 不得因为插件需要“高级功能”直接把 PixelDocument 交出去；应该增加窄的 immutable/declarative SDK contract。
+- Panel patch 必须验证它仍是原 target/revision，不能只因为 PluginPixelPatch 本身合法就执行。
+- Plugin Import metadata 没有 mapping 时明确失败，不能静默丢字段。
+- Script operation/memory accounting exception 必须 latch；不能让 program catch 后继续被认为 success。
+- Cooperative script budget ≠ hostile-code sandbox。不要在未选 runtime 前做这种安全承诺。
 
-## 7. 下一开发起点：Batch15 — Plugin / Script SDK
+## 7. 下一开发起点
 
-目标：以后定制功能优先通过稳定扩展点增长，而不是继续修改 Core 或让插件获得裸 mutable document。
+**基础编辑器计划到 Batch15 已完成。Batch16 是 Optional Advanced Modules，不应自动进入。**
 
-先解决以下设计，再写 host：
+只有出现明确私人工作流需求时才开始 Batch16。`docs/IMPLEMENTATION_PLAN.md` 当前候选包括：
 
-1. **SDK versioning**：定义 `PluginApiVersion`、host compatibility policy、最低/最高支持版本；禁止把内部 assembly 版本直接当 public SDK contract。
-2. **Plugin identity/lifecycle**：稳定 `PluginId`、manifest、load/unload/error isolation、duplicate id policy。
-3. **Capability model**：插件只能拿窄接口；不能获得 `PixelDocument` internal mutation、raw GPU lifetime、任意 filesystem/UI handle。
-4. **Registration model**：Tool / Command / Effect / Exporter / Importer / Panel / Palette / Dither / AutoTile 统一 registry contract；registration token 支持卸载。
-5. **Mutation boundary**：plugin Tool/Panel 最终写入仍必须产生 Command/Transaction；不能绕过 Undo/Dirty/Revision。
-6. **Persistence namespace**：plugin project data 使用 namespaced opaque payload；插件缺失时仍 roundtrip；插件重装后可重新解释。
-7. **Effect/export integration**：插件 Effect evaluator/Exporter 只吃 immutable contract；unknown plugin Effect 继续遵守现有 preserve-but-no-silent-bake 规则。
-8. **Panel boundary**：Panel 插件不要直接暴露 Avalonia control 作为 SDK 核心契约；先定义 UI-neutral panel/session contract，再做 Desktop adapter。
-9. **Script host**：Lua/JS/WASM 不要在 Stage1 随便选。先定义 sandbox API、budget/cancellation、determinism、serialization；根据实际私人工具需求再选 runtime。
-10. **Failure isolation/diagnostics**：一个插件 throw 不应损坏 Document/registry；注册和执行错误要有 structured diagnostics。
-11. **Tests**：外部 test plugin 在不改 Core 源码情况下注册 Tool + Effect + Exporter；卸载后 registry 清理；unknown payload roundtrip；plugin mutation Undo 正确。
-12. ADR + HANDOFF + full CI，最后 `force:false` fast-forward main。
+- Audio Layer / waveform / timeline sync；
+- Bone / Mesh / IK；
+- 3D Guide / 3D → Pixel render；
+- macro / batch composition；
+- engine-specific exporters；
+- procedural generators。
 
-Batch15 Definition of Done：
+约束：这些模块优先通过现有 `RenderNode / AnimationTrack / Exporter / Plugin SDK` 接入，不能污染普通 Cel 模型或扩张 Core mutable API。
 
-- Public SDK assembly/namespace 边界明确并 versioned；
-- 至少一个 out-of-tree style test plugin 能注册 Tool + Effect + Exporter；
-- 插件不能获得裸 mutable Document；
-- plugin mutation 仍通过 CommandBus；
-- plugin data 缺失实现时仍能保存；
-- unload 不留下 registry dangling entries；
-- plugin failure 不破坏正常 editor state；
-- Core 不反向依赖 Plugin host/Desktop；
-- full CI green 后才合 main。
+如果下一个需求只是一个私人工具、效果、导出器、Panel 或算法，**先尝试作为 Plugin SDK extension 实现，而不是开新的 Core feature batch。**
