@@ -1,4 +1,5 @@
 using MyLovePixel.Core.Document;
+using MyLovePixel.Core.Pixel;
 using MyLovePixel.Core.Primitives;
 
 namespace MyLovePixel.Core.Validation;
@@ -12,12 +13,19 @@ public static class DocumentValidator
         ArgumentNullException.ThrowIfNull(document);
         var issues = new List<ValidationIssue>();
 
+        if (document.Canvas.PixelFormat != PixelFormat.Rgba32)
+            issues.Add(new(
+                "canvas.pixelFormat.unsupported",
+                $"Canvas compositing format must remain RGBA32; received {document.Canvas.PixelFormat}."));
+
         var layers = document.LayerOrder.ToHashSet();
         var frames = document.FrameOrder.ToHashSet();
         var frameIndex = document.FrameOrder
             .Select((id, index) => (id, index))
             .ToDictionary(item => item.id, item => item.index);
         var occupied = new HashSet<(LayerId Layer, FrameId Frame)>();
+
+        ValidateResources(document, issues);
 
         foreach (var frameId in document.FrameOrder)
         {
@@ -46,6 +54,56 @@ public static class DocumentValidator
         var issues = Validate(document);
         if (issues.Count == 0) return;
         throw new InvalidOperationException(string.Join(Environment.NewLine, issues.Select(x => $"[{x.Code}] {x.Message}")));
+    }
+
+    private static void ValidateResources(PixelDocument document, List<ValidationIssue> issues)
+    {
+        foreach (var surfaceId in document.Resources.SurfaceIds)
+        {
+            var surface = document.Resources.GetSurface(surfaceId);
+            switch (surface.Format)
+            {
+                case PixelFormat.Rgba32:
+                    if (surface.PaletteId is not null)
+                        issues.Add(new(
+                            "surface.rgba.palette.invalid",
+                            $"RGBA32 surface {surfaceId} cannot reference palette {surface.PaletteId}."));
+                    break;
+
+                case PixelFormat.Indexed8:
+                    if (surface.PaletteId is not { } paletteId)
+                    {
+                        issues.Add(new(
+                            "surface.indexed.palette.missing",
+                            $"Indexed8 surface {surfaceId} has no palette reference."));
+                        break;
+                    }
+                    if (!document.Resources.ContainsPalette(paletteId))
+                    {
+                        issues.Add(new(
+                            "surface.indexed.palette.reference.missing",
+                            $"Indexed8 surface {surfaceId} references missing palette {paletteId}."));
+                        break;
+                    }
+
+                    var palette = document.Resources.GetPalette(paletteId);
+                    foreach (var index in surface.Snapshot().Bytes.Span)
+                    {
+                        if (index < palette.Count) continue;
+                        issues.Add(new(
+                            "surface.indexed.index.invalid",
+                            $"Indexed8 surface {surfaceId} contains index {index}, but palette {paletteId} has {palette.Count} entries."));
+                        break;
+                    }
+                    break;
+
+                default:
+                    issues.Add(new(
+                        "surface.pixelFormat.unsupported",
+                        $"Surface {surfaceId} uses unsupported pixel format {surface.Format}."));
+                    break;
+            }
+        }
     }
 
     private static void ValidateAnimation(
