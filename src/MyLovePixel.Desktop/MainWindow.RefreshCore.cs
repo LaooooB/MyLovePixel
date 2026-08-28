@@ -21,20 +21,34 @@ public sealed partial class MainWindow
 {
     private void RefreshAll()
     {
-        ObserveCurrentSession();
-        RefreshActions();
-        RefreshCanvas();
-        RefreshTools();
-        RefreshToolOptions();
-        RefreshLayers();
-        RefreshPalette();
-        RefreshEffects();
-        RefreshTiles();
-        RefreshAnimation();
-        RefreshPlugins();
-        RefreshRecovery();
-        RefreshTimeline();
-        RefreshStatus();
+        if (_refreshing)
+        {
+            QueueRefreshAll();
+            return;
+        }
+
+        _refreshing = true;
+        try
+        {
+            ObserveCurrentSession();
+            RefreshActions();
+            RefreshCanvas();
+            RefreshTools();
+            RefreshToolOptions();
+            RefreshLayers();
+            RefreshPalette();
+            RefreshEffects();
+            RefreshTiles();
+            RefreshAnimation();
+            RefreshPlugins();
+            RefreshRecovery();
+            RefreshTimeline();
+            RefreshStatus();
+        }
+        finally
+        {
+            _refreshing = false;
+        }
     }
 
     private void RefreshCanvas()
@@ -63,6 +77,9 @@ public sealed partial class MainWindow
         var session = Current();
         if (session is null) return;
         _toolsPanel.Margin = new Thickness(8, 8, 8, 4);
+        var colors = session.GetToolColors();
+        _primarySwatch.Background = Brush(colors.Primary);
+        _secondarySwatch.Background = Brush(colors.Secondary);
 
         var select = IconButton("▧", "Selection", () =>
         {
