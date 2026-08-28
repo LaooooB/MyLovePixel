@@ -54,6 +54,12 @@ public readonly record struct TilemapId(Guid Value)
     public override string ToString() => Value.ToString("N");
 }
 
+public readonly record struct EffectInstanceId(Guid Value)
+{
+    public static EffectInstanceId New() => new(Guid.NewGuid());
+    public override string ToString() => Value.ToString("N");
+}
+
 public readonly record struct AnimationClipId(Guid Value)
 {
     public static AnimationClipId New() => new(Guid.NewGuid());
