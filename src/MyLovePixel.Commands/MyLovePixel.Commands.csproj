@@ -6,5 +6,6 @@
   <ItemGroup>
     <ProjectReference Include="../MyLovePixel.Core/MyLovePixel.Core.csproj" />
     <ProjectReference Include="../MyLovePixel.Tilemap/MyLovePixel.Tilemap.csproj" />
+    <ProjectReference Include="../MyLovePixel.Effects/MyLovePixel.Effects.csproj" />
   </ItemGroup>
 </Project>
