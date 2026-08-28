@@ -1,3 +1,4 @@
+using MyLovePixel.Core.Effects;
 using MyLovePixel.Core.Primitives;
 
 namespace MyLovePixel.Core.Document;
@@ -22,4 +23,5 @@ public sealed class Cel
     public ResourceId SurfaceId { get; internal set; }
     public IntPoint Position { get; internal set; }
     public byte Opacity { get; internal set; } = byte.MaxValue;
+    public EffectGraph Effects { get; internal set; } = new();
 }
