@@ -1,10 +1,13 @@
 using System.Text.Json;
 using MyLovePixel.Commands;
+using MyLovePixel.Commands.Effects;
+using MyLovePixel.Commands.Pixel;
 using MyLovePixel.Commands.Timeline;
 using MyLovePixel.Core.Document;
 using MyLovePixel.Core.Effects;
 using MyLovePixel.Core.Pixel;
 using MyLovePixel.Core.Primitives;
+using MyLovePixel.Effects;
 using Xunit;
 
 namespace MyLovePixel.Export.Tests;
@@ -30,10 +33,10 @@ public sealed class ExportPipelineTests
     {
         var document = PixelDocumentFactory.CreateBlank(2, 1);
         var cel = document.Cels.Single();
-        var surface = document.Resources.GetSurface(cel.SurfaceId);
-        surface.SetPixel(0, 0, new Rgba32(255, 0, 0, 255));
+        var bus = new CommandBus(document);
+        bus.Execute(new PixelPatchCommand(cel.SurfaceId, [new PixelWrite(0, 0, new Rgba32(255, 0, 0, 255))]));
         var snapshot = DocumentSnapshot.Capture(document);
-        surface.SetPixel(0, 0, new Rgba32(0, 255, 0, 255));
+        bus.Execute(new PixelPatchCommand(cel.SurfaceId, [new PixelWrite(0, 0, new Rgba32(0, 255, 0, 255))]));
 
         var bundle = ExportPipeline.CreateDefault().Execute(new ExportRequest(snapshot, new ExportPreset
         {
@@ -43,7 +46,7 @@ public sealed class ExportPipelineTests
         }));
         var decoded = PngCodec.Decode(bundle.Artifacts.Single(item => item.MediaType == "image/png").Content.Span);
         Assert.Equal(new Rgba32(255, 0, 0, 255), decoded.GetPixel(0, 0));
-        Assert.Equal(new Rgba32(0, 255, 0, 255), surface.GetPixel(0, 0));
+        Assert.Equal(new Rgba32(0, 255, 0, 255), document.Resources.GetSurface(cel.SurfaceId).GetPixel(0, 0));
     }
 
     [Fact]
@@ -51,14 +54,14 @@ public sealed class ExportPipelineTests
     {
         var document = PixelDocumentFactory.CreateBlank(3, 3);
         var cel = document.Cels.Single();
-        document.Resources.GetSurface(cel.SurfaceId).SetPixel(1, 1, new Rgba32(255, 0, 0, 255));
-        var outline = new EffectInstance(EffectInstanceId.New(), "core.outline");
-        outline.SetParameter("radius", EffectValue.Integer(1), out _);
-        outline.SetParameter("color", EffectValue.Color(new Rgba32(0, 0, 0, 255)), out _);
-        cel.Effects.Add(outline);
-        var snapshot = DocumentSnapshot.Capture(document);
+        var bus = new CommandBus(document);
+        bus.Execute(new PixelPatchCommand(cel.SurfaceId, [new PixelWrite(1, 1, new Rgba32(255, 0, 0, 255))]));
+        var add = new AddEffectCommand(cel.Id, BuiltinEffectDescriptors.Outline.TypeId);
+        bus.Execute(add);
+        bus.Execute(new SetEffectParameterCommand(cel.Id, add.EffectId, "radius", EffectValue.Integer(1), BuiltinEffectDescriptors.Outline));
+        bus.Execute(new SetEffectParameterCommand(cel.Id, add.EffectId, "color", EffectValue.Color(new Rgba32(0, 0, 0, 255)), BuiltinEffectDescriptors.Outline));
 
-        var bundle = ExportPipeline.CreateDefault().Execute(new ExportRequest(snapshot, new ExportPreset
+        var bundle = ExportPipeline.CreateDefault().Execute(new ExportRequest(DocumentSnapshot.Capture(document), new ExportPreset
         {
             Layout = ExportLayout.SeparateFrames,
             Trim = false,
@@ -104,8 +107,8 @@ public sealed class ExportPipelineTests
     public void CropTrimScaleAndExtrude_ProduceExpectedSheetGeometry()
     {
         var document = PixelDocumentFactory.CreateBlank(4, 4);
-        var surface = document.Resources.GetSurface(document.Cels.Single().SurfaceId);
-        surface.SetPixel(2, 2, new Rgba32(10, 20, 30, 255));
+        var cel = document.Cels.Single();
+        new CommandBus(document).Execute(new PixelPatchCommand(cel.SurfaceId, [new PixelWrite(2, 2, new Rgba32(10, 20, 30, 255))]));
         var bundle = ExportPipeline.CreateDefault().Execute(new ExportRequest(DocumentSnapshot.Capture(document), new ExportPreset
         {
             Layout = ExportLayout.SpriteSheet,
