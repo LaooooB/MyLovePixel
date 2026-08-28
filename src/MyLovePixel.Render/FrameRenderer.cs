@@ -106,7 +106,12 @@ public sealed class FrameRenderer
             Diagnostics.Snapshot());
     }
 
-    public void ClearCaches() => _cache.Clear();
+    public void ClearCaches()
+    {
+        _cache.Clear();
+        foreach (var node in _graph.Nodes.OfType<FrameCompositeRenderNode>())
+            node.Effects.ClearCaches();
+    }
 
     private FrameCacheEntry CreateFullEntry(
         RenderNodeContext context,
@@ -206,6 +211,12 @@ public sealed class FrameRenderer
                 snapshot,
                 frameId,
                 changed.SurfaceId);
+
+            if (cels.Any(cel => cel.Effects.EffectOrder.Count != 0))
+            {
+                dirtyRegions = Array.Empty<IntRect>();
+                return false;
+            }
 
             foreach (var cel in cels)
             foreach (var surfaceRegion in surfaceRegions)
