@@ -66,6 +66,7 @@ jobs:
         shell: pwsh
         run: |
           $publish = 'release/MyLovePixel-Windows-x64'
+          Get-ChildItem $publish -Filter '*.pdb' -File | Remove-Item -Force
           $exe = Join-Path $publish 'MyLovePixel.Desktop.exe'
           if (-not (Test-Path $exe)) { throw 'MyLovePixel.Desktop.exe was not produced.' }
           $exeInfo = Get-Item $exe
@@ -79,6 +80,10 @@ jobs:
             "Executable: MyLovePixel.Desktop.exe"
           ) | Set-Content -Encoding UTF8 (Join-Path $publish 'BUILD.txt')
           "$hash  MyLovePixel.Desktop.exe" | Set-Content -Encoding ASCII (Join-Path $publish 'SHA256SUMS.txt')
+          $files = Get-ChildItem $publish -File
+          if ($files.Name | Where-Object { $_ -ne 'MyLovePixel.Desktop.exe' -and $_ -ne 'BUILD.txt' -and $_ -ne 'SHA256SUMS.txt' }) {
+            throw 'Release payload contains unexpected files.'
+          }
           Get-ChildItem $publish | Format-Table Name, Length
 
       - name: Package Windows release
