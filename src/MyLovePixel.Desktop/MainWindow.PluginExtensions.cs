@@ -12,15 +12,15 @@ public sealed partial class MainWindow
 {
     private Control BuildPluginExtensionControls(DocumentSession? session)
     {
-        var root = new StackPanel { Spacing = 5 };
+        var root = new StackPanel { Spacing = 6 };
 
         if (_plugins.Commands.Count > 0)
         {
-            var commands = new StackPanel { Spacing = 4 };
+            var commands = new StackPanel { Spacing = 5 };
             foreach (var command in _plugins.Commands)
             {
                 var item = command;
-                var run = IconButton("▶", $"Run {item.DisplayName}", () => RunPluginCommand(item.Id));
+                var run = TextIconButton("▶", "Run", $"Run {item.DisplayName}", () => RunPluginCommand(item.Id));
                 run.IsEnabled = session is not null;
                 commands.Children.Add(ListRow(item.DisplayName, run));
             }
@@ -29,11 +29,12 @@ public sealed partial class MainWindow
 
         if (_plugins.Importers.Count > 0)
         {
-            var importers = new StackPanel { Spacing = 4 };
+            var importers = new StackPanel { Spacing = 5 };
             foreach (var importer in _plugins.Importers)
             {
                 var item = importer;
-                importers.Children.Add(ListRow(item.DisplayName, IconButton("↥", $"Import with {item.DisplayName}", async () => await ImportWithPluginAsync(item))));
+                importers.Children.Add(ListRow(item.DisplayName,
+                    TextIconButton("", "Import…", $"Import with {item.DisplayName}", async () => await ImportWithPluginAsync(item))));
             }
             root.Children.Add(Expander("Importers", importers));
         }
@@ -41,11 +42,11 @@ public sealed partial class MainWindow
         var pluginExporters = _plugins.Exporters.Where(value => value.Id != BuiltinExporterIds.GameAssets).ToArray();
         if (pluginExporters.Length > 0)
         {
-            var exporters = new StackPanel { Spacing = 4 };
+            var exporters = new StackPanel { Spacing = 5 };
             foreach (var exporter in pluginExporters)
             {
                 var item = exporter;
-                var export = IconButton("↧", $"Export with {item.DisplayName}", async () => await ExportWithPluginAsync(item));
+                var export = TextIconButton("", "Export…", $"Export with {item.DisplayName}", async () => await ExportWithPluginAsync(item));
                 export.IsEnabled = session is not null;
                 exporters.Children.Add(ListRow(item.DisplayName, export));
             }
@@ -54,11 +55,11 @@ public sealed partial class MainWindow
 
         if (_plugins.PaletteAlgorithms.Count > 0)
         {
-            var algorithms = new StackPanel { Spacing = 4 };
+            var algorithms = new StackPanel { Spacing = 5 };
             foreach (var algorithm in _plugins.PaletteAlgorithms)
             {
                 var item = algorithm;
-                var apply = IconButton("◫", $"Apply {item.DisplayName} to selected palette", () => ApplyPluginPaletteAlgorithm(item.Id));
+                var apply = TextIconButton("", "Apply", $"Apply {item.DisplayName} to selected palette", () => ApplyPluginPaletteAlgorithm(item.Id));
                 apply.IsEnabled = session is not null;
                 algorithms.Children.Add(ListRow(item.DisplayName, apply));
             }
@@ -67,11 +68,11 @@ public sealed partial class MainWindow
 
         if (_plugins.DitherAlgorithms.Count > 0)
         {
-            var algorithms = new StackPanel { Spacing = 4 };
+            var algorithms = new StackPanel { Spacing = 5 };
             foreach (var algorithm in _plugins.DitherAlgorithms)
             {
                 var item = algorithm;
-                var apply = IconButton("▦", $"Apply {item.DisplayName} using selected palette", () => ApplyPluginDither(item.Id));
+                var apply = TextIconButton("", "Apply", $"Apply {item.DisplayName} using selected palette", () => ApplyPluginDither(item.Id));
                 apply.IsEnabled = session is not null;
                 algorithms.Children.Add(ListRow(item.DisplayName, apply));
             }
@@ -80,11 +81,11 @@ public sealed partial class MainWindow
 
         if (_plugins.AutoTileRules.Count > 0)
         {
-            var rules = new StackPanel { Spacing = 4 };
+            var rules = new StackPanel { Spacing = 5 };
             foreach (var rule in _plugins.AutoTileRules)
             {
                 var item = rule;
-                var apply = IconButton("▦", $"Apply {item.DisplayName} to visible 8×8 tile viewport", () => ApplyPluginAutoTile(item.Id));
+                var apply = TextIconButton("", "Apply to Viewport", $"Apply {item.DisplayName} to visible 8×8 tile viewport", () => ApplyPluginAutoTile(item.Id));
                 apply.IsEnabled = session is not null;
                 rules.Children.Add(ListRow(item.DisplayName, apply));
             }
