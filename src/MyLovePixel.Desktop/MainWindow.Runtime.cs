@@ -27,6 +27,7 @@ public sealed partial class MainWindow
         {
             _pluginsPanel.Children.Add(ListRow(plugin.Name, IconButton("×", "Unload", () => { _plugins.Unload(plugin.Id); RefreshAll(); })));
         }
+        _pluginsPanel.Children.Add(BuildPluginExtensionControls(Current()));
         _pluginPanelView.SetPanels(_plugins.GetPanels(Current()), (panel, action) =>
         {
             var session = Current();
