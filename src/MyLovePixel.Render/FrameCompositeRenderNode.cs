@@ -27,6 +27,7 @@ public sealed class FrameCompositeRenderNode : IRenderNode
         var celsByLayer = context.Snapshot.Cels
             .Where(cel => cel.FrameId == context.FrameId)
             .ToDictionary(cel => cel.LayerId);
+        context.Snapshot.Animation.ColorCycleTrack.Values.TryGetValue(context.FrameId, out var colorCycles);
 
         foreach (var layerId in context.Snapshot.LayerOrder)
         {
@@ -37,7 +38,7 @@ public sealed class FrameCompositeRenderNode : IRenderNode
             if (!celsByLayer.TryGetValue(layerId, out var cel) || cel.Opacity == 0) continue;
 
             var surface = context.Snapshot.GetSurface(cel.SurfaceId);
-            CompositeCel(context.Snapshot, surface, cel, layer, target, clippedRegion);
+            CompositeCel(context.Snapshot, surface, cel, layer, colorCycles, target, clippedRegion);
         }
     }
 
@@ -46,6 +47,7 @@ public sealed class FrameCompositeRenderNode : IRenderNode
         PixelSurfaceSnapshot surface,
         CelSnapshot cel,
         LayerSnapshot layer,
+        ColorCycleFrameValue? colorCycles,
         IRenderTarget target,
         IntRect region)
     {
@@ -54,11 +56,13 @@ public sealed class FrameCompositeRenderNode : IRenderNode
         if (drawRegion.IsEmpty) return;
 
         PaletteSnapshot? palette = null;
+        PaletteId? paletteId = null;
         if (surface.Format == PixelFormat.Indexed8)
         {
-            if (surface.PaletteId is not { } paletteId)
+            if (surface.PaletteId is not { } indexedPaletteId)
                 throw new InvalidOperationException($"Indexed8 surface '{cel.SurfaceId}' has no palette reference.");
-            palette = snapshot.GetPalette(paletteId);
+            paletteId = indexedPaletteId;
+            palette = snapshot.GetPalette(indexedPaletteId);
         }
 
         for (var canvasY = drawRegion.Y; canvasY < drawRegion.Bottom; canvasY++)
@@ -69,7 +73,7 @@ public sealed class FrameCompositeRenderNode : IRenderNode
             var source = surface.Format switch
             {
                 PixelFormat.Rgba32 => surface.GetPixel(sourceX, sourceY),
-                PixelFormat.Indexed8 => palette!.ResolveColor(surface.GetIndex(sourceX, sourceY)),
+                PixelFormat.Indexed8 => ResolveIndexed(surface, sourceX, sourceY, paletteId!.Value, palette!, colorCycles),
                 _ => throw new NotSupportedException($"Surface pixel format '{surface.Format}' has no CPU compositor implementation."),
             };
             if (source.A == 0) continue;
@@ -82,5 +86,18 @@ public sealed class FrameCompositeRenderNode : IRenderNode
             var destination = target.GetPixel(canvasX, canvasY);
             target.SetPixel(canvasX, canvasY, RenderMath.SourceOver(destination, effectiveSource));
         }
+    }
+
+    private static Rgba32 ResolveIndexed(
+        PixelSurfaceSnapshot surface,
+        int x,
+        int y,
+        PaletteId paletteId,
+        PaletteSnapshot palette,
+        ColorCycleFrameValue? colorCycles)
+    {
+        var index = surface.GetIndex(x, y);
+        var resolvedIndex = colorCycles?.ResolveIndex(paletteId, index) ?? index;
+        return palette.ResolveColor(resolvedIndex);
     }
 }

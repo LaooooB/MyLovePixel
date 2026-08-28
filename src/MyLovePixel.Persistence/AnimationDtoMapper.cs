@@ -48,6 +48,11 @@ internal static class AnimationDtoMapper
                 frameIndex,
                 template?.EventTrack,
                 (value, previous) => ToEventFrame(value, previous)),
+            ColorCycleTrack = MapTrack(
+                animation.ColorCycleTrack,
+                frameIndex,
+                template?.ColorCycleTrack,
+                (value, previous) => ToColorCycleFrame(value, previous)),
         };
 
         foreach (var clipId in animation.ClipOrder)
@@ -120,12 +125,14 @@ internal static class AnimationDtoMapper
             new AnimationTrackId(ParseGuid(dto.HitboxTrack.Id, "animation.hitboxTrack.id")),
             new AnimationTrackId(ParseGuid(dto.HurtboxTrack.Id, "animation.hurtboxTrack.id")),
             new AnimationTrackId(ParseGuid(dto.SocketTrack.Id, "animation.socketTrack.id")),
-            new AnimationTrackId(ParseGuid(dto.EventTrack.Id, "animation.eventTrack.id")));
+            new AnimationTrackId(ParseGuid(dto.EventTrack.Id, "animation.eventTrack.id")),
+            new AnimationTrackId(ParseGuid(dto.ColorCycleTrack.Id, "animation.colorCycleTrack.id")));
         animation.PivotTrack.Name = dto.PivotTrack.Name;
         animation.HitboxTrack.Name = dto.HitboxTrack.Name;
         animation.HurtboxTrack.Name = dto.HurtboxTrack.Name;
         animation.SocketTrack.Name = dto.SocketTrack.Name;
         animation.EventTrack.Name = dto.EventTrack.Name;
+        animation.ColorCycleTrack.Name = dto.ColorCycleTrack.Name;
         return animation;
     }
 
@@ -192,6 +199,7 @@ internal static class AnimationDtoMapper
         PopulateTrack(animation.HurtboxTrack, dto.HurtboxTrack, frameIds, FromBoxFrame);
         PopulateTrack(animation.SocketTrack, dto.SocketTrack, frameIds, FromSocketFrame);
         PopulateTrack(animation.EventTrack, dto.EventTrack, frameIds, FromEventFrame);
+        PopulateTrack(animation.ColorCycleTrack, dto.ColorCycleTrack, frameIds, FromColorCycleFrame);
     }
 
     private static TrackDto<TDto> MapTrack<TValue, TDto>(
@@ -341,6 +349,39 @@ internal static class AnimationDtoMapper
     {
         ArgumentNullException.ThrowIfNull(value);
         return new EventFrameValue(value.Events.Select(marker => new AnimationEventMarker(marker.Name, marker.Payload)));
+    }
+
+    private static ColorCycleFrameDto ToColorCycleFrame(ColorCycleFrameValue value, ColorCycleFrameDto? previous)
+    {
+        var dto = new ColorCycleFrameDto
+        {
+            ExtensionData = ExtensionData.Clone(previous?.ExtensionData),
+        };
+        for (var index = 0; index < value.Cycles.Count; index++)
+        {
+            var cycle = value.Cycles[index];
+            var previousCycle = previous is not null && index < previous.Cycles.Count ? previous.Cycles[index] : null;
+            dto.Cycles.Add(new PaletteCycleDto
+            {
+                PaletteId = cycle.PaletteId.ToString(),
+                StartIndex = cycle.StartIndex,
+                EndIndex = cycle.EndIndex,
+                Offset = cycle.Offset,
+                ExtensionData = ExtensionData.Clone(previousCycle?.ExtensionData),
+            });
+        }
+        return dto;
+    }
+
+    private static ColorCycleFrameValue FromColorCycleFrame(ColorCycleFrameDto value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        return new ColorCycleFrameValue(
+            value.Cycles.Select(cycle => new PaletteCycle(
+                new PaletteId(ParseGuid(cycle.PaletteId, "animation.colorCycle.paletteId")),
+                cycle.StartIndex,
+                cycle.EndIndex,
+                cycle.Offset)));
     }
 
     private static Dictionary<string, T> IndexById<T>(IEnumerable<T>? values, Func<T, string> getId) where T : class

@@ -225,6 +225,79 @@ public sealed class EventFrameValue : IEquatable<EventFrameValue>
     }
 }
 
+public readonly record struct PaletteCycle
+{
+    public PaletteCycle(PaletteId paletteId, byte startIndex, byte endIndex, int offset)
+    {
+        if (paletteId.Value == Guid.Empty) throw new ArgumentException("PaletteId cannot be empty.", nameof(paletteId));
+        if (startIndex > endIndex) throw new ArgumentException("Color cycle start index cannot exceed end index.", nameof(startIndex));
+        PaletteId = paletteId;
+        StartIndex = startIndex;
+        EndIndex = endIndex;
+        Offset = offset;
+    }
+
+    public PaletteId PaletteId { get; }
+    public byte StartIndex { get; }
+    public byte EndIndex { get; }
+    public int Offset { get; }
+
+    public byte RemapIndex(byte index)
+    {
+        if (index < StartIndex || index > EndIndex) return index;
+        var length = EndIndex - StartIndex + 1;
+        var position = index - StartIndex;
+        var shift = Offset % length;
+        var remapped = (position + shift) % length;
+        if (remapped < 0) remapped += length;
+        return checked((byte)(StartIndex + remapped));
+    }
+}
+
+public sealed class ColorCycleFrameValue : IEquatable<ColorCycleFrameValue>
+{
+    private readonly PaletteCycle[] _cycles;
+
+    public ColorCycleFrameValue(IEnumerable<PaletteCycle> cycles)
+    {
+        ArgumentNullException.ThrowIfNull(cycles);
+        _cycles = cycles.ToArray();
+        for (var left = 0; left < _cycles.Length; left++)
+        for (var right = left + 1; right < _cycles.Length; right++)
+        {
+            var a = _cycles[left];
+            var b = _cycles[right];
+            if (a.PaletteId != b.PaletteId) continue;
+            if (a.StartIndex <= b.EndIndex && b.StartIndex <= a.EndIndex)
+                throw new ArgumentException("Color cycle ranges for the same palette cannot overlap.", nameof(cycles));
+        }
+    }
+
+    public IReadOnlyList<PaletteCycle> Cycles => Array.AsReadOnly(_cycles);
+
+    public byte ResolveIndex(PaletteId paletteId, byte index)
+    {
+        foreach (var cycle in _cycles)
+        {
+            if (cycle.PaletteId == paletteId && index >= cycle.StartIndex && index <= cycle.EndIndex)
+                return cycle.RemapIndex(index);
+        }
+        return index;
+    }
+
+    public bool Equals(ColorCycleFrameValue? other) =>
+        other is not null && _cycles.AsSpan().SequenceEqual(other._cycles);
+
+    public override bool Equals(object? obj) => obj is ColorCycleFrameValue other && Equals(other);
+
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        foreach (var cycle in _cycles) hash.Add(cycle);
+        return hash.ToHashCode();
+    }
+}
+
 public interface IAnimationEasing
 {
     string Id { get; }
@@ -299,6 +372,7 @@ public sealed class AnimationMetadata
             AnimationTrackId.New(),
             AnimationTrackId.New(),
             AnimationTrackId.New(),
+            AnimationTrackId.New(),
             AnimationTrackId.New())
     {
     }
@@ -308,13 +382,15 @@ public sealed class AnimationMetadata
         AnimationTrackId hitboxTrackId,
         AnimationTrackId hurtboxTrackId,
         AnimationTrackId socketTrackId,
-        AnimationTrackId eventTrackId)
+        AnimationTrackId eventTrackId,
+        AnimationTrackId colorCycleTrackId)
     {
         PivotTrack = new AnimationTrack<IntPoint>(pivotTrackId, "Pivot");
         HitboxTrack = new AnimationTrack<BoxFrameValue>(hitboxTrackId, "Hitboxes");
         HurtboxTrack = new AnimationTrack<BoxFrameValue>(hurtboxTrackId, "Hurtboxes");
         SocketTrack = new AnimationTrack<SocketFrameValue>(socketTrackId, "Sockets");
         EventTrack = new AnimationTrack<EventFrameValue>(eventTrackId, "Events");
+        ColorCycleTrack = new AnimationTrack<ColorCycleFrameValue>(colorCycleTrackId, "Color Cycles");
     }
 
     public IReadOnlyList<AnimationClipId> ClipOrder => _clipOrder;
@@ -325,6 +401,7 @@ public sealed class AnimationMetadata
     public AnimationTrack<BoxFrameValue> HurtboxTrack { get; }
     public AnimationTrack<SocketFrameValue> SocketTrack { get; }
     public AnimationTrack<EventFrameValue> EventTrack { get; }
+    public AnimationTrack<ColorCycleFrameValue> ColorCycleTrack { get; }
 
     public AnimationClip GetClip(AnimationClipId id) => _clips.TryGetValue(id, out var value)
         ? value
@@ -423,7 +500,8 @@ public sealed class AnimationMetadata
             HitboxTrack.Snapshot(),
             HurtboxTrack.Snapshot(),
             SocketTrack.Snapshot(),
-            EventTrack.Snapshot());
+            EventTrack.Snapshot(),
+            ColorCycleTrack.Snapshot());
     }
 }
 
@@ -435,4 +513,5 @@ public sealed record AnimationMetadataSnapshot(
     AnimationTrackSnapshot<BoxFrameValue> HitboxTrack,
     AnimationTrackSnapshot<BoxFrameValue> HurtboxTrack,
     AnimationTrackSnapshot<SocketFrameValue> SocketTrack,
-    AnimationTrackSnapshot<EventFrameValue> EventTrack);
+    AnimationTrackSnapshot<EventFrameValue> EventTrack,
+    AnimationTrackSnapshot<ColorCycleFrameValue> ColorCycleTrack);

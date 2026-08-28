@@ -140,6 +140,7 @@ public static class ProjectSemanticHash
         AppendTrack(hash, animation.HurtboxTrack, frameIndex, AppendBoxFrame);
         AppendTrack(hash, animation.SocketTrack, frameIndex, AppendSocketFrame);
         AppendTrack(hash, animation.EventTrack, frameIndex, AppendEventFrame);
+        AppendTrack(hash, animation.ColorCycleTrack, frameIndex, AppendColorCycleFrame);
     }
 
     private static void AppendTrack<T>(
@@ -186,6 +187,18 @@ public static class ProjectSemanticHash
         {
             AppendString(hash, marker.Name);
             AppendString(hash, marker.Payload);
+        }
+    }
+
+    private static void AppendColorCycleFrame(IncrementalHash hash, ColorCycleFrameValue value)
+    {
+        AppendInt32(hash, value.Cycles.Count);
+        foreach (var cycle in value.Cycles)
+        {
+            AppendGuid(hash, cycle.PaletteId.Value);
+            AppendByte(hash, cycle.StartIndex);
+            AppendByte(hash, cycle.EndIndex);
+            AppendInt32(hash, cycle.Offset);
         }
     }
 

@@ -26,15 +26,18 @@ internal sealed record ResourceRevisionState(ResourceId SurfaceId, long Revision
 internal sealed class FrameStructureSignature : IEquatable<FrameStructureSignature>
 {
     private readonly LayerRenderState[] _layers;
+    private readonly ColorCycleFrameValue? _colorCycles;
 
     private FrameStructureSignature(
         IntSize canvasSize,
         PixelFormat canvasFormat,
-        LayerRenderState[] layers)
+        LayerRenderState[] layers,
+        ColorCycleFrameValue? colorCycles)
     {
         CanvasSize = canvasSize;
         CanvasFormat = canvasFormat;
         _layers = layers;
+        _colorCycles = colorCycles;
     }
 
     public IntSize CanvasSize { get; }
@@ -78,16 +81,19 @@ internal sealed class FrameStructureSignature : IEquatable<FrameStructureSignatu
                 celState);
         }
 
+        snapshot.Animation.ColorCycleTrack.Values.TryGetValue(frameId, out var colorCycles);
         return new FrameStructureSignature(
             snapshot.Canvas.Size,
             snapshot.Canvas.PixelFormat,
-            layers);
+            layers,
+            colorCycles);
     }
 
     public bool Equals(FrameStructureSignature? other) =>
         other is not null &&
         CanvasSize == other.CanvasSize &&
         CanvasFormat == other.CanvasFormat &&
+        Equals(_colorCycles, other._colorCycles) &&
         _layers.AsSpan().SequenceEqual(other._layers);
 
     public override bool Equals(object? obj) =>
@@ -98,6 +104,7 @@ internal sealed class FrameStructureSignature : IEquatable<FrameStructureSignatu
         var hash = new HashCode();
         hash.Add(CanvasSize);
         hash.Add(CanvasFormat);
+        hash.Add(_colorCycles);
         foreach (var layer in _layers)
             hash.Add(layer);
         return hash.ToHashCode();

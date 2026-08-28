@@ -45,7 +45,7 @@ public static class DocumentValidator
                 issues.Add(new("cel.slot.duplicate", $"More than one Cel occupies layer {cel.LayerId}, frame {cel.FrameId}."));
         }
 
-        ValidateAnimation(document.Animation, frames, frameIndex, issues);
+        ValidateAnimation(document, frames, frameIndex, issues);
         return issues;
     }
 
@@ -107,11 +107,12 @@ public static class DocumentValidator
     }
 
     private static void ValidateAnimation(
-        AnimationMetadata animation,
+        PixelDocument document,
         IReadOnlySet<FrameId> frames,
         IReadOnlyDictionary<FrameId, int> frameIndex,
         List<ValidationIssue> issues)
     {
+        var animation = document.Animation;
         var trackIds = new[]
         {
             animation.PivotTrack.Id,
@@ -119,6 +120,7 @@ public static class DocumentValidator
             animation.HurtboxTrack.Id,
             animation.SocketTrack.Id,
             animation.EventTrack.Id,
+            animation.ColorCycleTrack.Id,
         };
         if (trackIds.Distinct().Count() != trackIds.Length)
             issues.Add(new("animation.track.id.duplicate", "Built-in animation tracks must have unique stable IDs."));
@@ -140,6 +142,43 @@ public static class DocumentValidator
         ValidateTrack("hurtbox", animation.HurtboxTrack.Values.Keys, frames, issues);
         ValidateTrack("socket", animation.SocketTrack.Values.Keys, frames, issues);
         ValidateTrack("event", animation.EventTrack.Values.Keys, frames, issues);
+        ValidateTrack("colorCycle", animation.ColorCycleTrack.Values.Keys, frames, issues);
+        ValidateColorCycles(document, animation.ColorCycleTrack, issues);
+    }
+
+    private static void ValidateColorCycles(
+        PixelDocument document,
+        AnimationTrack<ColorCycleFrameValue> track,
+        List<ValidationIssue> issues)
+    {
+        foreach (var pair in track.Values)
+        foreach (var cycle in pair.Value.Cycles)
+        {
+            if (!document.Resources.ContainsPalette(cycle.PaletteId))
+            {
+                issues.Add(new(
+                    "animation.colorCycle.palette.missing",
+                    $"Color cycle on frame {pair.Key} references missing palette {cycle.PaletteId}."));
+                continue;
+            }
+
+            var palette = document.Resources.GetPalette(cycle.PaletteId);
+            if (cycle.EndIndex >= palette.Count)
+            {
+                issues.Add(new(
+                    "animation.colorCycle.range.invalid",
+                    $"Color cycle on frame {pair.Key} ends at index {cycle.EndIndex}, but palette {cycle.PaletteId} has {palette.Count} entries."));
+                continue;
+            }
+
+            if (palette.TransparentIndex is { } transparentIndex &&
+                transparentIndex >= cycle.StartIndex && transparentIndex <= cycle.EndIndex)
+            {
+                issues.Add(new(
+                    "animation.colorCycle.transparent.invalid",
+                    $"Color cycle on frame {pair.Key} cannot include transparent palette index {transparentIndex}."));
+            }
+        }
     }
 
     private static void ValidateRange(

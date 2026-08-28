@@ -162,6 +162,8 @@ public sealed class CopyFrameCommand : ICommand
             animation.SocketTrack.Set(targetFrameId, sockets);
         if (animation.EventTrack.TryGetValue(sourceFrameId, out var events))
             animation.EventTrack.Set(targetFrameId, events);
+        if (animation.ColorCycleTrack.TryGetValue(sourceFrameId, out var colorCycles))
+            animation.ColorCycleTrack.Set(targetFrameId, colorCycles);
     }
 
     private static void RemoveTrackValues(AnimationMetadata animation, FrameId frameId)
@@ -171,6 +173,7 @@ public sealed class CopyFrameCommand : ICommand
         animation.HurtboxTrack.Remove(frameId, out _);
         animation.SocketTrack.Remove(frameId, out _);
         animation.EventTrack.Remove(frameId, out _);
+        animation.ColorCycleTrack.Remove(frameId, out _);
     }
 
     private sealed record Undo : IUndoToken;
@@ -285,12 +288,14 @@ public sealed class RemoveFrameCommand(FrameId frameId) : ICommand
         var hasHurtboxes = animation.HurtboxTrack.Remove(frameId, out var hurtboxes);
         var hasSockets = animation.SocketTrack.Remove(frameId, out var sockets);
         var hasEvents = animation.EventTrack.Remove(frameId, out var events);
+        var hasColorCycles = animation.ColorCycleTrack.Remove(frameId, out var colorCycles);
         return new TrackRemovalState(
             hasPivot, pivot,
             hasHitboxes, hitboxes,
             hasHurtboxes, hurtboxes,
             hasSockets, sockets,
-            hasEvents, events);
+            hasEvents, events,
+            hasColorCycles, colorCycles);
     }
 
     private static void RestoreClips(AnimationMetadata animation, IReadOnlyList<AffectedClip> changes)
@@ -322,6 +327,7 @@ public sealed class RemoveFrameCommand(FrameId frameId) : ICommand
         if (state.HasHurtboxes) animation.HurtboxTrack.Restore(frameId, state.Hurtboxes!);
         if (state.HasSockets) animation.SocketTrack.Restore(frameId, state.Sockets!);
         if (state.HasEvents) animation.EventTrack.Restore(frameId, state.Events!);
+        if (state.HasColorCycles) animation.ColorCycleTrack.Restore(frameId, state.ColorCycles!);
     }
 
     private static int IndexOf(IReadOnlyList<FrameId> values, FrameId value)
@@ -343,7 +349,9 @@ public sealed class RemoveFrameCommand(FrameId frameId) : ICommand
         bool HasSockets,
         SocketFrameValue? Sockets,
         bool HasEvents,
-        EventFrameValue? Events);
+        EventFrameValue? Events,
+        bool HasColorCycles,
+        ColorCycleFrameValue? ColorCycles);
 
     private sealed record Undo(
         int OldIndex,

@@ -118,6 +118,7 @@ internal sealed class AnimationDto
     public TrackDto<BoxFrameDto> HurtboxTrack { get; set; } = new() { Name = "Hurtboxes" };
     public TrackDto<SocketFrameDto> SocketTrack { get; set; } = new() { Name = "Sockets" };
     public TrackDto<EventFrameDto> EventTrack { get; set; } = new() { Name = "Events" };
+    public TrackDto<ColorCycleFrameDto> ColorCycleTrack { get; set; } = new() { Name = "Color Cycles" };
 
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? ExtensionData { get; set; }
@@ -254,6 +255,25 @@ internal sealed class AnimationEventDto
 internal sealed class EventFrameDto
 {
     public List<AnimationEventDto> Events { get; set; } = [];
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+}
+
+internal sealed class PaletteCycleDto
+{
+    public string PaletteId { get; set; } = string.Empty;
+    public byte StartIndex { get; set; }
+    public byte EndIndex { get; set; }
+    public int Offset { get; set; }
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+}
+
+internal sealed class ColorCycleFrameDto
+{
+    public List<PaletteCycleDto> Cycles { get; set; } = [];
 
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? ExtensionData { get; set; }

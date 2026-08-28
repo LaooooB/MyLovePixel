@@ -121,6 +121,12 @@ public sealed class ReorderPaletteCommand : ICommand
 
     public CommandApplication Apply(PixelDocument document)
     {
+        if (document.Animation.ColorCycleTrack.Values.Values
+            .SelectMany(value => value.Cycles)
+            .Any(cycle => cycle.PaletteId == _paletteId))
+            throw new InvalidOperationException(
+                $"Palette '{_paletteId}' cannot be reordered while color-cycle keyframes reference it. Clear or remap those cycles first.");
+
         var palette = document.Resources.GetPalette(_paletteId);
         ValidatePermutation(palette.Count);
         var referenced = PaletteCommandHelper.GetReferencedIndexedSurfaces(document, _paletteId);
