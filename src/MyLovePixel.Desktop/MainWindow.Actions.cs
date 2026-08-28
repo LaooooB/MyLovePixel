@@ -19,6 +19,9 @@ namespace MyLovePixel.Desktop;
 
 public sealed partial class MainWindow
 {
+    private bool _refreshQueued;
+    private bool _refreshing;
+
     private async Task NewProjectAsync()
     {
         var choice = await new NewProjectDialog().ShowDialog<CanvasSizeChoice?>(this);
@@ -160,7 +163,10 @@ public sealed partial class MainWindow
 
     private void OnWorkspaceChanged(object? sender, EventArgs e)
     {
-        ObserveCurrentSession(); _timelineStart = 0; _selectionStart = null; RefreshAll();
+        ObserveCurrentSession();
+        _timelineStart = 0;
+        _selectionStart = null;
+        QueueRefreshAll();
     }
 
     private void ObserveCurrentSession()
@@ -171,7 +177,18 @@ public sealed partial class MainWindow
         if (_observedSession is not null) _observedSession.StateChanged += OnSessionChanged;
     }
 
-    private void OnSessionChanged(object? sender, EventArgs e) => RefreshAll();
+    private void OnSessionChanged(object? sender, EventArgs e) => QueueRefreshAll();
+
+    private void QueueRefreshAll()
+    {
+        if (_refreshQueued) return;
+        _refreshQueued = true;
+        Dispatcher.UIThread.Post(() =>
+        {
+            _refreshQueued = false;
+            RefreshAll();
+        }, DispatcherPriority.Background);
+    }
 
     private void RefreshActions()
     {
