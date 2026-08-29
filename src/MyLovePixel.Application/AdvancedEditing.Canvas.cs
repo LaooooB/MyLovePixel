@@ -1,5 +1,6 @@
 using MyLovePixel.Commands.Pixel;
 using MyLovePixel.Core.Pixel;
+using MyLovePixel.Core.Primitives;
 
 namespace MyLovePixel.Application;
 
