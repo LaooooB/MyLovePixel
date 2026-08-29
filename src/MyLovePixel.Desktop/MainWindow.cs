@@ -173,7 +173,7 @@ public sealed partial class MainWindow : Window
             IconButton("−", "Zoom out", () => ChangeZoom(0.8)),
             TextIconButton("", "100%", "Reset zoom to 100%", () => SetZoom(1d)),
             IconButton("＋", "Zoom in", () => ChangeZoom(1.25)),
-            ToggleIcon("#", "Pixel grid", () => _gridVisible, v => { _gridVisible = v; _canvas.SetGrid(v); }),
+            BuildGridToggleButton(),
             ToggleIcon("◐", "Invert black / white", () => _invertView, v => { _invertView = v; _canvas.SetInvert(v); }));
         Grid.SetColumn(view, 3);
         row.Children.Add(view);
