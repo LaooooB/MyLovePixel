@@ -118,39 +118,65 @@ public sealed class ColorDialog : Window
 public sealed class ExportDialog : Window
 {
     private readonly ComboBox _layout = new() { ItemsSource = Enum.GetValues<ExportLayout>(), SelectedItem = ExportLayout.SpriteSheet };
-    private readonly CheckBox _trim = new() { IsChecked = true, Content = "Trim transparent edges" };
+    private readonly CheckBox _trim = new() { IsChecked = false, Content = "Trim transparent edges (metadata-aware pipelines only)" };
     private readonly NumericUpDown _scale = Number(1, 1, 64);
     private readonly NumericUpDown _padding = Number(0, 0, 4096);
     private readonly NumericUpDown _extrude = Number(0, 0, 4096);
     private readonly NumericUpDown _columns = Number(0, 0, 4096);
-    private readonly CheckBox _pot = new() { Content = "Power-of-two atlas" };
+    private readonly CheckBox _pot = new() { Content = "Power-of-two atlas (streaming / mipmap compatibility)" };
+    private readonly TextBlock _layoutNote = new() { TextWrapping = TextWrapping.Wrap };
 
     public ExportDialog()
     {
-        Title = "Export";
-        Width = 410;
-        Height = 460;
+        Title = "Export Game Assets";
+        Width = 470;
+        Height = 560;
         CanResize = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Background = EditorThemeTokens.AppBackground;
 
         var root = new StackPanel { Margin = new Thickness(16), Spacing = 9 };
-        root.Children.Add(new TextBlock { Text = "Export settings", FontSize = 15, FontWeight = FontWeight.SemiBold });
-        root.Children.Add(DialogChrome.Help("Configure how the current document is packaged into image and metadata files."));
+        root.Children.Add(new TextBlock { Text = "Game-ready export", FontSize = 15, FontWeight = FontWeight.SemiBold });
+        root.Children.Add(DialogChrome.Help(
+            "PNG output is lossless RGBA8 + sRGB + straight alpha. Fully transparent texels are forced to RGBA(0,0,0,0); checkerboards and preview backgrounds are never baked into assets."));
+        root.Children.Add(DialogChrome.Help(
+            "Every export also includes sprite metadata plus a .game-import.json file with Unity, Godot and Unreal import guidance."));
         root.Children.Add(DialogChrome.Labeled("Layout", _layout));
+        _layoutNote.Classes.Add("muted");
+        root.Children.Add(_layoutNote);
         root.Children.Add(_trim);
-        root.Children.Add(DialogChrome.Labeled("Scale", _scale));
+        root.Children.Add(DialogChrome.Labeled("Integer scale", _scale));
         root.Children.Add(DialogChrome.Labeled("Padding", _padding));
         root.Children.Add(DialogChrome.Labeled("Extrude", _extrude));
-        root.Children.Add(DialogChrome.Labeled("Columns", _columns));
+        root.Children.Add(DialogChrome.Labeled("Sheet columns", _columns));
         root.Children.Add(_pot);
-        root.Children.Add(DialogChrome.ConfirmCancel(() => Close(null), () => Close(Build()), "Continue"));
+        root.Children.Add(DialogChrome.ConfirmCancel(() => Close(null), () => Close(Build()), "Export"));
         Content = root;
+
+        _layout.SelectionChanged += (_, _) => RefreshLayoutGuidance();
+        RefreshLayoutGuidance();
+    }
+
+    private void RefreshLayoutGuidance()
+    {
+        var layout = _layout.SelectedItem is ExportLayout value ? value : ExportLayout.SpriteSheet;
+        _layoutNote.Text = layout switch
+        {
+            ExportLayout.SeparateFrames =>
+                "Safest drag-and-drop format. Each frame is an independent transparent PNG; sprite.json keeps animation/gameplay metadata.",
+            ExportLayout.SpriteSheet =>
+                "Engine-safe grid by default: Trim is off so frame alignment stays stable for native Unity/Godot sprite slicing. Keep Trim off unless your importer consumes sprite.json sourceRect/sourceSize.",
+            ExportLayout.Atlas =>
+                "Packed runtime atlas. Trim is useful here because sprite.json carries exact source rects, pivots, hitboxes, sockets and events. Use Padding/Extrude when filtered atlas sampling needs edge guards.",
+            _ => string.Empty,
+        };
+        _pot.IsEnabled = layout == ExportLayout.Atlas;
+        _columns.IsEnabled = layout == ExportLayout.SpriteSheet;
     }
 
     private ExportPreset Build() => new()
     {
-        Name = "Desktop",
+        Name = "Game Assets",
         Layout = _layout.SelectedItem is ExportLayout layout ? layout : ExportLayout.SpriteSheet,
         Trim = _trim.IsChecked == true,
         Scale = (int)(_scale.Value ?? 1),
