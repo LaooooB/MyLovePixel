@@ -57,7 +57,7 @@ public static partial class AdvancedEditingExtensions
         }
     }
 
-    private static void ClearSurface(DocumentSession session, DocumentSnapshot snapshot, Cel cel)
+    private static void ClearSurface(DocumentSession session, DocumentSnapshot snapshot, CelSnapshot cel)
     {
         var surface = snapshot.GetSurface(cel.SurfaceId);
 
