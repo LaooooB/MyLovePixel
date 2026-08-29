@@ -71,8 +71,9 @@ public sealed partial class MainWindow
         var display = Swatch();
         display.Background = swatch.Background;
         var b = new Button { Content = display, Width = 38, Height = 38, Padding = new Thickness(4) };
-        ToolTip.SetTip(b, tip);
-        b.Click += async (_, _) => await EditColorAsync(primary);
+        ToolTip.SetTip(b, $"{tip} · click to make this the active palette target");
+        b.Click += (_, _) => SetStudioColorTarget(secondary: !primary);
+        if ((primary && !_studioSecondaryTarget) || (!primary && _studioSecondaryTarget)) b.Classes.Add("selected");
         return b;
     }
 
