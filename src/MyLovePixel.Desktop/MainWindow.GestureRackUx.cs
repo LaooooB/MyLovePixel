@@ -1,4 +1,3 @@
-using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
@@ -11,9 +10,9 @@ public sealed partial class MainWindow
 {
     private bool _gestureRackUxInstalled;
 
-    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    protected override void OnOpened(EventArgs e)
     {
-        base.OnAttachedToVisualTree(e);
+        base.OnOpened(e);
         if (_gestureRackUxInstalled) return;
         _gestureRackUxInstalled = true;
 
