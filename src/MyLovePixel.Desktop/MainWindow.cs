@@ -299,6 +299,7 @@ public sealed partial class MainWindow : Window
             ItemsSource = new object[]
             {
                 TextTab("Edit", editorPage),
+                TextTab("Photo", BuildPhotoPixelPanel()),
                 TextTab("Layers", layersPage),
                 TextTab("Advanced", advancedTabs),
             },
