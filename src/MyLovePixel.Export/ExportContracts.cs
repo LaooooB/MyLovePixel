@@ -199,7 +199,7 @@ public sealed class ExportPipeline
         }
     }
 
-    public static ExportPipeline CreateDefault() => new([new GameAssetExporter()]);
+    public static ExportPipeline CreateDefault() => new([new GameReadyExporter()]);
 }
 
 public sealed class ImportRequest
