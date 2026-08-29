@@ -142,11 +142,12 @@ public sealed partial class MainWindow
             return;
         }
 
-        var s = session.CaptureSnapshot();
         var name = session.FilePath is null ? "Untitled" : Path.GetFileName(session.FilePath);
         Title = $"MyLovePixel — {name}{(session.IsDirty ? " *" : "")}";
         var pos = _hover is { } h ? $"Pixel {h.X}, {h.Y}" : "Pixel —";
-        _status.Text = $"{pos}   ·   Canvas {s.Canvas.Size.Width}×{s.Canvas.Size.Height}   ·   Zoom {session.Zoom * 100:0}%{(session.IsDirty ? "   ·   Unsaved changes" : string.Empty)}";
+        var canvas = _canvas.Presentation?.Size;
+        var canvasText = canvas is { } size ? $"{size.Width}×{size.Height}" : "—";
+        _status.Text = $"{pos}   ·   Canvas {canvasText}   ·   Zoom {session.Zoom * 100:0}%{(session.IsDirty ? "   ·   Unsaved changes" : string.Empty)}";
     }
 
     private void DispatchCanvasPointer(EditorPointerEvent e)
