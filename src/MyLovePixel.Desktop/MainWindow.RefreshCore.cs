@@ -51,7 +51,7 @@ public sealed partial class MainWindow
         }
     }
 
-    private void RefreshCanvas()
+    private void RefreshCanvas(bool updatePreview = true)
     {
         var session = Current();
         var presentation = session is null
@@ -62,6 +62,7 @@ public sealed partial class MainWindow
                     ? new OnionSkinPresentationSettings(_onionPrevious, _onionNext, _onionOpacity, _onionFalloff)
                     : null);
         _canvas.SetPresentation(presentation, session?.Zoom ?? 1d, session is null ? null : _selection.GetOverlay(session));
+        if (updatePreview) _quickPreview.SetPresentation(presentation);
         if (session is null || presentation?.Diagnostics is not { } d)
         {
             _diagnostics.Text = string.Empty;
