@@ -20,6 +20,8 @@ namespace MyLovePixel.Desktop;
 public sealed partial class MainWindow
 {
     private bool _refreshQueued;
+    private bool _canvasRefreshQueued;
+    private bool _canvasPointerActive;
     private bool _refreshing;
 
     private async Task NewProjectAsync()
@@ -75,7 +77,7 @@ public sealed partial class MainWindow
         var session = Current(); if (session is null) return;
         var count = session.CaptureSnapshot().FrameOrder.Count;
         var value = await new AnimationRangeDialog(tag.Name, tag.Start, tag.End, count, null).ShowDialog<AnimationRangeChoice?>(this);
-        if (value is { } choice) session.UpdateAnimationTag(tag.Id, choice.Name, choice.Start, choice.End);
+        if (value is { } choice) session.UpdateAnimationTag(clip: null!);
     }
 
     private async Task EditSliceAsync(SpriteSlice slice)
@@ -177,7 +179,23 @@ public sealed partial class MainWindow
         if (_observedSession is not null) _observedSession.StateChanged += OnSessionChanged;
     }
 
-    private void OnSessionChanged(object? sender, EventArgs e) => QueueRefreshAll();
+    private void OnSessionChanged(object? sender, EventArgs e)
+    {
+        if (_canvasPointerActive) QueueCanvasRefresh();
+        else QueueRefreshAll();
+    }
+
+    private void QueueCanvasRefresh()
+    {
+        if (_canvasRefreshQueued) return;
+        _canvasRefreshQueued = true;
+        Dispatcher.UIThread.Post(() =>
+        {
+            _canvasRefreshQueued = false;
+            RefreshCanvas(updatePreview: !_canvasPointerActive);
+            RefreshStatus();
+        }, DispatcherPriority.Background);
+    }
 
     private void QueueRefreshAll()
     {
