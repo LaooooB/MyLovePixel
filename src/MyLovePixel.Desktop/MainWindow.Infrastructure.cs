@@ -94,7 +94,12 @@ public sealed partial class MainWindow
     private static Button SmallIcon(string glyph, string tip, Action action)
     {
         var b = new Button();
-        if (UiIcons.TryResolve(tip, glyph, out var kind))
+        if (UiIconSemantics.TryCreate(tip, glyph, 15, out var semanticIcon))
+        {
+            b.Content = semanticIcon;
+            b.Classes.Add("small-icon");
+        }
+        else if (UiIcons.TryResolve(tip, glyph, out var kind))
         {
             b.Content = UiIcons.Create(kind, 15);
             b.Classes.Add("small-icon");
@@ -127,7 +132,12 @@ public sealed partial class MainWindow
     private static Button BuildCompactButton(string glyph, string tip)
     {
         var b = new Button();
-        if (UiIcons.TryResolve(tip, glyph, out var kind))
+        if (UiIconSemantics.TryCreate(tip, glyph, 18, out var semanticIcon))
+        {
+            b.Content = semanticIcon;
+            b.Classes.Add("icon");
+        }
+        else if (UiIcons.TryResolve(tip, glyph, out var kind))
         {
             b.Content = UiIcons.Create(kind, 18);
             b.Classes.Add("icon");
@@ -145,7 +155,8 @@ public sealed partial class MainWindow
     private static Button BuildTextIconButton(string glyph, string label, string tip)
     {
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
-        if (UiIcons.TryResolve(tip, glyph, out var kind)) row.Children.Add(UiIcons.Create(kind, 16));
+        if (UiIconSemantics.TryCreate(tip, glyph, 16, out var semanticIcon)) row.Children.Add(semanticIcon);
+        else if (UiIcons.TryResolve(tip, glyph, out var kind)) row.Children.Add(UiIcons.Create(kind, 16));
         row.Children.Add(new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center });
         var b = new Button { Content = row };
         b.Classes.Add("text-icon");
