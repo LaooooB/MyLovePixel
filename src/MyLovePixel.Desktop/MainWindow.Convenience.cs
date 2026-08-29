@@ -45,13 +45,13 @@ public sealed partial class MainWindow
 
     private Control BuildInspectorPreviewBox()
     {
-        _quickPreview.Height = 142;
+        _quickPreview.Height = 210;
         _quickPreview.HorizontalAlignment = HorizontalAlignment.Stretch;
         _quickPreview.ClipToBounds = true;
 
         return new Border
         {
-            Height = 150,
+            Height = 218,
             Margin = new Thickness(10, 10, 10, 8),
             CornerRadius = new CornerRadius(6),
             ClipToBounds = true,
@@ -421,7 +421,7 @@ internal sealed class PixelPreviewView : Control
         var presentation = _presentation;
         if (presentation is null || presentation.Size.Width <= 0 || presentation.Size.Height <= 0) return;
 
-        var padding = 8d;
+        var padding = 4d;
         var usableWidth = Math.Max(1d, bounds.Width - padding * 2d);
         var usableHeight = Math.Max(1d, bounds.Height - padding * 2d);
         var scale = Math.Min(usableWidth / presentation.Size.Width, usableHeight / presentation.Size.Height);
@@ -479,8 +479,7 @@ internal sealed class PixelPreviewView : Control
         if (a == 0) return;
 
         // Snap the scaled source cell outward to device-independent pixel bounds.
-        // This removes the bright hairline seams that appeared when fractional
-        // source-cell edges exposed the preview background.
+        // This keeps source pixels contiguous even when the fitted scale is fractional.
         var left = Math.Floor(originX + x * scale);
         var top = Math.Floor(originY + y * scale);
         var right = Math.Ceiling(originX + (x + 1) * scale);
@@ -494,9 +493,9 @@ internal sealed class PixelPreviewView : Control
 
     private IBrush GetCompositeBrush(byte r, byte g, byte b, byte a)
     {
-        const byte backgroundR = 9;
-        const byte backgroundG = 11;
-        const byte backgroundB = 10;
+        const byte backgroundR = 255;
+        const byte backgroundG = 255;
+        const byte backgroundB = 255;
 
         if (a < 255)
         {
