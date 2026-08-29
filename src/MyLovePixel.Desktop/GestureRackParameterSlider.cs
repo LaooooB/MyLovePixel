@@ -1,7 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
-using Avalonia.Interactivity;
 using Avalonia.Layout;
 
 namespace MyLovePixel.Desktop;
@@ -76,8 +75,16 @@ internal sealed class GestureRackParameterSlider : Border
 
         PointerEntered += OnPointerEntered;
         PointerExited += OnPointerExited;
-        _slider.GotFocus += OnSliderGotFocus;
-        _slider.LostFocus += OnSliderLostFocus;
+        _slider.GotFocus += (_, _) =>
+        {
+            _focused = true;
+            SyncBorder();
+        };
+        _slider.LostFocus += (_, _) =>
+        {
+            _focused = false;
+            SyncBorder();
+        };
         _slider.ValueChanged += OnSliderValueChanged;
     }
 
@@ -90,18 +97,6 @@ internal sealed class GestureRackParameterSlider : Border
     private void OnPointerExited(object? sender, PointerEventArgs e)
     {
         _hovered = false;
-        SyncBorder();
-    }
-
-    private void OnSliderGotFocus(object? sender, GotFocusEventArgs e)
-    {
-        _focused = true;
-        SyncBorder();
-    }
-
-    private void OnSliderLostFocus(object? sender, RoutedEventArgs e)
-    {
-        _focused = false;
         SyncBorder();
     }
 
