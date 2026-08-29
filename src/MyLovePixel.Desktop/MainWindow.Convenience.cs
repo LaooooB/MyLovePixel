@@ -19,7 +19,6 @@ public sealed partial class MainWindow
     private readonly NumericUpDown _studioB = ChannelInput();
     private readonly TextBox _studioHex = new() { Text = "#000000", MinWidth = 112 };
     private readonly Border _studioColorPreview = Swatch();
-    private readonly DispatcherTimer _convenienceTimer = new() { Interval = TimeSpan.FromMilliseconds(120) };
     private bool _convenienceInstalled;
     private bool _syncingStudioColor;
     private bool _studioSecondaryTarget;
@@ -31,18 +30,14 @@ public sealed partial class MainWindow
         if (_convenienceInstalled) return;
         _convenienceInstalled = true;
 
-        _quickPreview.Source = _canvas;
         _canvas.PointerWheelChanged += OnConvenienceCanvasWheel;
         KeyDown += OnConvenienceKeyDown;
-        _convenienceTimer.Tick += OnConvenienceTick;
-        _convenienceTimer.Start();
         RefreshConvenienceUi();
         Dispatcher.UIThread.Post(FitCanvas, DispatcherPriority.Background);
     }
 
     protected override void OnClosed(EventArgs e)
     {
-        _convenienceTimer.Stop();
         _canvas.PointerWheelChanged -= OnConvenienceCanvasWheel;
         KeyDown -= OnConvenienceKeyDown;
         base.OnClosed(e);
@@ -50,7 +45,6 @@ public sealed partial class MainWindow
 
     private Control BuildInspectorPreviewBox()
     {
-        _quickPreview.Source = _canvas;
         _quickPreview.Height = 142;
         _quickPreview.HorizontalAlignment = HorizontalAlignment.Stretch;
         _quickPreview.ClipToBounds = true;
@@ -64,6 +58,39 @@ public sealed partial class MainWindow
             Background = EditorThemeTokens.PreviewBackground,
             Child = _quickPreview,
         };
+    }
+
+    private Button BuildGridToggleButton()
+    {
+        var button = new Button
+        {
+            MinWidth = 76,
+            Padding = new Thickness(9, 5),
+        };
+        button.Classes.Add("text-action");
+        ToolTip.SetTip(button, "Show or hide the pixel grid");
+
+        void Sync()
+        {
+            button.Content = _gridVisible ? "Grid On" : "Grid Off";
+            if (_gridVisible)
+            {
+                if (!button.Classes.Contains("selected")) button.Classes.Add("selected");
+            }
+            else
+            {
+                button.Classes.Remove("selected");
+            }
+        }
+
+        button.Click += (_, _) =>
+        {
+            _gridVisible = !_gridVisible;
+            _canvas.SetGrid(_gridVisible);
+            Sync();
+        };
+        Sync();
+        return button;
     }
 
     private Control BuildStudioPaletteEditor()
@@ -161,11 +188,8 @@ public sealed partial class MainWindow
         return label;
     }
 
-    private void OnConvenienceTick(object? sender, EventArgs e) => RefreshConvenienceUi();
-
     private void RefreshConvenienceUi()
     {
-        _quickPreview.InvalidateVisual();
         var session = Current();
         if (session is null) return;
 
@@ -378,8 +402,14 @@ public sealed partial class MainWindow
 internal sealed class PixelPreviewView : Control
 {
     private readonly Dictionary<uint, IBrush> _brushes = [];
+    private CanvasPresentation? _presentation;
 
-    public PixelCanvasView? Source { get; set; }
+    public void SetPresentation(CanvasPresentation? presentation)
+    {
+        if (ReferenceEquals(_presentation, presentation)) return;
+        _presentation = presentation;
+        InvalidateVisual();
+    }
 
     public override void Render(DrawingContext context)
     {
@@ -388,7 +418,7 @@ internal sealed class PixelPreviewView : Control
         if (bounds.Width <= 1d || bounds.Height <= 1d) return;
 
         context.FillRectangle(EditorThemeTokens.PreviewBackground, bounds);
-        var presentation = Source?.Presentation;
+        var presentation = _presentation;
         if (presentation is null || presentation.Size.Width <= 0 || presentation.Size.Height <= 0) return;
 
         var padding = 8d;
@@ -405,27 +435,80 @@ internal sealed class PixelPreviewView : Control
         for (var x = 0; x < presentation.Size.Width; x++)
         {
             var offset = ((y * presentation.Size.Width) + x) * 4;
-            var alpha = bytes[offset + 3];
-            if (alpha == 0) continue;
-            context.FillRectangle(
-                GetBrush(bytes[offset], bytes[offset + 1], bytes[offset + 2], alpha),
-                new Rect(originX + x * scale, originY + y * scale, scale, scale));
+            DrawPreviewPixel(
+                context,
+                originX,
+                originY,
+                scale,
+                x,
+                y,
+                bytes[offset],
+                bytes[offset + 1],
+                bytes[offset + 2],
+                bytes[offset + 3]);
         }
 
         foreach (var preview in presentation.PreviewPixels)
         {
-            if (preview.Color.A == 0) continue;
-            context.FillRectangle(
-                GetBrush(preview.Color.R, preview.Color.G, preview.Color.B, preview.Color.A),
-                new Rect(originX + preview.Point.X * scale, originY + preview.Point.Y * scale, scale, scale));
+            DrawPreviewPixel(
+                context,
+                originX,
+                originY,
+                scale,
+                preview.Point.X,
+                preview.Point.Y,
+                preview.Color.R,
+                preview.Color.G,
+                preview.Color.B,
+                preview.Color.A);
         }
     }
 
-    private IBrush GetBrush(byte r, byte g, byte b, byte a)
+    private void DrawPreviewPixel(
+        DrawingContext context,
+        double originX,
+        double originY,
+        double scale,
+        int x,
+        int y,
+        byte r,
+        byte g,
+        byte b,
+        byte a)
     {
-        var key = ((uint)a << 24) | ((uint)r << 16) | ((uint)g << 8) | b;
+        if (a == 0) return;
+
+        // Snap the scaled source cell outward to device-independent pixel bounds.
+        // This removes the bright hairline seams that appeared when fractional
+        // source-cell edges exposed the preview background.
+        var left = Math.Floor(originX + x * scale);
+        var top = Math.Floor(originY + y * scale);
+        var right = Math.Ceiling(originX + (x + 1) * scale);
+        var bottom = Math.Ceiling(originY + (y + 1) * scale);
+        if (right <= left || bottom <= top) return;
+
+        context.FillRectangle(
+            GetCompositeBrush(r, g, b, a),
+            new Rect(left, top, right - left, bottom - top));
+    }
+
+    private IBrush GetCompositeBrush(byte r, byte g, byte b, byte a)
+    {
+        const byte backgroundR = 9;
+        const byte backgroundG = 11;
+        const byte backgroundB = 10;
+
+        if (a < 255)
+        {
+            var inverse = 255 - a;
+            r = (byte)((r * a + backgroundR * inverse + 127) / 255);
+            g = (byte)((g * a + backgroundG * inverse + 127) / 255);
+            b = (byte)((b * a + backgroundB * inverse + 127) / 255);
+        }
+
+        var key = ((uint)r << 16) | ((uint)g << 8) | b;
         if (_brushes.TryGetValue(key, out var brush)) return brush;
-        brush = new SolidColorBrush(Color.FromArgb(a, r, g, b));
+        brush = new SolidColorBrush(Color.FromRgb(r, g, b));
         _brushes[key] = brush;
         return brush;
     }
