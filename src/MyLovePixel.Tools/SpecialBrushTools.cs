@@ -7,11 +7,52 @@ using MyLovePixel.Raster.Strokes;
 
 namespace MyLovePixel.Tools;
 
+public static class SpecialToolOptionIds
+{
+    public const string Strength = "strength";
+    public const string Radius = "radius";
+    public const string Bend = "bend";
+}
+
+public static class SpecialToolDescriptors
+{
+    private static ToolOptionSchema ModifierOptions(int defaultStrength = 30) => new(
+    [
+        ToolOptionDefinition.Integer(ToolOptionIds.BrushSize, "Brush Size", 3, 1, 64),
+        ToolOptionDefinition.Integer(ToolOptionIds.Spacing, "Spacing", 1, 1, 64),
+        ToolOptionDefinition.Integer(SpecialToolOptionIds.Strength, "Strength", defaultStrength, 1, 100),
+    ]);
+
+    public static ToolDescriptor Arc { get; } = new(
+        "core.arc",
+        "Arc",
+        new ToolOptionSchema(
+        [
+            ToolOptionDefinition.Integer(ToolOptionIds.BrushSize, "Brush Size", 1, 1, 64),
+            ToolOptionDefinition.Integer(SpecialToolOptionIds.Bend, "Bend", 50, -150, 150),
+        ]));
+
+    public static ToolDescriptor Blur { get; } = new(
+        "core.blur",
+        "Blur Brush",
+        new ToolOptionSchema(
+        [
+            ToolOptionDefinition.Integer(ToolOptionIds.BrushSize, "Brush Size", 3, 1, 64),
+            ToolOptionDefinition.Integer(ToolOptionIds.Spacing, "Spacing", 1, 1, 64),
+            ToolOptionDefinition.Integer(SpecialToolOptionIds.Radius, "Radius", 1, 1, 4),
+            ToolOptionDefinition.Integer(SpecialToolOptionIds.Strength, "Strength", 40, 1, 100),
+        ]));
+
+    public static ToolDescriptor Fade { get; } = new("core.fade", "Fade Brush", ModifierOptions(25));
+    public static ToolDescriptor Shadow { get; } = new("core.shadow", "Shadow Brush", ModifierOptions(30));
+    public static ToolDescriptor Highlight { get; } = new("core.highlight", "Highlight Brush", ModifierOptions(25));
+}
+
 public sealed class ArcTool : ITool
 {
     private ArcSession? _session;
 
-    public ToolDescriptor Descriptor => ToolDescriptors.Arc;
+    public ToolDescriptor Descriptor => SpecialToolDescriptors.Arc;
     public bool IsInteracting => _session is not null;
 
     public ToolDispatchResult HandlePointer(ToolContext context, ToolOptions options, PointerEvent pointerEvent)
@@ -30,7 +71,7 @@ public sealed class ArcTool : ITool
                     context.Target.CanvasToSurface(pointerEvent.CanvasPixel),
                     BrushMask.Square(options.GetInteger(ToolOptionIds.BrushSize)),
                     context.PrimaryColor,
-                    options.GetInteger(ToolOptionIds.Bend));
+                    options.GetInteger(SpecialToolOptionIds.Bend));
                 return BuildResult(context, _session, pointerEvent);
 
             case PointerEventKind.Moved:
@@ -139,13 +180,14 @@ public abstract class ModifierStrokeToolBase : ITool
             case PointerEventKind.Pressed:
                 if (_session is not null || (pointerEvent.Buttons & PointerButtons.Primary) == 0)
                     return ToolDispatchResult.Ignored;
+                var surface = context.CaptureTargetSurface();
                 _session = new ModifierStrokeSession(
                     pointerEvent.PointerId,
-                    context.CaptureTargetSurface(),
+                    surface,
                     context.Target.CanvasToSurface(pointerEvent.CanvasPixel),
                     BrushMask.Square(options.GetInteger(ToolOptionIds.BrushSize)),
                     options.GetInteger(ToolOptionIds.Spacing),
-                    point => Transform(context.CaptureTargetSurface(), point, options));
+                    point => Transform(surface, point, options));
                 return PreviewResult(context, _session.Preview);
 
             case PointerEventKind.Moved:
@@ -243,25 +285,32 @@ internal sealed class ModifierStrokeSession
 
 public sealed class BlurBrushTool : ModifierStrokeToolBase
 {
-    public BlurBrushTool() : base(ToolDescriptors.Blur) { }
+    public BlurBrushTool() : base(SpecialToolDescriptors.Blur) { }
     protected override string CommandName => "Blur Brush";
 
     protected override Rgba32 Transform(PixelSurfaceSnapshot surface, IntPoint point, ToolOptions options)
     {
         var original = surface.GetPixel(point.X, point.Y);
-        if (original.A == 0) return original;
-        var radius = options.GetInteger(ToolOptionIds.Radius);
-        var strength = options.GetInteger(ToolOptionIds.Strength);
-        long r = 0, g = 0, b = 0, a = 0, count = 0;
+        var radius = options.GetInteger(SpecialToolOptionIds.Radius);
+        var strength = options.GetInteger(SpecialToolOptionIds.Strength);
+        long premulR = 0, premulG = 0, premulB = 0, alphaSum = 0, count = 0;
         for (var y = Math.Max(0, point.Y - radius); y <= Math.Min(surface.Size.Height - 1, point.Y + radius); y++)
         for (var x = Math.Max(0, point.X - radius); x <= Math.Min(surface.Size.Width - 1, point.X + radius); x++)
         {
             var color = surface.GetPixel(x, y);
-            if (color.A == 0) continue;
-            r += color.R; g += color.G; b += color.B; a += color.A; count++;
+            premulR += color.R * color.A;
+            premulG += color.G * color.A;
+            premulB += color.B * color.A;
+            alphaSum += color.A;
+            count++;
         }
-        if (count == 0) return original;
-        var average = new Rgba32((byte)(r / count), (byte)(g / count), (byte)(b / count), (byte)(a / count));
+        if (count == 0 || alphaSum == 0) return original;
+        var averageAlpha = (byte)(alphaSum / count);
+        var average = new Rgba32(
+            (byte)(premulR / alphaSum),
+            (byte)(premulG / alphaSum),
+            (byte)(premulB / alphaSum),
+            averageAlpha);
         return Blend(original, average, strength);
     }
 
@@ -278,28 +327,28 @@ public sealed class BlurBrushTool : ModifierStrokeToolBase
 
 public sealed class FadeBrushTool : ModifierStrokeToolBase
 {
-    public FadeBrushTool() : base(ToolDescriptors.Fade) { }
+    public FadeBrushTool() : base(SpecialToolDescriptors.Fade) { }
     protected override string CommandName => "Fade Brush";
 
     protected override Rgba32 Transform(PixelSurfaceSnapshot surface, IntPoint point, ToolOptions options)
     {
         var original = surface.GetPixel(point.X, point.Y);
         if (original.A == 0) return original;
-        var strength = options.GetInteger(ToolOptionIds.Strength);
+        var strength = options.GetInteger(SpecialToolOptionIds.Strength);
         return new Rgba32(original.R, original.G, original.B, (byte)((original.A * (100 - strength) + 50) / 100));
     }
 }
 
 public sealed class ShadowBrushTool : ModifierStrokeToolBase
 {
-    public ShadowBrushTool() : base(ToolDescriptors.Shadow) { }
+    public ShadowBrushTool() : base(SpecialToolDescriptors.Shadow) { }
     protected override string CommandName => "Shadow Brush";
 
     protected override Rgba32 Transform(PixelSurfaceSnapshot surface, IntPoint point, ToolOptions options)
     {
         var original = surface.GetPixel(point.X, point.Y);
         if (original.A == 0) return original;
-        var factor = 100 - options.GetInteger(ToolOptionIds.Strength);
+        var factor = 100 - options.GetInteger(SpecialToolOptionIds.Strength);
         return new Rgba32(
             (byte)((original.R * factor + 50) / 100),
             (byte)((original.G * factor + 50) / 100),
@@ -310,14 +359,14 @@ public sealed class ShadowBrushTool : ModifierStrokeToolBase
 
 public sealed class HighlightBrushTool : ModifierStrokeToolBase
 {
-    public HighlightBrushTool() : base(ToolDescriptors.Highlight) { }
+    public HighlightBrushTool() : base(SpecialToolDescriptors.Highlight) { }
     protected override string CommandName => "Highlight Brush";
 
     protected override Rgba32 Transform(PixelSurfaceSnapshot surface, IntPoint point, ToolOptions options)
     {
         var original = surface.GetPixel(point.X, point.Y);
         if (original.A == 0) return original;
-        var strength = options.GetInteger(ToolOptionIds.Strength);
+        var strength = options.GetInteger(SpecialToolOptionIds.Strength);
         return new Rgba32(
             (byte)(original.R + ((255 - original.R) * strength + 50) / 100),
             (byte)(original.G + ((255 - original.G) * strength + 50) / 100),
