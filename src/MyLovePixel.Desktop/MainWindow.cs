@@ -165,7 +165,8 @@ public sealed partial class MainWindow : Window
 
         var history = ToolbarGroup("History",
             ActionIcon(BuiltinActionIds.Undo, "↶", "Undo · Ctrl+Z"),
-            ActionIcon(BuiltinActionIds.Redo, "↷", "Redo · Ctrl+Y"));
+            ActionIcon(BuiltinActionIds.Redo, "↷", "Redo · Ctrl+Y"),
+            IconButton("×", "Clear canvas · Ctrl+Z to undo", ClearCanvas));
         Grid.SetColumn(history, 1);
         row.Children.Add(history);
 
