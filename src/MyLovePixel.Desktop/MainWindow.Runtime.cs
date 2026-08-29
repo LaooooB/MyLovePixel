@@ -155,6 +155,9 @@ public sealed partial class MainWindow
         if (session is null) return;
         try
         {
+            if (!_selectionMode && e.Kind == EditorPointerKind.Pressed)
+                _canvasPointerActive = true;
+
             if (e.Kind == EditorPointerKind.Pressed)
                 session.EnsureEditableCel();
 
@@ -163,7 +166,7 @@ public sealed partial class MainWindow
                 if (_selectionGesture == SelectionGestureMode.ByColor && e.Kind == EditorPointerKind.Pressed && (e.Buttons & EditorPointerButtons.Primary) != 0)
                 {
                     _selection.SelectByColor(session, e.CanvasPixel.X, e.CanvasPixel.Y);
-                    RefreshCanvas();
+                    RefreshCanvas(updatePreview: false);
                     return;
                 }
                 if (e.Kind == EditorPointerKind.Pressed && (e.Buttons & EditorPointerButtons.Primary) != 0)
@@ -187,7 +190,7 @@ public sealed partial class MainWindow
                     {
                         _selection.SelectRectangle(session, start.X, start.Y, e.CanvasPixel.X, e.CanvasPixel.Y);
                     }
-                    RefreshCanvas();
+                    RefreshCanvas(updatePreview: false);
                     if (e.Kind == EditorPointerKind.Released)
                     {
                         _selectionStart = null;
@@ -198,10 +201,19 @@ public sealed partial class MainWindow
             }
 
             _plugins.DispatchPointer(session, e);
-            QueueRefreshAll();
+            if (e.Kind == EditorPointerKind.Released)
+            {
+                _canvasPointerActive = false;
+                QueueRefreshAll();
+            }
+            else
+            {
+                QueueCanvasRefresh();
+            }
         }
         catch (Exception ex)
         {
+            _canvasPointerActive = false;
             CrashLog.Write("CanvasPointer", ex);
             try { _plugins.CancelTool(session); }
             catch (Exception cancelEx) { CrashLog.Write("CanvasPointerCancel", cancelEx); }
@@ -211,6 +223,7 @@ public sealed partial class MainWindow
 
     private void CancelCanvasInteraction()
     {
+        _canvasPointerActive = false;
         if (Current() is { } session)
         {
             try { _plugins.CancelTool(session); }
