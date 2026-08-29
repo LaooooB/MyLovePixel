@@ -264,9 +264,8 @@ public sealed partial class MainWindow : Window
     {
         var editorPage = InspectorScroll(
             SectionCard("Tool options", "Changes apply to the active drawing or selection tool.", _toolOptionsPanel),
-            SectionCard("Color", "Primary/secondary colors and document color processing.", _palettePanel),
-            BuildStudioPaletteEditor(),
-            BuildInspectorQuickTools());
+            SectionCard("Color", "Choose Primary or Secondary, then pick a color from the palette below.", _palettePanel),
+            BuildStudioPaletteEditor());
 
         var layersPage = InspectorScroll(
             SectionCard("Layers", "Select, rename, reorder, hide, lock and change opacity.", _layersPanel));
