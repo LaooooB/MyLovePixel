@@ -77,7 +77,7 @@ public sealed partial class MainWindow
         var session = Current(); if (session is null) return;
         var count = session.CaptureSnapshot().FrameOrder.Count;
         var value = await new AnimationRangeDialog(tag.Name, tag.Start, tag.End, count, null).ShowDialog<AnimationRangeChoice?>(this);
-        if (value is { } choice) session.UpdateAnimationTag(clip: null!);
+        if (value is { } choice) session.UpdateAnimationTag(tag.Id, choice.Name, choice.Start, choice.End);
     }
 
     private async Task EditSliceAsync(SpriteSlice slice)
