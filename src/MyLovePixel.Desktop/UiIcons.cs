@@ -1,6 +1,6 @@
 using Avalonia.Controls;
-using Avalonia.Controls.Shapes;
 using Avalonia.Media;
+using ShapePath = Avalonia.Controls.Shapes.Path;
 
 namespace MyLovePixel.Desktop;
 
@@ -78,7 +78,6 @@ internal static class UiIcons
             var v when v.StartsWith("zoom out") => IconsaxIconKind.ZoomOut,
             var v when v.Contains("pixel grid") => IconsaxIconKind.Grid,
             var v when v.Contains("invert black") => IconsaxIconKind.Layer,
-
             var v when v == "selection" || v == "rectangle" || v == "ellipse" || v == "lasso" || v == "by color" => IconsaxIconKind.Pointer,
             var v when v.StartsWith("select all") || v.StartsWith("invert selection") => IconsaxIconKind.Pointer,
             var v when v.StartsWith("clear selection") => IconsaxIconKind.Eraser,
@@ -86,7 +85,6 @@ internal static class UiIcons
             var v when v.StartsWith("move right") => IconsaxIconKind.ArrowRight,
             var v when v.StartsWith("move up") || v.StartsWith("move down") => IconsaxIconKind.Layer,
             var v when v.Contains("flip") || v.Contains("rotate 90") || v.Contains("scale selection") => IconsaxIconKind.Layer,
-
             var v when v == "pencil" => IconsaxIconKind.Edit,
             var v when v == "eraser" => IconsaxIconKind.Eraser,
             var v when v == "line" => IconsaxIconKind.Line,
@@ -95,18 +93,15 @@ internal static class UiIcons
             var v when v is "blur brush" or "fade brush" or "shadow brush" or "highlight brush" => IconsaxIconKind.Edit,
             var v when v.StartsWith("swap") => IconsaxIconKind.Redo,
             var v when v.StartsWith("primary") || v.StartsWith("secondary") => IconsaxIconKind.Edit,
-
             var v when v.Contains("layer") || v.Contains("tileset") || v.Contains("tilemap") => IconsaxIconKind.Layer,
             var v when v == "hide" || v == "show" => IconsaxIconKind.Eye,
             var v when v == "lock" || v == "unlock" => IconsaxIconKind.Lock,
-
             var v when v.StartsWith("add effect") || v.Contains("add tile") => IconsaxIconKind.Add,
             var v when v.StartsWith("remove") || v.StartsWith("delete") || v.StartsWith("dismiss") || v.Contains("collect unused") => IconsaxIconKind.Trash,
             var v when v.StartsWith("enable") || v.StartsWith("disable") || v.Contains("keyframe") => IconsaxIconKind.Layer,
             var v when v.StartsWith("edit") => IconsaxIconKind.Edit,
             var v when v.Contains("erase tile") => IconsaxIconKind.Eraser,
             var v when v.Contains("make selected cell unique") => IconsaxIconKind.Layer,
-
             var v when v.StartsWith("play") || v.StartsWith("run ") => IconsaxIconKind.Play,
             var v when v.Contains("duplicate frame") || v.Contains("linked frame") || v.Contains("onion skin") => IconsaxIconKind.Layer,
             var v when v.StartsWith("load plugin") || v.StartsWith("unload") => IconsaxIconKind.Layer,
@@ -138,7 +133,7 @@ internal static class UiIcons
         if (!GeometryData.TryGetValue(kind, out var data))
             return new TextBlock { Text = "·", FontSize = size };
 
-        return new Path
+        return new ShapePath
         {
             Data = Geometry.Parse(data),
             Width = size,
