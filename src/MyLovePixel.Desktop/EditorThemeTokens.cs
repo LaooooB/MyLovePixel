@@ -27,7 +27,7 @@ public static class EditorThemeTokens
 
     public static IBrush CanvasWorkspace { get; } = Rgb(67, 72, 68);
     public static IBrush CanvasFrame { get; } = Rgb(222, 226, 221);
-    public static IBrush PreviewBackground { get; } = Rgb(9, 11, 10);
+    public static IBrush PreviewBackground { get; } = Rgb(255, 255, 255);
     public static IBrush CheckerLight { get; } = Rgb(242, 244, 241);
     public static IBrush CheckerDark { get; } = Rgb(211, 216, 212);
     public static IBrush GridLine { get; } = Rgba(82, 91, 85, 70);
