@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
@@ -10,9 +11,9 @@ public sealed partial class MainWindow
 {
     private bool _gestureRackUxInstalled;
 
-    protected override void OnOpened(EventArgs e)
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
-        base.OnOpened(e);
+        base.OnAttachedToVisualTree(e);
         if (_gestureRackUxInstalled) return;
         _gestureRackUxInstalled = true;
 
@@ -20,8 +21,6 @@ public sealed partial class MainWindow
         // itself remains a separate overlay and is still controlled by _gridVisible.
         RenderOptions.SetEdgeMode(_canvas, EdgeMode.Aliased);
         _canvas.SetGrid(_gridVisible);
-
-        InstallClearCanvasButton();
         SyncGridShortcutButton();
     }
 
@@ -70,15 +69,6 @@ public sealed partial class MainWindow
         var tools = _plugins.GetTools(session);
         if ((uint)index >= (uint)tools.Count) return;
         SelectQuickTool(tools[index].Id);
-    }
-
-    private void InstallClearCanvasButton()
-    {
-        var row = FindToolbarRow("History");
-        if (row is null) return;
-
-        var clear = IconButton("×", "Clear canvas · Ctrl+Z to undo", ClearCanvas);
-        row.Children.Add(clear);
     }
 
     private void ClearCanvas()
