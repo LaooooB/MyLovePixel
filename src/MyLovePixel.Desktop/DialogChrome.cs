@@ -17,7 +17,12 @@ internal static class DialogChrome
     public static Button IconButton(string legacyGlyph, string tip, Action action)
     {
         var button = new Button();
-        if (UiIcons.TryResolve(tip, legacyGlyph, out var kind))
+        if (UiIconSemantics.TryCreate(tip, legacyGlyph, 15, out var semanticIcon))
+        {
+            button.Content = semanticIcon;
+            button.Classes.Add("small-icon");
+        }
+        else if (UiIcons.TryResolve(tip, legacyGlyph, out var kind))
         {
             button.Content = UiIcons.Create(kind, 15);
             button.Classes.Add("small-icon");
