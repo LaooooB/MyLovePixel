@@ -75,20 +75,26 @@ public sealed record CanvasPreviewPixel(IntPoint Point, Rgba32 Color);
 
 internal static class BuiltinToolCatalog
 {
+    private static readonly (string Id, Func<ITool> Factory)[] Registrations =
+    [
+        (ToolDescriptors.Pencil.Id, static () => new PencilTool()),
+        (ToolDescriptors.Eraser.Id, static () => new EraserTool()),
+        (ToolDescriptors.Line.Id, static () => new LineTool()),
+        (SpecialToolDescriptors.Arc.Id, static () => new ArcTool()),
+        (ToolDescriptors.Shape.Id, static () => new ShapeTool()),
+        (ToolDescriptors.Fill.Id, static () => new FillTool()),
+        (SpecialToolDescriptors.Blur.Id, static () => new BlurBrushTool()),
+        (SpecialToolDescriptors.Fade.Id, static () => new FadeBrushTool()),
+        (SpecialToolDescriptors.Shadow.Id, static () => new ShadowBrushTool()),
+        (SpecialToolDescriptors.Highlight.Id, static () => new HighlightBrushTool()),
+    ];
+
     private static readonly IReadOnlyDictionary<string, Func<ITool>> Factories =
-        new Dictionary<string, Func<ITool>>(StringComparer.Ordinal)
-        {
-            [ToolDescriptors.Pencil.Id] = static () => new PencilTool(),
-            [ToolDescriptors.Eraser.Id] = static () => new EraserTool(),
-            [ToolDescriptors.Line.Id] = static () => new LineTool(),
-            [ToolDescriptors.Shape.Id] = static () => new ShapeTool(),
-            [ToolDescriptors.Fill.Id] = static () => new FillTool(),
-        };
+        Registrations.ToDictionary(value => value.Id, value => value.Factory, StringComparer.Ordinal);
 
     public static IReadOnlyList<ToolPaletteItem> Describe(string activeToolId) =>
-        Factories
-            .Select(pair => pair.Value().Descriptor)
-            .OrderBy(descriptor => descriptor.DisplayName, StringComparer.Ordinal)
+        Registrations
+            .Select(value => value.Factory().Descriptor)
             .Select(descriptor => new ToolPaletteItem(
                 descriptor.Id,
                 descriptor.DisplayName,
