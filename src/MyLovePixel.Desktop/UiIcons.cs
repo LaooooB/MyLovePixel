@@ -44,8 +44,13 @@ internal static class UiIcons
             var v when v == "pencil" => LucideIconKind.Pencil,
             var v when v == "eraser" => LucideIconKind.Eraser,
             var v when v == "line" => LucideIconKind.Minus,
+            var v when v == "arc" => LucideIconKind.RotateCcwClock,
             var v when v == "shape" => LucideIconKind.Square,
             var v when v == "fill" => LucideIconKind.PaintBucket,
+            var v when v == "blur brush" => LucideIconKind.CircleDashed,
+            var v when v == "fade brush" => LucideIconKind.Contrast,
+            var v when v == "shadow brush" => LucideIconKind.Layers2,
+            var v when v == "highlight brush" => LucideIconKind.Palette,
             var v when v.StartsWith("swap") => LucideIconKind.ArrowLeftRight,
             var v when v.StartsWith("primary") || v.StartsWith("secondary") => LucideIconKind.Palette,
 
