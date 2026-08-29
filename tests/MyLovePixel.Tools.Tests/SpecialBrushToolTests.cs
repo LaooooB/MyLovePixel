@@ -19,8 +19,9 @@ public sealed class SpecialBrushToolTests
         fixture.Host.Dispatch(Pointer(1, PointerEventKind.Released, 10, 6));
 
         Assert.Equal(1, fixture.Reader.SurfaceSnapshotCaptureCount);
-        Assert.True(Enumerable.Range(0, 12).Any(y =>
-            y != 6 && Enumerable.Range(0, 12).Any(x => fixture.Surface.GetPixel(x, y).A != 0)));
+        Assert.Contains(
+            Enumerable.Range(0, 12).Where(y => y != 6),
+            y => Enumerable.Range(0, 12).Any(x => fixture.Surface.GetPixel(x, y).A != 0));
     }
 
     [Fact]
@@ -83,7 +84,7 @@ public sealed class SpecialBrushToolTests
         fixture.Host.Dispatch(Pointer(4, PointerEventKind.Released, 4, 1));
 
         Assert.Equal(1, fixture.Reader.SurfaceSnapshotCaptureCount);
-        Assert.True(fixture.Bus.UndoCount >= 2);
+        Assert.InRange(fixture.Bus.UndoCount, 2, int.MaxValue);
     }
 
     private static ToolFixture CreateHost(int width, int height, ITool tool, Rgba32 primaryColor)
