@@ -104,13 +104,14 @@ public sealed partial class MainWindow
             var tip = shortcut is null
                 ? tool.DisplayName
                 : $"{tool.DisplayName} · {shortcut}";
-            var button = IconButton(ToolGlyph(id), tip, () =>
+            var button = IconButton(ToolGlyph(id), tool.DisplayName, () =>
             {
                 _selectionMode = false;
                 session.EnsureEditableCel();
                 _plugins.SelectTool(session, id);
                 RefreshAll();
             });
+            ToolTip.SetTip(button, tip);
             button.IsEnabled = session.HasEditableCel || session.CaptureSnapshot().Layers.ContainsKey(session.CurrentLayerId);
             if (!_selectionMode && tool.IsActive) button.Classes.Add("selected");
             _toolsPanel.Children.Add(button);
