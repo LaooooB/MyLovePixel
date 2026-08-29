@@ -90,10 +90,21 @@ public sealed partial class MainWindow
         _toolsPanel.Children.Add(select);
         _toolsPanel.Children.Add(SeparatorH());
 
-        foreach (var tool in _plugins.GetTools(session))
+        var tools = _plugins.GetTools(session);
+        for (var index = 0; index < tools.Count; index++)
         {
+            var tool = tools[index];
             var id = tool.Id;
-            var button = IconButton(ToolGlyph(id), tool.DisplayName, () =>
+            var shortcut = index switch
+            {
+                < 9 => (index + 1).ToString(),
+                9 => "0",
+                _ => null,
+            };
+            var tip = shortcut is null
+                ? tool.DisplayName
+                : $"{tool.DisplayName} · {shortcut}";
+            var button = IconButton(ToolGlyph(id), tip, () =>
             {
                 _selectionMode = false;
                 session.EnsureEditableCel();
@@ -170,17 +181,30 @@ public sealed partial class MainWindow
                 }
                 case ToolOptionPresentationKind.Integer:
                 {
-                    var input = new NumericUpDown
-                    {
-                        Value = (int)option.Value,
-                        Minimum = option.Minimum ?? int.MinValue,
-                        Maximum = option.Maximum ?? int.MaxValue,
-                        Increment = 1,
-                        FormatString = "0",
-                    };
                     var id = option.Id;
-                    input.ValueChanged += (_, _) => { if (input.Value is { } v) session.SetToolOption(id, (int)v); };
-                    _toolOptionsPanel.Children.Add(Labeled(ShortOption(option.DisplayName), input));
+                    if (option.Minimum is { } minimum && option.Maximum is { } maximum)
+                    {
+                        var slider = new GestureRackParameterSlider(
+                            ShortOption(option.DisplayName),
+                            (int)option.Value,
+                            minimum,
+                            maximum,
+                            value => SetToolOptionFromSlider(session, id, value));
+                        _toolOptionsPanel.Children.Add(Labeled(ShortOption(option.DisplayName), slider));
+                    }
+                    else
+                    {
+                        var input = new NumericUpDown
+                        {
+                            Value = (int)option.Value,
+                            Minimum = option.Minimum ?? int.MinValue,
+                            Maximum = option.Maximum ?? int.MaxValue,
+                            Increment = 1,
+                            FormatString = "0",
+                        };
+                        input.ValueChanged += (_, _) => { if (input.Value is { } v) session.SetToolOption(id, (int)v); };
+                        _toolOptionsPanel.Children.Add(Labeled(ShortOption(option.DisplayName), input));
+                    }
                     break;
                 }
                 case ToolOptionPresentationKind.Enum:
