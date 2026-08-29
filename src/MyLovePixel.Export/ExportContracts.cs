@@ -58,7 +58,7 @@ public sealed record ExportPreset
     public ExportLayout Layout { get; init; } = ExportLayout.SpriteSheet;
     public ExportFrameSelection Selection { get; init; } = ExportFrameSelection.All;
     public IntRect? Crop { get; init; }
-    public bool Trim { get; init; } = true;
+    public bool Trim { get; init; }
     public int Scale { get; init; } = 1;
     public int Padding { get; init; }
     public int Extrude { get; init; }
