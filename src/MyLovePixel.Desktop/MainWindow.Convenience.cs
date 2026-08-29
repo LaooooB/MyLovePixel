@@ -22,6 +22,7 @@ public sealed partial class MainWindow
     private readonly DispatcherTimer _convenienceTimer = new() { Interval = TimeSpan.FromMilliseconds(120) };
     private bool _convenienceInstalled;
     private bool _syncingStudioColor;
+    private bool _studioSecondaryTarget;
     private Rgba32 _studioColor = new(0, 0, 0, 255);
 
     protected override void OnOpened(EventArgs e)
@@ -87,14 +88,8 @@ public sealed partial class MainWindow
                         CornerRadius = new CornerRadius(2),
                     },
                 };
-                ToolTip.SetTip(button, $"#{captured.R:X2}{captured.G:X2}{captured.B:X2} · left primary · right secondary");
-                button.Click += (_, _) => ApplyStudioColor(captured, secondary: false);
-                button.PointerPressed += (_, e) =>
-                {
-                    if (!e.GetCurrentPoint(button).Properties.IsRightButtonPressed) return;
-                    ApplyStudioColor(captured, secondary: true);
-                    e.Handled = true;
-                };
+                ToolTip.SetTip(button, $"Apply #{captured.R:X2}{captured.G:X2}{captured.B:X2} to the active color");
+                button.Click += (_, _) => ApplyStudioColor(captured);
                 _studioPaletteSwatches.Children.Add(button);
             }
         }
@@ -149,16 +144,6 @@ public sealed partial class MainWindow
         };
     }
 
-    private Control BuildInspectorQuickTools()
-    {
-        var tools = new WrapPanel { ItemWidth = 82, ItemHeight = 34 };
-        tools.Children.Add(TextIconButton("✎", "Pencil", "Pencil · B", () => SelectQuickTool("core.pencil")));
-        tools.Children.Add(TextIconButton("⌫", "Eraser", "Eraser · E", () => SelectQuickTool("core.eraser")));
-        tools.Children.Add(TextIconButton("▣", "Fill", "Fill · G", () => SelectQuickTool("core.fill")));
-        tools.Children.Add(TextIconButton("▧", "Select", "Selection", SelectQuickSelection));
-        return SectionCard("Quick Tools", null, tools);
-    }
-
     private static NumericUpDown ChannelInput() => new()
     {
         Value = 0,
@@ -187,17 +172,32 @@ public sealed partial class MainWindow
         if (_studioHex.IsKeyboardFocusWithin || _studioR.IsKeyboardFocusWithin || _studioG.IsKeyboardFocusWithin || _studioB.IsKeyboardFocusWithin)
             return;
 
-        var primary = session.GetToolColors().Primary;
-        if (primary != _studioColor) SyncStudioColor(primary);
+        var colors = session.GetToolColors();
+        var active = _studioSecondaryTarget ? colors.Secondary : colors.Primary;
+        if (active != _studioColor) SyncStudioColor(active);
     }
 
-    private void ApplyStudioColor(Rgba32 color, bool secondary)
+    private void SetStudioColorTarget(bool secondary)
+    {
+        _studioSecondaryTarget = secondary;
+        var session = Current();
+        if (session is not null)
+        {
+            var colors = session.GetToolColors();
+            SyncStudioColor(secondary ? colors.Secondary : colors.Primary);
+        }
+        RefreshPalette();
+    }
+
+    private void ApplyStudioColor(Rgba32 color)
     {
         var session = Current();
         if (session is null) return;
         var current = session.GetToolColors();
-        session.SetToolColors(secondary ? current.Primary : color, secondary ? color : current.Secondary);
-        if (!secondary) SyncStudioColor(color);
+        session.SetToolColors(
+            _studioSecondaryTarget ? current.Primary : color,
+            _studioSecondaryTarget ? color : current.Secondary);
+        SyncStudioColor(color);
     }
 
     private void ApplyStudioRgb()
@@ -208,7 +208,7 @@ public sealed partial class MainWindow
             (byte)(_studioG.Value ?? 0m),
             (byte)(_studioB.Value ?? 0m),
             _studioColor.A);
-        ApplyStudioColor(color, secondary: false);
+        ApplyStudioColor(color);
     }
 
     private void ApplyStudioHex()
@@ -219,7 +219,7 @@ public sealed partial class MainWindow
             SetError("HEX color must be #RRGGBB or #RRGGBBAA.");
             return;
         }
-        ApplyStudioColor(color, secondary: false);
+        ApplyStudioColor(color);
     }
 
     private void SyncStudioColor(Rgba32 color)
@@ -357,16 +357,6 @@ public sealed partial class MainWindow
             session.EnsureEditableCel();
             _plugins.SelectTool(session, id);
         });
-        RefreshTools();
-        RefreshToolOptions();
-    }
-
-    private void SelectQuickSelection()
-    {
-        var session = Current();
-        if (session is null) return;
-        _selectionMode = true;
-        _plugins.CancelTool(session);
         RefreshTools();
         RefreshToolOptions();
     }
