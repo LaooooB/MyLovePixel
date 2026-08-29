@@ -233,6 +233,7 @@ public sealed partial class MainWindow
         _palettePanel.Children.Clear();
         var session = Current();
         if (session is null) return;
+
         var colors = session.GetToolColors();
         _primarySwatch.Background = Brush(colors.Primary);
         _secondarySwatch.Background = Brush(colors.Secondary);
@@ -240,64 +241,6 @@ public sealed partial class MainWindow
         _palettePanel.Children.Add(Labeled("Primary", SwatchButton(_primarySwatch, "Primary color", true)));
         _palettePanel.Children.Add(Labeled("Secondary", SwatchButton(_secondarySwatch, "Secondary color", false)));
         _palettePanel.Children.Add(TextIconButton("⇄", "Swap Colors", "Swap primary and secondary colors", SwapColors));
-
-        var editors = session.GetPaletteEditors();
-        var format = session.GetCurrentSurfaceFormat();
-        AddPanelLabel(_palettePanel, "Color processing");
-        var processing = new WrapPanel { ItemHeight = 34 };
-        var quantize = TextIconButton("", "Quantize", "Quantize current image", async () => await QuantizeCurrentAsync());
-        var dither = TextIconButton("", "Dither", "Dither current image", async () => await DitherCurrentAsync());
-        var shade = TextIconButton("", "Ramp / Shade", "Color ramp shading", async () => await ShadeCurrentAsync());
-        var rgba = TextIconButton("", "Convert to RGBA", "Convert Indexed8 to RGBA", ConvertIndexedCurrentToRgba);
-        quantize.IsEnabled = format == PixelFormat.Rgba32;
-        dither.IsEnabled = format == PixelFormat.Rgba32 && editors.Count > 0;
-        shade.IsEnabled = format == PixelFormat.Indexed8;
-        rgba.IsEnabled = format == PixelFormat.Indexed8;
-        processing.Children.Add(quantize);
-        processing.Children.Add(dither);
-        processing.Children.Add(shade);
-        processing.Children.Add(rgba);
-        _palettePanel.Children.Add(processing);
-
-        AddPanelLabel(_palettePanel, "Palette");
-        if (editors.Count == 0)
-        {
-            _palettePanel.Children.Add(TextIconButton("＋", "Create Grayscale Palette", "Create 16-color grayscale palette", () => { session.AddDefaultPalette(); RefreshPalette(); }));
-            return;
-        }
-
-        if (_selectedPalette is null || editors.All(value => value.Id != _selectedPalette)) _selectedPalette = editors[0].Id;
-        foreach (var palette in editors)
-        {
-            if (_selectedPalette == palette.Id && _selectedPaletteIndex is { } selectedIndex)
-            {
-                _palettePanel.Children.Add(Icons(
-                    SmallIcon("←", "Move palette color left", () => { Safe(() => session.MovePaletteColor(palette.Id, selectedIndex, -1)); _selectedPaletteIndex = checked((byte)Math.Max(0, selectedIndex - 1)); RefreshPalette(); }),
-                    SmallIcon("→", "Move palette color right", () => { Safe(() => session.MovePaletteColor(palette.Id, selectedIndex, 1)); _selectedPaletteIndex = checked((byte)Math.Min(palette.Colors.Count - 1, selectedIndex + 1)); RefreshPalette(); })));
-            }
-            var wrap = new WrapPanel { ItemWidth = 30, ItemHeight = 30 };
-            foreach (var entry in palette.Colors)
-            {
-                var b = new Button { Width = 28, Height = 28, Padding = new Thickness(2), Content = new Border { Background = Brush(entry.Color), CornerRadius = new CornerRadius(3) } };
-                ToolTip.SetTip(b, $"Palette index {entry.Index} · #{entry.Color.R:X2}{entry.Color.G:X2}{entry.Color.B:X2}{entry.Color.A:X2}");
-                if (_selectedPalette == palette.Id && _selectedPaletteIndex == entry.Index) b.Classes.Add("selected");
-                b.Click += (_, _) =>
-                {
-                    _selectedPalette = palette.Id;
-                    _selectedPaletteIndex = entry.Index;
-                    var current = session.GetToolColors();
-                    session.SetToolColors(entry.Color, current.Secondary);
-                    RefreshPalette();
-                };
-                b.DoubleTapped += async (_, _) =>
-                {
-                    var edited = await new ColorDialog(entry.Color).ShowDialog<Rgba32?>(this);
-                    if (edited is { } value) session.SetPaletteColor(palette.Id, entry.Index, value);
-                };
-                wrap.Children.Add(b);
-            }
-            _palettePanel.Children.Add(wrap);
-        }
     }
 
     private static void AddPanelLabel(Panel panel, string text)
