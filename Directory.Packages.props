@@ -6,7 +6,6 @@
     <PackageVersion Include="Avalonia" Version="12.1.1" />
     <PackageVersion Include="Avalonia.Desktop" Version="12.1.1" />
     <PackageVersion Include="Avalonia.Themes.Fluent" Version="12.1.1" />
-    <PackageVersion Include="Lucide.Avalonia" Version="0.2.19" />
     <PackageVersion Include="SkiaSharp" Version="4.151.1" />
     <PackageVersion Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.151.1" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
