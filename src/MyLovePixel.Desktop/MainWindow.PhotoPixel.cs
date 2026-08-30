@@ -71,7 +71,8 @@ public sealed partial class MainWindow
             {
                 Padding = new Thickness(10, 4),
                 Child = _photoPixelStatus,
-            });
+            },
+            BuildSpriteSheetImportCard());
     }
 
     private void OnPhotoPixelDragOver(object? sender, DragEventArgs e)
