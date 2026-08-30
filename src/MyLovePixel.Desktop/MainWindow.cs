@@ -347,6 +347,23 @@ public sealed partial class MainWindow : Window
 
         var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, HorizontalAlignment = HorizontalAlignment.Left };
         controls.Children.Add(IconButton("▶", "Play / Pause animation", TogglePlayback));
+        var playbackMode = new ComboBox
+        {
+            ItemsSource = new[] { "Loop", "PingPong" },
+            SelectedItem = _playback.LoopMode == AnimationLoopMode.PingPong ? "PingPong" : "Loop",
+            MinWidth = 104,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        ToolTip.SetTip(playbackMode, "Timeline playback mode");
+        playbackMode.SelectionChanged += (_, _) =>
+        {
+            var mode = string.Equals(playbackMode.SelectedItem as string, "PingPong", StringComparison.Ordinal)
+                ? AnimationLoopMode.PingPong
+                : AnimationLoopMode.Loop;
+            _playback.SetLoopMode(mode, Current());
+            _playbackTimestamp = Stopwatch.GetTimestamp();
+        };
+        controls.Children.Add(playbackMode);
         controls.Children.Add(ToggleTextButton("◌", "Onion Skin", "Onion skin", () => _onionSkin, value => { _onionSkin = value; RefreshCanvas(); RefreshAnimation(); }));
         controls.Children.Add(IconButton("⧉", "Duplicate frame", () => Current()?.DuplicateCurrentFrame(false)));
         controls.Children.Add(TextIconButton("⛓", "Linked Copy", "Linked frame copy", () => Current()?.DuplicateCurrentFrame(true)));
