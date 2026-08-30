@@ -86,6 +86,36 @@ public sealed class AnimationPlaybackClockTests
         Assert.Equal(fixture.Frame1, clock.CurrentFrameId);
     }
 
+    [Fact]
+    public void TimelinePingPongOverride_ReusesFourForwardFramesForTheReturnPass()
+    {
+        var fixture = CreateThreeFrameDocument(10, 10, 10);
+        var copy = new CopyFrameCommand(fixture.Frame2);
+        fixture.Bus.Execute(copy);
+        var frame3 = copy.NewFrameId;
+        fixture.Bus.Execute(new SetFrameDurationCommand(frame3, 10));
+
+        var clock = new AnimationPlaybackClock();
+        clock.Configure(
+            DocumentSnapshot.Capture(fixture.Document),
+            loopModeOverride: AnimationLoopMode.PingPong);
+
+        clock.Advance(10);
+        Assert.Equal(fixture.Frame1, clock.CurrentFrameId);
+        clock.Advance(10);
+        Assert.Equal(fixture.Frame2, clock.CurrentFrameId);
+        clock.Advance(10);
+        Assert.Equal(frame3, clock.CurrentFrameId);
+        clock.Advance(10);
+        Assert.Equal(fixture.Frame2, clock.CurrentFrameId);
+        clock.Advance(10);
+        Assert.Equal(fixture.Frame1, clock.CurrentFrameId);
+        clock.Advance(10);
+        Assert.Equal(fixture.Frame0, clock.CurrentFrameId);
+        clock.Advance(10);
+        Assert.Equal(fixture.Frame1, clock.CurrentFrameId);
+    }
+
     private static ThreeFrameFixture CreateThreeFrameDocument(long first, long second, long third)
     {
         var document = PixelDocumentFactory.CreateBlank(2, 2);
