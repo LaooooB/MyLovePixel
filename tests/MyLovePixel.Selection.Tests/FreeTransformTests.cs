@@ -81,6 +81,6 @@ public sealed class FreeTransformTests
         Assert.Equal(new IntPoint(7, -3), placed.Position);
         Assert.Equal(floating.Size, placed.Size);
         Assert.Equal(Red, placed.GetPixel(0, 0));
-        Assert.Equal(floating.Mask.CopyCoverage(), placed.Mask.CopyCoverage());
+        Assert.Equal(floating.Mask.GetCoverage(0, 0), placed.Mask.GetCoverage(0, 0));
     }
 }
