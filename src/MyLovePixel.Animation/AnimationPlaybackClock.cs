@@ -27,7 +27,8 @@ public sealed class AnimationPlaybackClock
         DocumentSnapshot snapshot,
         AnimationClipId? clipId = null,
         FrameId? startFrameId = null,
-        bool autoplay = true)
+        bool autoplay = true,
+        AnimationLoopMode? loopModeOverride = null)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         if (snapshot.FrameOrder.Count == 0)
@@ -46,7 +47,7 @@ public sealed class AnimationPlaybackClock
         _durations = _sequence.ToDictionary(
             frameId => frameId,
             frameId => snapshot.GetFrame(frameId).DurationTicks);
-        _loopMode = clip?.LoopMode ?? AnimationLoopMode.Loop;
+        _loopMode = loopModeOverride ?? clip?.LoopMode ?? AnimationLoopMode.Loop;
         _direction = 1;
         _elapsedInFrameTicks = 0;
 
