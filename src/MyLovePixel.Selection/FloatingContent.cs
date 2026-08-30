@@ -69,13 +69,19 @@ public interface IArbitraryRotationStrategy
 
 public static class FloatingContentTransforms
 {
+    public static FloatingContent Place(FloatingContent source, IntPoint position)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        return new FloatingContent(source.Size, position, source.CopyPixels(), source.Mask);
+    }
+
     public static FloatingContent Translate(FloatingContent source, IntPoint delta)
     {
         ArgumentNullException.ThrowIfNull(source);
         var position = new IntPoint(
             checked(source.Position.X + delta.X),
             checked(source.Position.Y + delta.Y));
-        return new FloatingContent(source.Size, position, source.CopyPixels(), source.Mask);
+        return Place(source, position);
     }
 
     public static FloatingContent FlipHorizontal(FloatingContent source)
@@ -103,6 +109,56 @@ public static class FloatingContentTransforms
                 QuarterTurn.CounterClockwise => new IntPoint(y, source.Size.Width - 1 - x),
                 _ => throw new ArgumentOutOfRangeException(nameof(turn)),
             });
+    }
+
+    public static FloatingContent RotateNearest(FloatingContent source, double degrees)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        if (!double.IsFinite(degrees)) throw new ArgumentOutOfRangeException(nameof(degrees));
+
+        var normalized = NormalizeDegrees(degrees);
+        if (Math.Abs(normalized) < 0.000001d)
+            return Place(source, source.Position);
+
+        var radians = normalized * Math.PI / 180d;
+        var cos = Math.Cos(radians);
+        var sin = Math.Sin(radians);
+        var width = Math.Max(1, (int)Math.Ceiling(
+            Math.Abs(source.Size.Width * cos) + Math.Abs(source.Size.Height * sin) - 0.000000001d));
+        var height = Math.Max(1, (int)Math.Ceiling(
+            Math.Abs(source.Size.Width * sin) + Math.Abs(source.Size.Height * cos) - 0.000000001d));
+        var targetSize = new IntSize(width, height);
+        var pixels = new Rgba32[checked(width * height)];
+        var coverage = new byte[pixels.Length];
+
+        var sourceCenterX = (source.Size.Width - 1) * 0.5d;
+        var sourceCenterY = (source.Size.Height - 1) * 0.5d;
+        var targetCenterX = (width - 1) * 0.5d;
+        var targetCenterY = (height - 1) * 0.5d;
+
+        for (var y = 0; y < height; y++)
+        for (var x = 0; x < width; x++)
+        {
+            var dx = x - targetCenterX;
+            var dy = y - targetCenterY;
+            var sourceX = (cos * dx) + (sin * dy) + sourceCenterX;
+            var sourceY = (-sin * dx) + (cos * dy) + sourceCenterY;
+            var nearestX = (int)Math.Round(sourceX, MidpointRounding.AwayFromZero);
+            var nearestY = (int)Math.Round(sourceY, MidpointRounding.AwayFromZero);
+            if ((uint)nearestX >= (uint)source.Size.Width || (uint)nearestY >= (uint)source.Size.Height) continue;
+
+            var targetIndex = (y * width) + x;
+            pixels[targetIndex] = source.GetPixel(nearestX, nearestY);
+            coverage[targetIndex] = source.Mask.GetCoverage(nearestX, nearestY);
+        }
+
+        var worldCenterX = source.Position.X + sourceCenterX;
+        var worldCenterY = source.Position.Y + sourceCenterY;
+        var position = new IntPoint(
+            checked((int)Math.Round(worldCenterX - targetCenterX, MidpointRounding.AwayFromZero)),
+            checked((int)Math.Round(worldCenterY - targetCenterY, MidpointRounding.AwayFromZero)));
+        var mask = SelectionMask.FromCoverage(targetSize, source.Mask.Format, coverage);
+        return new FloatingContent(targetSize, position, pixels, mask);
     }
 
     public static FloatingContent ScaleNearest(FloatingContent source, IntSize targetSize)
@@ -144,5 +200,13 @@ public static class FloatingContentTransforms
 
         var mask = SelectionMask.FromCoverage(targetSize, source.Mask.Format, coverage);
         return new FloatingContent(targetSize, source.Position, pixels, mask);
+    }
+
+    private static double NormalizeDegrees(double degrees)
+    {
+        var result = degrees % 360d;
+        if (result <= -180d) result += 360d;
+        if (result > 180d) result -= 360d;
+        return result;
     }
 }

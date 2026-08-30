@@ -61,7 +61,10 @@ public sealed partial class MainWindow
                 _onionSkin
                     ? new OnionSkinPresentationSettings(_onionPrevious, _onionNext, _onionOpacity, _onionFalloff)
                     : null);
-        _canvas.SetPresentation(presentation, session?.Zoom ?? 1d, session is null ? null : _selection.GetOverlay(session));
+        var selectionOverlay = session is null ? null : _selection.GetOverlay(session);
+        _canvas.SelectionTransformInput = DispatchSelectionTransform;
+        _canvas.SetPresentation(presentation, session?.Zoom ?? 1d, selectionOverlay);
+        _canvas.SetSelectionTransformEnabled(_selectionMode && selectionOverlay is not null);
         if (updatePreview) _quickPreview.SetPresentation(presentation);
         if (session is null || presentation?.Diagnostics is not { } d)
         {
@@ -85,6 +88,7 @@ public sealed partial class MainWindow
             _plugins.CancelTool(session);
             RefreshTools();
             RefreshToolOptions();
+            RefreshCanvas(updatePreview: false);
         });
         if (_selectionMode) select.Classes.Add("selected");
         _toolsPanel.Children.Add(select);
@@ -106,6 +110,7 @@ public sealed partial class MainWindow
                 : $"{tool.DisplayName} · {shortcut}";
             var button = IconButton(ToolGlyph(id), tool.DisplayName, () =>
             {
+                CancelSelectionTransformGesture();
                 _selectionMode = false;
                 session.EnsureEditableCel();
                 _plugins.SelectTool(session, id);
@@ -139,24 +144,14 @@ public sealed partial class MainWindow
                 TextIconButton("◐", "Invert", "Invert selection", () => { Safe(() => _selection.Invert(session)); RefreshCanvas(); }),
                 IconButton("×", "Clear selection", () => { _selection.Clear(session); RefreshCanvas(); })));
 
-            AddPanelLabel(_toolOptionsPanel, "Move");
-            _toolOptionsPanel.Children.Add(Icons(
-                IconButton("←", "Move left", () => MoveSelection(-1, 0)),
-                IconButton("↑", "Move up", () => MoveSelection(0, -1)),
-                IconButton("↓", "Move down", () => MoveSelection(0, 1)),
-                IconButton("→", "Move right", () => MoveSelection(1, 0))));
-
-            AddPanelLabel(_toolOptionsPanel, "Transform");
-            _toolOptionsPanel.Children.Add(Icons(
-                IconButton("↔", "Flip horizontal", () => TransformSelection(() => _selection.FlipHorizontal(session))),
-                IconButton("↕", "Flip vertical", () => TransformSelection(() => _selection.FlipVertical(session))),
-                IconButton("↻", "Rotate 90°", () => TransformSelection(() => _selection.RotateClockwise(session)))));
-            if (_selection.GetOverlay(session) is { } overlay)
+            var direct = new TextBlock
             {
-                var w = Number(overlay.Bounds.Width, 1, 8192);
-                var h = Number(overlay.Bounds.Height, 1, 8192);
-                _toolOptionsPanel.Children.Add(Labeled("Scale to", Icons(w, h, TextIconButton("↗", "Apply", "Scale selection", () => TransformSelection(() => _selection.Scale(session, (int)(w.Value ?? 1), (int)(h.Value ?? 1)))))));
-            }
+                Text = "Free Transform: drag inside to move · drag a corner to scale · drag the round handle to rotate. Hold Shift to lock movement/aspect ratio or snap rotation to 15°.",
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 6, 0, 0),
+            };
+            direct.Classes.Add("subtle");
+            _toolOptionsPanel.Children.Add(direct);
             return;
         }
 

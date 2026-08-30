@@ -50,7 +50,6 @@ public sealed class SelectionWorkspaceRuntime
         _states.GetOrCreateValue(session).Value = new State(target.Cel.SurfaceId, target.Origin, mask);
     }
 
-
     public void SelectEllipse(DocumentSession session, int ax, int ay, int bx, int by)
     {
         var target = Resolve(session);
@@ -102,30 +101,85 @@ public sealed class SelectionWorkspaceRuntime
     {
         var state = Require(session);
         var delta = new IntPoint(dx, dy);
+        if (delta == default) return;
         var surface = session.Document.Resources.GetSurface(state.SurfaceId).Snapshot();
         var patch = FloatingContentComposer.BuildMovePatch(surface, state.Mask, delta);
         if (!patch.IsEmpty) session.Execute(new PixelPatchCommand(state.SurfaceId, patch.Writes, "Move Selection"));
         _states.GetOrCreateValue(session).Value = state with { Mask = SelectionTransforms.Translate(state.Mask, delta) };
     }
 
-
     public void Scale(DocumentSession session, int width, int height)
     {
-        if (width <= 0 || height <= 0) throw new ArgumentOutOfRangeException(nameof(width));
+        var overlay = GetOverlay(session) ?? throw new InvalidOperationException("No selection.");
+        ScaleToBounds(session, new IntRect(overlay.Bounds.X, overlay.Bounds.Y, width, height));
+    }
+
+    public void ScaleToBounds(DocumentSession session, IntRect targetCanvasBounds)
+    {
+        if (targetCanvasBounds.Width <= 0 || targetCanvasBounds.Height <= 0)
+            throw new ArgumentOutOfRangeException(nameof(targetCanvasBounds));
+
         var state = Require(session);
         var surface = session.Document.Resources.GetSurface(state.SurfaceId).Snapshot();
         var floating = FloatingContent.Capture(surface, state.Mask);
-        var transformed = FloatingContentTransforms.ScaleNearest(floating, new IntSize(width, height));
-        var patch = FloatingContentComposer.BuildTransformPatch(surface, state.Mask, transformed);
-        if (!patch.IsEmpty) session.Execute(new PixelPatchCommand(state.SurfaceId, patch.Writes, "Scale Selection"));
-        var bounds = state.Mask.Bounds;
-        var mask = SelectionTransforms.ScaleNearest(state.Mask, new IntRect(bounds.X, bounds.Y, width, height));
-        _states.GetOrCreateValue(session).Value = state with { Mask = mask };
+        var scaled = FloatingContentTransforms.ScaleNearest(
+            floating,
+            new IntSize(targetCanvasBounds.Width, targetCanvasBounds.Height));
+        var transformed = FloatingContentTransforms.Place(
+            scaled,
+            new IntPoint(
+                checked(targetCanvasBounds.X - state.Origin.X),
+                checked(targetCanvasBounds.Y - state.Origin.Y)));
+        ApplyFloatingTransform(session, state, surface, transformed, "Scale Selection");
+    }
+
+    public void Rotate(DocumentSession session, double degrees)
+    {
+        if (!double.IsFinite(degrees)) throw new ArgumentOutOfRangeException(nameof(degrees));
+        if (Math.Abs(degrees) < 0.000001d) return;
+
+        var state = Require(session);
+        var surface = session.Document.Resources.GetSurface(state.SurfaceId).Snapshot();
+        var floating = FloatingContent.Capture(surface, state.Mask);
+        var transformed = FloatingContentTransforms.RotateNearest(floating, degrees);
+        ApplyFloatingTransform(session, state, surface, transformed, "Rotate Selection");
     }
 
     public void FlipHorizontal(DocumentSession session) => Transform(session, FloatingContentTransforms.FlipHorizontal, SelectionTransforms.FlipHorizontal, "Flip Selection H");
     public void FlipVertical(DocumentSession session) => Transform(session, FloatingContentTransforms.FlipVertical, SelectionTransforms.FlipVertical, "Flip Selection V");
     public void RotateClockwise(DocumentSession session) => Transform(session, value => FloatingContentTransforms.Rotate90(value, QuarterTurn.Clockwise), value => SelectionTransforms.Rotate90(value, QuarterTurn.Clockwise), "Rotate Selection");
+
+    private void ApplyFloatingTransform(
+        DocumentSession session,
+        State state,
+        PixelSurfaceSnapshot surface,
+        FloatingContent transformed,
+        string name)
+    {
+        var patch = FloatingContentComposer.BuildTransformPatch(surface, state.Mask, transformed);
+        if (!patch.IsEmpty) session.Execute(new PixelPatchCommand(state.SurfaceId, patch.Writes, name));
+        var mask = BuildSurfaceMask(surface.Size, state.Mask.Format, transformed);
+        _states.GetOrCreateValue(session).Value = state with { Mask = mask };
+    }
+
+    private static SelectionMask BuildSurfaceMask(
+        IntSize surfaceSize,
+        SelectionMaskFormat format,
+        FloatingContent transformed)
+    {
+        var coverage = new byte[checked(surfaceSize.Width * surfaceSize.Height)];
+        for (var localY = 0; localY < transformed.Size.Height; localY++)
+        for (var localX = 0; localX < transformed.Size.Width; localX++)
+        {
+            var value = transformed.Mask.GetCoverage(localX, localY);
+            if (value == 0) continue;
+            var targetX = (long)transformed.Position.X + localX;
+            var targetY = (long)transformed.Position.Y + localY;
+            if ((ulong)targetX >= (ulong)surfaceSize.Width || (ulong)targetY >= (ulong)surfaceSize.Height) continue;
+            coverage[((int)targetY * surfaceSize.Width) + (int)targetX] = value;
+        }
+        return SelectionMask.FromCoverage(surfaceSize, format, coverage);
+    }
 
     private void Transform(DocumentSession session, Func<FloatingContent, FloatingContent> contentTransform, Func<SelectionMask, SelectionMask> maskTransform, string name)
     {
