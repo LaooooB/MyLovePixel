@@ -146,7 +146,7 @@ public sealed partial class MainWindow
 
             var direct = new TextBlock
             {
-                Text = "Free Transform: drag inside to move · drag any corner to enlarge or shrink · drag the round handle to rotate through 16 fixed directions (22.5° each). Hold Shift to lock movement or keep scale aspect ratio.",
+                Text = "Free Transform: drag inside to move · drag any corner to enlarge or shrink · drag the round handle to rotate through 8 fixed directions (45° each). A selection is cleared automatically when you switch frame or layer. Hold Shift to lock movement or keep scale aspect ratio.",
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 6, 0, 0),
             };
