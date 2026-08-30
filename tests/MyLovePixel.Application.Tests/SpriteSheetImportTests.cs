@@ -75,10 +75,21 @@ public sealed class SpriteSheetImportTests
     }
 
     [Fact]
-    public void BuildSlices_RejectsGridThatDoesNotEvenlyDivideImage()
+    public void BuildSlices_NonDivisibleFourByFour_StillCreatesSixteenFramesAndCoversImage()
     {
-        var error = Assert.Throws<ArgumentException>(() => SpriteSheetGrid.BuildSlices(101, 50, 2, 5));
-        Assert.Contains("not evenly divisible", error.Message, StringComparison.Ordinal);
+        var slices = SpriteSheetGrid.BuildSlices(1254, 1254, 4, 4);
+
+        Assert.Equal(16, slices.Count);
+        Assert.Equal(new IntRect(0, 0, 313, 313), slices[0].Bounds);
+        Assert.Equal(new IntRect(940, 940, 314, 314), slices[15].Bounds);
+        Assert.Equal(1254 * 1254, slices.Sum(slice => slice.Bounds.Width * slice.Bounds.Height));
+    }
+
+    [Fact]
+    public void BuildSlices_RejectsMoreGridCellsThanImagePixels()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => SpriteSheetGrid.BuildSlices(3, 3, 4, 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => SpriteSheetGrid.BuildSlices(3, 3, 1, 4));
     }
 
     private static byte[] Pixel(byte r, byte g, byte b) => [r, g, b, 255];

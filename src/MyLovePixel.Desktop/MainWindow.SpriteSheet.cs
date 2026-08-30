@@ -4,6 +4,7 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Platform.Storage;
 using MyLovePixel.Application;
+using MyLovePixel.Core.Pixel;
 using MyLovePixel.Core.Primitives;
 using SkiaSharp;
 
@@ -13,6 +14,7 @@ public sealed partial class MainWindow
 {
     private readonly TextBlock _spriteSheetStatus = new() { TextWrapping = TextWrapping.Wrap };
     private bool _spriteSheetBusy;
+    private bool _spriteSheetUpdatingGridControls;
 
     private Control BuildSpriteSheetImportCard()
     {
@@ -21,11 +23,20 @@ public sealed partial class MainWindow
             Content = "Auto detect grid",
             IsChecked = true,
         };
-        ToolTip.SetTip(autoDetect, "First match the current canvas size; otherwise guess a regular sprite grid.");
+        ToolTip.SetTip(autoDetect, "Uses the current canvas as a hint. Changing Columns or Rows switches to manual grid mode.");
 
         var columns = Number(2, 1, 32);
         var rows = Number(2, 1, 32);
         var duration = Number(100, 1, 60_000);
+        columns.ValueChanged += (_, _) =>
+        {
+            if (!_spriteSheetUpdatingGridControls) autoDetect.IsChecked = false;
+        };
+        rows.ValueChanged += (_, _) =>
+        {
+            if (!_spriteSheetUpdatingGridControls) autoDetect.IsChecked = false;
+        };
+
         var target = new ComboBox
         {
             ItemsSource = new[] { "New animation", "Append timeline" },
@@ -35,19 +46,19 @@ public sealed partial class MainWindow
 
         var explanation = new TextBlock
         {
-            Text = "Frames are read left → right, then top → bottom. Example: 2 × 5 creates 10 frames.",
+            Text = "Frames are read left → right, then top → bottom. Example: 4 × 4 always creates 16 frames.",
             TextWrapping = TextWrapping.Wrap,
         };
         explanation.Classes.Add("subtle");
 
         var manualHint = new TextBlock
         {
-            Text = "Columns / Rows are used when Auto detect is off. Auto detect updates them after a sheet is analyzed.",
+            Text = "Changing Columns / Rows turns Auto detect off. Uneven image dimensions are supported; every grid cell is fitted to the current canvas pixel size using the same conversion as Photo → Pixel.",
             TextWrapping = TextWrapping.Wrap,
         };
         manualHint.Classes.Add("subtle");
 
-        _spriteSheetStatus.Text = "Choose a sprite sheet to split it directly into Timeline frames.";
+        _spriteSheetStatus.Text = "Choose a sprite sheet. The current canvas size is the output size for every imported frame.";
         _spriteSheetStatus.Classes.Add("subtle");
 
         var body = new StackPanel { Spacing = 8 };
@@ -110,7 +121,7 @@ public sealed partial class MainWindow
 
         return SectionCard(
             "Sprite Sheet → Frames",
-            "Split a regular sprite sheet into animation frames without photo resampling or palette conversion.",
+            "Split a sprite sheet into Timeline frames and convert every cell to the current canvas pixel resolution.",
             dropZone);
     }
 
@@ -148,23 +159,25 @@ public sealed partial class MainWindow
     {
         if (_spriteSheetBusy) return;
 
-        var append = target.SelectedIndex == 1;
         var existingSession = Current();
-        if (append && existingSession is null)
+        if (existingSession is null)
         {
-            SetSpriteSheetStatus("Open or create a document before using Append timeline.", error: true);
+            SetSpriteSheetStatus("Create or open a canvas first. Its pixel dimensions define the size of every imported frame.", error: true);
             return;
         }
 
-        var preferredFrameSize = existingSession?.CaptureSnapshot().Canvas.Size;
+        var sourceSnapshot = existingSession.CaptureSnapshot();
+        var canvasSize = sourceSnapshot.Canvas.Size;
+        var append = target.SelectedIndex == 1;
         var manualColumns = Math.Max(1, (int)(columns.Value ?? 1));
         var manualRows = Math.Max(1, (int)(rows.Value ?? 1));
         var durationMs = Math.Max(1, (int)(duration.Value ?? 100));
         var useAutoDetect = autoDetect.IsChecked == true;
-        var originalFrameCount = existingSession?.CaptureSnapshot().FrameOrder.Count ?? 0;
+        var originalFrameCount = sourceSnapshot.FrameOrder.Count;
 
         _spriteSheetBusy = true;
-        SetSpriteSheetStatus($"Analyzing {Path.GetFileName(path)}…");
+        SetSpriteSheetStatus(
+            $"Analyzing {Path.GetFileName(path)} and converting frames to {canvasSize.Width} × {canvasSize.Height}…");
         try
         {
             var decoded = await Task.Run(() => DecodeSpriteSheet(
@@ -172,30 +185,35 @@ public sealed partial class MainWindow
                 useAutoDetect,
                 manualColumns,
                 manualRows,
-                preferredFrameSize));
+                canvasSize));
 
-            columns.Value = decoded.Columns;
-            rows.Value = decoded.Rows;
+            _spriteSheetUpdatingGridControls = true;
+            try
+            {
+                columns.Value = decoded.Columns;
+                rows.Value = decoded.Rows;
+            }
+            finally
+            {
+                _spriteSheetUpdatingGridControls = false;
+            }
+
+            if (!ReferenceEquals(Current(), existingSession) || existingSession.CaptureSnapshot().Canvas.Size != canvasSize)
+                throw new InvalidOperationException("The active canvas changed while the sprite sheet was being analyzed.");
 
             DocumentSession targetSession;
             if (append)
             {
-                if (!ReferenceEquals(Current(), existingSession))
-                    throw new InvalidOperationException("The active document changed while the sprite sheet was being analyzed.");
-                targetSession = existingSession!;
-                var currentSize = targetSession.CaptureSnapshot().Canvas.Size;
-                if (currentSize != decoded.FrameSize)
-                    throw new InvalidOperationException(
-                        $"Detected frame size is {decoded.FrameSize.Width} × {decoded.FrameSize.Height}, but the current canvas is {currentSize.Width} × {currentSize.Height}. Use New animation or change the grid.");
+                targetSession = existingSession;
             }
             else
             {
-                targetSession = _workspace.NewDocument(decoded.FrameSize.Width, decoded.FrameSize.Height);
+                targetSession = _workspace.NewDocument(canvasSize.Width, canvasSize.Height);
             }
 
             var imported = targetSession.ImportSpriteSheetFrames(
                 decoded.Frames,
-                decoded.FrameSize,
+                canvasSize,
                 durationMs,
                 append,
                 "Import Sprite Sheet");
@@ -205,7 +223,8 @@ public sealed partial class MainWindow
             RefreshAll();
             SetSpriteSheetStatus(
                 $"{Path.GetFileName(path)}: {decoded.Columns} × {decoded.Rows} → {imported.Count} frames, " +
-                $"{decoded.FrameSize.Width} × {decoded.FrameSize.Height} each, {durationMs} ms. {decoded.DetectionReason} Ctrl+Z undoes the import.");
+                $"each converted to canvas {canvasSize.Width} × {canvasSize.Height}, {durationMs} ms. " +
+                $"{decoded.DetectionReason} Ctrl+Z undoes the import.");
         }
         catch (Exception ex)
         {
@@ -229,7 +248,7 @@ public sealed partial class MainWindow
         bool autoDetect,
         int manualColumns,
         int manualRows,
-        IntSize? preferredFrameSize)
+        IntSize targetFrameSize)
     {
         if (string.IsNullOrWhiteSpace(path)) throw new ArgumentException("Image path is empty.", nameof(path));
         using var source = SKBitmap.Decode(path) ?? throw new InvalidOperationException("The file could not be decoded as an image.");
@@ -240,7 +259,7 @@ public sealed partial class MainWindow
         string reason;
         if (autoDetect)
         {
-            var suggestion = SpriteSheetGrid.SuggestGrid(source.Width, source.Height, preferredFrameSize);
+            var suggestion = SpriteSheetGrid.SuggestGrid(source.Width, source.Height, targetFrameSize);
             columns = suggestion.Columns;
             rows = suggestion.Rows;
             reason = suggestion.Reason;
@@ -258,30 +277,29 @@ public sealed partial class MainWindow
             columns,
             rows,
             SpriteSheetTraversalOrder.LeftToRightTopToBottom);
-        var frameWidth = source.Width / columns;
-        var frameHeight = source.Height / rows;
         var frames = new byte[slices.Count][];
+        var paletteCache = new Dictionary<int, Rgba32>();
+        var totalOutputPixels = checked((long)targetFrameSize.Width * targetFrameSize.Height * slices.Count);
+        var maxSamplesPerAxis = totalOutputPixels <= 262_144
+            ? 4
+            : totalOutputPixels <= 1_048_576
+                ? 2
+                : 1;
 
         foreach (var slice in slices)
         {
-            var rgba = new byte[checked(frameWidth * frameHeight * 4)];
-            for (var y = 0; y < frameHeight; y++)
-            for (var x = 0; x < frameWidth; x++)
-            {
-                var color = source.GetPixel(slice.Bounds.X + x, slice.Bounds.Y + y);
-                var offset = checked((y * frameWidth + x) * 4);
-                rgba[offset] = color.Red;
-                rgba[offset + 1] = color.Green;
-                rgba[offset + 2] = color.Blue;
-                rgba[offset + 3] = color.Alpha;
-            }
-            frames[slice.Index] = rgba;
+            frames[slice.Index] = ConvertBitmapRegionToPixelRgba(
+                source,
+                slice.Bounds,
+                targetFrameSize.Width,
+                targetFrameSize.Height,
+                paletteCache,
+                maxSamplesPerAxis);
         }
 
         return new DecodedSpriteSheet(
             columns,
             rows,
-            new IntSize(frameWidth, frameHeight),
             frames,
             reason);
     }
@@ -289,7 +307,6 @@ public sealed partial class MainWindow
     private sealed record DecodedSpriteSheet(
         int Columns,
         int Rows,
-        IntSize FrameSize,
         byte[][] Frames,
         string DetectionReason);
 }

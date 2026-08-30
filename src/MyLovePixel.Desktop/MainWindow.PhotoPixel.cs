@@ -6,6 +6,7 @@ using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using MyLovePixel.Application;
 using MyLovePixel.Core.Pixel;
+using MyLovePixel.Core.Primitives;
 using SkiaSharp;
 
 namespace MyLovePixel.Desktop;
@@ -181,28 +182,50 @@ public sealed partial class MainWindow
         using var source = SKBitmap.Decode(path) ?? throw new InvalidOperationException("The file could not be decoded as an image.");
         if (source.Width <= 0 || source.Height <= 0) throw new InvalidOperationException("The image has no pixels.");
 
+        return ConvertBitmapRegionToPixelRgba(
+            source,
+            new IntRect(0, 0, source.Width, source.Height),
+            targetWidth,
+            targetHeight);
+    }
+
+    private static byte[] ConvertBitmapRegionToPixelRgba(
+        SKBitmap source,
+        IntRect sourceBounds,
+        int targetWidth,
+        int targetHeight,
+        Dictionary<int, Rgba32>? paletteCache = null,
+        int? maxSamplesPerAxis = null)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        if (targetWidth <= 0 || targetHeight <= 0) throw new ArgumentOutOfRangeException(nameof(targetWidth));
+        if (sourceBounds.IsEmpty || sourceBounds.X < 0 || sourceBounds.Y < 0 ||
+            sourceBounds.Right > source.Width || sourceBounds.Bottom > source.Height)
+            throw new ArgumentOutOfRangeException(nameof(sourceBounds), "Source bounds must be inside the decoded image.");
+
         var targetAspect = targetWidth / (double)targetHeight;
-        var sourceAspect = source.Width / (double)source.Height;
-        double cropX = 0d;
-        double cropY = 0d;
-        double cropWidth = source.Width;
-        double cropHeight = source.Height;
+        var sourceAspect = sourceBounds.Width / (double)sourceBounds.Height;
+        double cropX = sourceBounds.X;
+        double cropY = sourceBounds.Y;
+        double cropWidth = sourceBounds.Width;
+        double cropHeight = sourceBounds.Height;
 
         if (sourceAspect > targetAspect)
         {
-            cropWidth = source.Height * targetAspect;
-            cropX = (source.Width - cropWidth) * 0.5d;
+            cropWidth = sourceBounds.Height * targetAspect;
+            cropX = sourceBounds.X + (sourceBounds.Width - cropWidth) * 0.5d;
         }
         else if (sourceAspect < targetAspect)
         {
-            cropHeight = source.Width / targetAspect;
-            cropY = (source.Height - cropHeight) * 0.5d;
+            cropHeight = sourceBounds.Width / targetAspect;
+            cropY = sourceBounds.Y + (sourceBounds.Height - cropHeight) * 0.5d;
         }
 
         var rgba = new byte[checked(targetWidth * targetHeight * 4)];
-        var paletteCache = new Dictionary<int, Rgba32>();
+        paletteCache ??= new Dictionary<int, Rgba32>();
         var pixels = (long)targetWidth * targetHeight;
-        var maxSamples = pixels <= 262_144 ? 4 : pixels <= 1_048_576 ? 2 : 1;
+        var defaultMaxSamples = pixels <= 262_144 ? 4 : pixels <= 1_048_576 ? 2 : 1;
+        var maxSamples = Math.Clamp(maxSamplesPerAxis ?? defaultMaxSamples, 1, 4);
         var sourcePerPixelX = cropWidth / targetWidth;
         var sourcePerPixelY = cropHeight / targetHeight;
         var samplesX = Math.Clamp((int)Math.Ceiling(sourcePerPixelX), 1, maxSamples);
@@ -226,12 +249,12 @@ public sealed partial class MainWindow
                 {
                     var sampleX = Math.Clamp(
                         (int)Math.Floor(sourceX0 + (sx + 0.5d) * sourcePerPixelX / samplesX),
-                        0,
-                        source.Width - 1);
+                        sourceBounds.X,
+                        sourceBounds.Right - 1);
                     var sampleY = Math.Clamp(
                         (int)Math.Floor(sourceY0 + (sy + 0.5d) * sourcePerPixelY / samplesY),
-                        0,
-                        source.Height - 1);
+                        sourceBounds.Y,
+                        sourceBounds.Bottom - 1);
                     var color = source.GetPixel(sampleX, sampleY);
                     var alpha = color.Alpha;
                     weightedR += color.Red * (long)alpha;

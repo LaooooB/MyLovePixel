@@ -103,20 +103,26 @@ public static class SpriteSheetGrid
         ValidateImageSize(imageWidth, imageHeight);
         if (columns <= 0) throw new ArgumentOutOfRangeException(nameof(columns));
         if (rows <= 0) throw new ArgumentOutOfRangeException(nameof(rows));
+        if (columns > imageWidth)
+            throw new ArgumentOutOfRangeException(nameof(columns), "Grid columns cannot exceed the image width in pixels.");
+        if (rows > imageHeight)
+            throw new ArgumentOutOfRangeException(nameof(rows), "Grid rows cannot exceed the image height in pixels.");
         var frameCount = checked(columns * rows);
         if (frameCount > MaxFrameCount)
             throw new ArgumentOutOfRangeException(nameof(columns), $"A sprite sheet can contain at most {MaxFrameCount} imported frames.");
-        if (imageWidth % columns != 0 || imageHeight % rows != 0)
-            throw new ArgumentException(
-                $"Image size {imageWidth} × {imageHeight} is not evenly divisible by a {columns} × {rows} grid.");
 
-        var frameWidth = imageWidth / columns;
-        var frameHeight = imageHeight / rows;
         var result = new List<SpriteSheetFrameSlice>(frameCount);
 
-        void Add(int column, int row) => result.Add(new SpriteSheetFrameSlice(
-            result.Count,
-            new IntRect(column * frameWidth, row * frameHeight, frameWidth, frameHeight)));
+        void Add(int column, int row)
+        {
+            var left = checked((int)((long)column * imageWidth / columns));
+            var right = checked((int)((long)(column + 1) * imageWidth / columns));
+            var top = checked((int)((long)row * imageHeight / rows));
+            var bottom = checked((int)((long)(row + 1) * imageHeight / rows));
+            result.Add(new SpriteSheetFrameSlice(
+                result.Count,
+                new IntRect(left, top, right - left, bottom - top)));
+        }
 
         switch (order)
         {
