@@ -69,8 +69,9 @@ public interface IArbitraryRotationStrategy
 
 public static class FloatingContentTransforms
 {
-    public const int Direction16Count = 16;
-    public const double Direction16StepDegrees = 360d / Direction16Count;
+    public const int Direction8Count = 8;
+    public const double Direction8StepDegrees = 360d / Direction8Count;
+    private const int DiagonalSupersample = 4;
 
     public static FloatingContent Place(FloatingContent source, IntPoint position)
     {
@@ -114,52 +115,35 @@ public static class FloatingContentTransforms
             });
     }
 
-    public static int QuantizeDirection16(double degrees)
+    public static int QuantizeDirection8(double degrees)
     {
         if (!double.IsFinite(degrees)) throw new ArgumentOutOfRangeException(nameof(degrees));
         var normalized = NormalizeDegrees(degrees);
         var steps = checked((int)Math.Round(
-            normalized / Direction16StepDegrees,
+            normalized / Direction8StepDegrees,
             MidpointRounding.AwayFromZero));
-        return NormalizeDirection16Index(steps);
+        return NormalizeDirection8Index(steps);
     }
 
-    public static double Direction16Degrees(int directionIndex)
+    public static double Direction8Degrees(int directionIndex)
     {
-        var normalized = NormalizeDirection16Index(directionIndex);
-        var degrees = normalized * Direction16StepDegrees;
+        var normalized = NormalizeDirection8Index(directionIndex);
+        var degrees = normalized * Direction8StepDegrees;
         return degrees > 180d ? degrees - 360d : degrees;
     }
 
-    public static FloatingContent RotateDirection16(FloatingContent source, int directionIndex)
+    public static FloatingContent RotateDirection8(FloatingContent source, int directionIndex)
     {
         ArgumentNullException.ThrowIfNull(source);
-        var normalized = NormalizeDirection16Index(directionIndex);
-        if (normalized == 0) return Place(source, source.Position);
-
-        var radians = normalized * (2d * Math.PI / Direction16Count);
-        var cos = Math.Cos(radians);
-        var sin = Math.Sin(radians);
-
-        // Remove floating-point residue on the four cardinal axes. The other twelve
-        // directions intentionally use the full 22.5-degree trigonometric values.
-        switch (normalized)
+        var normalized = NormalizeDirection8Index(directionIndex);
+        return normalized switch
         {
-            case 4:
-                cos = 0d;
-                sin = 1d;
-                break;
-            case 8:
-                cos = -1d;
-                sin = 0d;
-                break;
-            case 12:
-                cos = 0d;
-                sin = -1d;
-                break;
-        }
-
-        return RotateNearestCore(source, cos, sin);
+            0 => Place(source, source.Position),
+            2 => RotateRightAngleCentered(source, 1),
+            4 => RotateRightAngleCentered(source, 2),
+            6 => RotateRightAngleCentered(source, 3),
+            _ => RotateDiagonalSupersampled(source, normalized),
+        };
     }
 
     public static FloatingContent RotateNearest(FloatingContent source, double degrees)
@@ -175,13 +159,110 @@ public static class FloatingContentTransforms
         return RotateNearestCore(source, Math.Cos(radians), Math.Sin(radians));
     }
 
+    private static FloatingContent RotateRightAngleCentered(FloatingContent source, int quarterTurns)
+    {
+        var turns = ((quarterTurns % 4) + 4) % 4;
+        if (turns == 0) return Place(source, source.Position);
+
+        var rotated = source;
+        for (var index = 0; index < turns; index++)
+            rotated = Rotate90(rotated, QuarterTurn.Clockwise);
+        return PlaceAtSourceCenter(source, rotated);
+    }
+
+    private static FloatingContent RotateDiagonalSupersampled(FloatingContent source, int directionIndex)
+    {
+        var radians = NormalizeDirection8Index(directionIndex) * (2d * Math.PI / Direction8Count);
+        var cos = Math.Cos(radians);
+        var sin = Math.Sin(radians);
+        var targetSize = RotatedPixelExtent(source.Size, cos, sin);
+        var width = targetSize.Width;
+        var height = targetSize.Height;
+        var pixels = new Rgba32[checked(width * height)];
+        var coverage = new byte[pixels.Length];
+
+        var sourceCenterX = (source.Size.Width - 1) * 0.5d;
+        var sourceCenterY = (source.Size.Height - 1) * 0.5d;
+        var targetCenterX = (width - 1) * 0.5d;
+        var targetCenterY = (height - 1) * 0.5d;
+        var sampleCount = DiagonalSupersample * DiagonalSupersample;
+
+        for (var y = 0; y < height; y++)
+        for (var x = 0; x < width; x++)
+        {
+            Span<int> candidateIndices = stackalloc int[sampleCount];
+            Span<int> candidateScores = stackalloc int[sampleCount];
+            Span<byte> candidateCoverages = stackalloc byte[sampleCount];
+            var candidateCount = 0;
+
+            for (var sy = 0; sy < DiagonalSupersample; sy++)
+            for (var sx = 0; sx < DiagonalSupersample; sx++)
+            {
+                var sampleOffsetX = ((sx + 0.5d) / DiagonalSupersample) - 0.5d;
+                var sampleOffsetY = ((sy + 0.5d) / DiagonalSupersample) - 0.5d;
+                var dx = (x + sampleOffsetX) - targetCenterX;
+                var dy = (y + sampleOffsetY) - targetCenterY;
+                var sourceX = (cos * dx) + (sin * dy) + sourceCenterX;
+                var sourceY = (-sin * dx) + (cos * dy) + sourceCenterY;
+                var nearestX = (int)Math.Floor(sourceX + 0.5d);
+                var nearestY = (int)Math.Floor(sourceY + 0.5d);
+                if ((uint)nearestX >= (uint)source.Size.Width || (uint)nearestY >= (uint)source.Size.Height)
+                    continue;
+
+                var sampleCoverage = source.Mask.GetCoverage(nearestX, nearestY);
+                if (sampleCoverage == 0) continue;
+                var sourceIndex = (nearestY * source.Size.Width) + nearestX;
+                var color = source.GetPixel(nearestX, nearestY);
+                var score = sampleCoverage * (32 + color.A);
+
+                var slot = -1;
+                for (var candidateIndex = 0; candidateIndex < candidateCount; candidateIndex++)
+                {
+                    if (candidateIndices[candidateIndex] != sourceIndex) continue;
+                    slot = candidateIndex;
+                    break;
+                }
+                if (slot < 0)
+                {
+                    slot = candidateCount++;
+                    candidateIndices[slot] = sourceIndex;
+                }
+
+                candidateScores[slot] += score;
+                candidateCoverages[slot] = Math.Max(candidateCoverages[slot], sampleCoverage);
+            }
+
+            if (candidateCount == 0) continue;
+            var best = 0;
+            for (var candidateIndex = 1; candidateIndex < candidateCount; candidateIndex++)
+            {
+                if (candidateScores[candidateIndex] > candidateScores[best])
+                    best = candidateIndex;
+            }
+
+            var bestSourceIndex = candidateIndices[best];
+            var bestSourceX = bestSourceIndex % source.Size.Width;
+            var bestSourceY = bestSourceIndex / source.Size.Width;
+            var targetIndex = (y * width) + x;
+            pixels[targetIndex] = source.GetPixel(bestSourceX, bestSourceY);
+            coverage[targetIndex] = source.Mask.Format == SelectionMaskFormat.Bit1
+                ? byte.MaxValue
+                : candidateCoverages[best];
+        }
+
+        var local = new FloatingContent(
+            targetSize,
+            source.Position,
+            pixels,
+            SelectionMask.FromCoverage(targetSize, source.Mask.Format, coverage));
+        return PlaceAtSourceCenter(source, local);
+    }
+
     private static FloatingContent RotateNearestCore(FloatingContent source, double cos, double sin)
     {
-        var width = Math.Max(1, (int)Math.Ceiling(
-            Math.Abs(source.Size.Width * cos) + Math.Abs(source.Size.Height * sin) - 0.000000001d));
-        var height = Math.Max(1, (int)Math.Ceiling(
-            Math.Abs(source.Size.Width * sin) + Math.Abs(source.Size.Height * cos) - 0.000000001d));
-        var targetSize = new IntSize(width, height);
+        var targetSize = RotatedPixelExtent(source.Size, cos, sin);
+        var width = targetSize.Width;
+        var height = targetSize.Height;
         var pixels = new Rgba32[checked(width * height)];
         var coverage = new byte[pixels.Length];
 
@@ -190,8 +271,6 @@ public static class FloatingContentTransforms
         var targetCenterX = (width - 1) * 0.5d;
         var targetCenterY = (height - 1) * 0.5d;
 
-        // Inverse-map every target pixel to its nearest source pixel. Forward mapping
-        // creates holes at 22.5/45/67.5 degrees, which is especially visible in pixel art.
         for (var y = 0; y < height; y++)
         for (var x = 0; x < width; x++)
         {
@@ -208,13 +287,12 @@ public static class FloatingContentTransforms
             coverage[targetIndex] = source.Mask.GetCoverage(nearestX, nearestY);
         }
 
-        var worldCenterX = source.Position.X + sourceCenterX;
-        var worldCenterY = source.Position.Y + sourceCenterY;
-        var position = new IntPoint(
-            checked((int)Math.Round(worldCenterX - targetCenterX, MidpointRounding.AwayFromZero)),
-            checked((int)Math.Round(worldCenterY - targetCenterY, MidpointRounding.AwayFromZero)));
-        var mask = SelectionMask.FromCoverage(targetSize, source.Mask.Format, coverage);
-        return new FloatingContent(targetSize, position, pixels, mask);
+        var local = new FloatingContent(
+            targetSize,
+            source.Position,
+            pixels,
+            SelectionMask.FromCoverage(targetSize, source.Mask.Format, coverage));
+        return PlaceAtSourceCenter(source, local);
     }
 
     public static FloatingContent ScaleNearest(FloatingContent source, IntSize targetSize)
@@ -258,10 +336,31 @@ public static class FloatingContentTransforms
         return new FloatingContent(targetSize, source.Position, pixels, mask);
     }
 
-    private static int NormalizeDirection16Index(int directionIndex)
+    private static FloatingContent PlaceAtSourceCenter(FloatingContent source, FloatingContent target)
     {
-        var result = directionIndex % Direction16Count;
-        return result < 0 ? result + Direction16Count : result;
+        var sourceCenterX = source.Position.X + ((source.Size.Width - 1) * 0.5d);
+        var sourceCenterY = source.Position.Y + ((source.Size.Height - 1) * 0.5d);
+        var targetCenterX = (target.Size.Width - 1) * 0.5d;
+        var targetCenterY = (target.Size.Height - 1) * 0.5d;
+        var position = new IntPoint(
+            checked((int)Math.Round(sourceCenterX - targetCenterX, MidpointRounding.ToEven)),
+            checked((int)Math.Round(sourceCenterY - targetCenterY, MidpointRounding.ToEven)));
+        return Place(target, position);
+    }
+
+    private static IntSize RotatedPixelExtent(IntSize size, double cos, double sin)
+    {
+        var width = Math.Max(1, (int)Math.Ceiling(
+            Math.Abs((size.Width - 1) * cos) + Math.Abs((size.Height - 1) * sin) + 1d - 0.000000001d));
+        var height = Math.Max(1, (int)Math.Ceiling(
+            Math.Abs((size.Width - 1) * sin) + Math.Abs((size.Height - 1) * cos) + 1d - 0.000000001d));
+        return new IntSize(width, height);
+    }
+
+    private static int NormalizeDirection8Index(int directionIndex)
+    {
+        var result = directionIndex % Direction8Count;
+        return result < 0 ? result + Direction8Count : result;
     }
 
     private static double NormalizeDegrees(double degrees)
