@@ -13,19 +13,20 @@ public sealed class FreeTransformTests
     private static readonly Rgba32 Green = new(0, 255, 0, 255);
 
     [Fact]
-    public void Direction16_QuantizesToTwentyTwoPointFiveDegreeSteps()
+    public void Direction8_QuantizesToFortyFiveDegreeSteps()
     {
-        Assert.Equal(0, FloatingContentTransforms.QuantizeDirection16(10d));
-        Assert.Equal(1, FloatingContentTransforms.QuantizeDirection16(12d));
-        Assert.Equal(2, FloatingContentTransforms.QuantizeDirection16(45d));
-        Assert.Equal(8, FloatingContentTransforms.QuantizeDirection16(180d));
-        Assert.Equal(15, FloatingContentTransforms.QuantizeDirection16(-22.5d));
-        Assert.Equal(22.5d, FloatingContentTransforms.Direction16Degrees(1), 6);
-        Assert.Equal(-22.5d, FloatingContentTransforms.Direction16Degrees(15), 6);
+        Assert.Equal(0, FloatingContentTransforms.QuantizeDirection8(20d));
+        Assert.Equal(1, FloatingContentTransforms.QuantizeDirection8(23d));
+        Assert.Equal(1, FloatingContentTransforms.QuantizeDirection8(45d));
+        Assert.Equal(2, FloatingContentTransforms.QuantizeDirection8(90d));
+        Assert.Equal(4, FloatingContentTransforms.QuantizeDirection8(180d));
+        Assert.Equal(7, FloatingContentTransforms.QuantizeDirection8(-45d));
+        Assert.Equal(45d, FloatingContentTransforms.Direction8Degrees(1), 6);
+        Assert.Equal(-45d, FloatingContentTransforms.Direction8Degrees(7), 6);
     }
 
     [Fact]
-    public void RotateDirection16_TwentyTwoPointFiveDegrees_UsesExpandedNearestGrid()
+    public void RotateDirection8_DiagonalUsesCompactSupersampledGridAndKeepsThinPixels()
     {
         var document = PixelDocumentFactory.CreateBlank(5, 5);
         var cel = document.Cels.Single();
@@ -37,19 +38,22 @@ public sealed class FreeTransformTests
             new PixelWrite(2, 2, Red),
             new PixelWrite(2, 3, Red),
             new PixelWrite(2, 4, Red),
+            new PixelWrite(4, 2, Green),
         ]));
         var surface = document.Resources.GetSurface(cel.SurfaceId).Snapshot();
         var selection = SelectionFactory.Rectangle(surface.Size, new IntRect(0, 0, 5, 5));
         var floating = FloatingContent.Capture(surface, selection);
 
-        var rotated = FloatingContentTransforms.RotateDirection16(floating, 1);
+        var rotated = FloatingContentTransforms.RotateDirection8(floating, 1);
+        var output = Enumerable.Range(0, rotated.Size.Height)
+            .SelectMany(y => Enumerable.Range(0, rotated.Size.Width).Select(x => rotated.GetPixel(x, y)))
+            .ToArray();
 
         Assert.Equal(new IntSize(7, 7), rotated.Size);
         Assert.False(rotated.Mask.IsEmpty);
-        Assert.Contains(
-            Enumerable.Range(0, rotated.Size.Height)
-                .SelectMany(y => Enumerable.Range(0, rotated.Size.Width).Select(x => rotated.GetPixel(x, y))),
-            color => color == Red);
+        Assert.Contains(Red, output);
+        Assert.Contains(Green, output);
+        Assert.True(output.Count(color => color.A != 0) >= 6);
     }
 
     [Fact]
@@ -77,7 +81,7 @@ public sealed class FreeTransformTests
     }
 
     [Fact]
-    public void RotateDirection16_QuarterTurn_PreservesPixelOrder()
+    public void RotateDirection8_QuarterTurnUsesExactPixelRemap()
     {
         var document = PixelDocumentFactory.CreateBlank(2, 1);
         var cel = document.Cels.Single();
@@ -91,7 +95,7 @@ public sealed class FreeTransformTests
         var selection = SelectionFactory.Rectangle(surface.Size, new IntRect(0, 0, 2, 1));
         var floating = FloatingContent.Capture(surface, selection);
 
-        var rotated = FloatingContentTransforms.RotateDirection16(floating, 4);
+        var rotated = FloatingContentTransforms.RotateDirection8(floating, 2);
 
         Assert.Equal(new IntSize(1, 2), rotated.Size);
         Assert.Equal(Red, rotated.GetPixel(0, 0));
@@ -99,7 +103,7 @@ public sealed class FreeTransformTests
     }
 
     [Fact]
-    public void RotateNearest_ArbitraryAngle_ExpandsAndKeepsSelectedPixels()
+    public void RotateNearest_ArbitraryAngle_UsesPixelCenterBounds()
     {
         var document = PixelDocumentFactory.CreateBlank(3, 3);
         var cel = document.Cels.Single();
@@ -118,8 +122,7 @@ public sealed class FreeTransformTests
 
         var rotated = FloatingContentTransforms.RotateNearest(floating, 45d);
 
-        Assert.True(rotated.Size.Width > floating.Size.Width);
-        Assert.True(rotated.Size.Height > floating.Size.Height);
+        Assert.Equal(new IntSize(4, 4), rotated.Size);
         Assert.False(rotated.Mask.IsEmpty);
         Assert.Contains(
             Enumerable.Range(0, rotated.Size.Height)
