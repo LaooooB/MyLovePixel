@@ -105,7 +105,7 @@ public sealed partial class MainWindow
 
             case SelectionTransformOperation.Rotate:
                 if (result.RotationDirection != 0)
-                    _selection.RotateDirection16(session, result.RotationDirection);
+                    _selection.RotateDirection8(session, result.RotationDirection);
                 break;
 
             default:
@@ -148,8 +148,8 @@ public sealed partial class MainWindow
             var centerY = start.Y + start.Height * 0.5d;
             var currentAngle = AngleDegrees(e.CanvasX - centerX, e.CanvasY - centerY);
             var rawRotation = NormalizeDegrees(currentAngle - gesture.StartRotationAngle);
-            var direction = FloatingContentTransforms.QuantizeDirection16(rawRotation);
-            var rotation = FloatingContentTransforms.Direction16Degrees(direction);
+            var direction = FloatingContentTransforms.QuantizeDirection8(rawRotation);
+            var rotation = FloatingContentTransforms.Direction8Degrees(direction);
             return new SelectionTransformResult(
                 new SelectionTransformPreview(start.X, start.Y, start.Width, start.Height, rotation),
                 start,
@@ -158,8 +158,6 @@ public sealed partial class MainWindow
                 direction);
         }
 
-        // Scale from the exact original corner plus the real pointer delta. This avoids
-        // the old jump when the user pressed near (rather than exactly on) a large handle.
         var dragX = e.CanvasX - gesture.StartCanvasX;
         var dragY = e.CanvasY - gesture.StartCanvasY;
         var fixedRight = checked(start.X + start.Width);
