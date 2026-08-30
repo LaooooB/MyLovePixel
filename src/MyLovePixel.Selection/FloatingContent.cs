@@ -69,6 +69,9 @@ public interface IArbitraryRotationStrategy
 
 public static class FloatingContentTransforms
 {
+    public const int Direction16Count = 16;
+    public const double Direction16StepDegrees = 360d / Direction16Count;
+
     public static FloatingContent Place(FloatingContent source, IntPoint position)
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -111,6 +114,54 @@ public static class FloatingContentTransforms
             });
     }
 
+    public static int QuantizeDirection16(double degrees)
+    {
+        if (!double.IsFinite(degrees)) throw new ArgumentOutOfRangeException(nameof(degrees));
+        var normalized = NormalizeDegrees(degrees);
+        var steps = checked((int)Math.Round(
+            normalized / Direction16StepDegrees,
+            MidpointRounding.AwayFromZero));
+        return NormalizeDirection16Index(steps);
+    }
+
+    public static double Direction16Degrees(int directionIndex)
+    {
+        var normalized = NormalizeDirection16Index(directionIndex);
+        var degrees = normalized * Direction16StepDegrees;
+        return degrees > 180d ? degrees - 360d : degrees;
+    }
+
+    public static FloatingContent RotateDirection16(FloatingContent source, int directionIndex)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        var normalized = NormalizeDirection16Index(directionIndex);
+        if (normalized == 0) return Place(source, source.Position);
+
+        var radians = normalized * (2d * Math.PI / Direction16Count);
+        var cos = Math.Cos(radians);
+        var sin = Math.Sin(radians);
+
+        // Remove floating-point residue on the four cardinal axes. The other twelve
+        // directions intentionally use the full 22.5-degree trigonometric values.
+        switch (normalized)
+        {
+            case 4:
+                cos = 0d;
+                sin = 1d;
+                break;
+            case 8:
+                cos = -1d;
+                sin = 0d;
+                break;
+            case 12:
+                cos = 0d;
+                sin = -1d;
+                break;
+        }
+
+        return RotateNearestCore(source, cos, sin);
+    }
+
     public static FloatingContent RotateNearest(FloatingContent source, double degrees)
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -121,8 +172,11 @@ public static class FloatingContentTransforms
             return Place(source, source.Position);
 
         var radians = normalized * Math.PI / 180d;
-        var cos = Math.Cos(radians);
-        var sin = Math.Sin(radians);
+        return RotateNearestCore(source, Math.Cos(radians), Math.Sin(radians));
+    }
+
+    private static FloatingContent RotateNearestCore(FloatingContent source, double cos, double sin)
+    {
         var width = Math.Max(1, (int)Math.Ceiling(
             Math.Abs(source.Size.Width * cos) + Math.Abs(source.Size.Height * sin) - 0.000000001d));
         var height = Math.Max(1, (int)Math.Ceiling(
@@ -136,6 +190,8 @@ public static class FloatingContentTransforms
         var targetCenterX = (width - 1) * 0.5d;
         var targetCenterY = (height - 1) * 0.5d;
 
+        // Inverse-map every target pixel to its nearest source pixel. Forward mapping
+        // creates holes at 22.5/45/67.5 degrees, which is especially visible in pixel art.
         for (var y = 0; y < height; y++)
         for (var x = 0; x < width; x++)
         {
@@ -200,6 +256,12 @@ public static class FloatingContentTransforms
 
         var mask = SelectionMask.FromCoverage(targetSize, source.Mask.Format, coverage);
         return new FloatingContent(targetSize, source.Position, pixels, mask);
+    }
+
+    private static int NormalizeDirection16Index(int directionIndex)
+    {
+        var result = directionIndex % Direction16Count;
+        return result < 0 ? result + Direction16Count : result;
     }
 
     private static double NormalizeDegrees(double degrees)

@@ -1,5 +1,6 @@
 using Avalonia.Input;
 using MyLovePixel.Core.Primitives;
+using MyLovePixel.Selection;
 
 namespace MyLovePixel.Desktop;
 
@@ -17,7 +18,7 @@ public sealed partial class MainWindow
         IntRect Bounds,
         int DeltaX,
         int DeltaY,
-        double RotationDegrees);
+        int RotationDirection);
 
     private SelectionTransformGesture? _selectionTransformGesture;
 
@@ -103,8 +104,8 @@ public sealed partial class MainWindow
                 break;
 
             case SelectionTransformOperation.Rotate:
-                if (Math.Abs(result.RotationDegrees) >= 0.000001d)
-                    _selection.Rotate(session, result.RotationDegrees);
+                if (result.RotationDirection != 0)
+                    _selection.RotateDirection16(session, result.RotationDirection);
                 break;
 
             default:
@@ -138,7 +139,7 @@ public sealed partial class MainWindow
                 bounds,
                 dx,
                 dy,
-                0d);
+                0);
         }
 
         if (gesture.Operation == SelectionTransformOperation.Rotate)
@@ -146,23 +147,32 @@ public sealed partial class MainWindow
             var centerX = start.X + start.Width * 0.5d;
             var centerY = start.Y + start.Height * 0.5d;
             var currentAngle = AngleDegrees(e.CanvasX - centerX, e.CanvasY - centerY);
-            var rotation = NormalizeDegrees(currentAngle - gesture.StartRotationAngle);
-            if (shift) rotation = Math.Round(rotation / 15d, MidpointRounding.AwayFromZero) * 15d;
+            var rawRotation = NormalizeDegrees(currentAngle - gesture.StartRotationAngle);
+            var direction = FloatingContentTransforms.QuantizeDirection16(rawRotation);
+            var rotation = FloatingContentTransforms.Direction16Degrees(direction);
             return new SelectionTransformResult(
                 new SelectionTransformPreview(start.X, start.Y, start.Width, start.Height, rotation),
                 start,
                 0,
                 0,
-                rotation);
+                direction);
         }
 
-        var pointerX = RoundPixel(e.CanvasX);
-        var pointerY = RoundPixel(e.CanvasY);
+        // Scale from the exact original corner plus the real pointer delta. This avoids
+        // the old jump when the user pressed near (rather than exactly on) a large handle.
+        var dragX = e.CanvasX - gesture.StartCanvasX;
+        var dragY = e.CanvasY - gesture.StartCanvasY;
         var fixedRight = checked(start.X + start.Width);
         var fixedBottom = checked(start.Y + start.Height);
+        var leftHandle = gesture.Operation is SelectionTransformOperation.ScaleTopLeft or SelectionTransformOperation.ScaleBottomLeft;
+        var topHandle = gesture.Operation is SelectionTransformOperation.ScaleTopLeft or SelectionTransformOperation.ScaleTopRight;
+        var startCornerX = leftHandle ? start.X : fixedRight;
+        var startCornerY = topHandle ? start.Y : fixedBottom;
+        var pointerX = RoundPixel(startCornerX + dragX);
+        var pointerY = RoundPixel(startCornerY + dragY);
+
         int width;
         int height;
-
         switch (gesture.Operation)
         {
             case SelectionTransformOperation.ScaleTopLeft:
@@ -195,19 +205,15 @@ public sealed partial class MainWindow
                 width = Math.Max(1, RoundPixel(start.Width * scaleY));
         }
 
-        var x = gesture.Operation is SelectionTransformOperation.ScaleTopLeft or SelectionTransformOperation.ScaleBottomLeft
-            ? checked(fixedRight - width)
-            : start.X;
-        var y = gesture.Operation is SelectionTransformOperation.ScaleTopLeft or SelectionTransformOperation.ScaleTopRight
-            ? checked(fixedBottom - height)
-            : start.Y;
+        var x = leftHandle ? checked(fixedRight - width) : start.X;
+        var y = topHandle ? checked(fixedBottom - height) : start.Y;
         var target = new IntRect(x, y, width, height);
         return new SelectionTransformResult(
             new SelectionTransformPreview(target.X, target.Y, target.Width, target.Height, 0d),
             target,
             0,
             0,
-            0d);
+            0);
     }
 
     private void CancelSelectionTransformGesture()

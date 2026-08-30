@@ -133,6 +133,19 @@ public sealed class SelectionWorkspaceRuntime
         ApplyFloatingTransform(session, state, surface, transformed, "Scale Selection");
     }
 
+    public void RotateDirection16(DocumentSession session, int directionIndex)
+    {
+        var normalized = FloatingContentTransforms.QuantizeDirection16(
+            FloatingContentTransforms.Direction16Degrees(directionIndex));
+        if (normalized == 0) return;
+
+        var state = Require(session);
+        var surface = session.Document.Resources.GetSurface(state.SurfaceId).Snapshot();
+        var floating = FloatingContent.Capture(surface, state.Mask);
+        var transformed = FloatingContentTransforms.RotateDirection16(floating, normalized);
+        ApplyFloatingTransform(session, state, surface, transformed, "Rotate Selection 16-way");
+    }
+
     public void Rotate(DocumentSession session, double degrees)
     {
         if (!double.IsFinite(degrees)) throw new ArgumentOutOfRangeException(nameof(degrees));
