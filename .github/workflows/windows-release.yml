@@ -62,6 +62,45 @@ jobs:
             -o $publish
           if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed with exit code $LASTEXITCODE" }
 
+      - name: Sign Windows executable when certificate is configured
+        shell: pwsh
+        env:
+          WINDOWS_SIGNING_PFX_BASE64: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
+          WINDOWS_SIGNING_PFX_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PFX_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_PFX_BASE64)) {
+            Write-Host '::warning::No Windows signing certificate is configured. This build remains unsigned and Windows SmartScreen may ask for trust.'
+            exit 0
+          }
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_PFX_PASSWORD)) {
+            throw 'WINDOWS_SIGNING_PFX_PASSWORD is required when WINDOWS_SIGNING_PFX_BASE64 is configured.'
+          }
+
+          $exe = Resolve-Path 'release/MyLovePixel-Windows-x64/MyLovePixel.Desktop.exe'
+          $pfx = Join-Path $env:RUNNER_TEMP 'MyLovePixel-signing.pfx'
+          try {
+            [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_SIGNING_PFX_BASE64))
+            $signTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" -File |
+              Sort-Object FullName -Descending |
+              Select-Object -First 1
+            if ($null -eq $signTool) { throw 'signtool.exe was not found on the runner.' }
+
+            & $signTool.FullName sign `
+              /fd SHA256 `
+              /f $pfx `
+              /p $env:WINDOWS_SIGNING_PFX_PASSWORD `
+              /tr http://timestamp.digicert.com `
+              /td SHA256 `
+              $exe
+            if ($LASTEXITCODE -ne 0) { throw "signtool sign failed with exit code $LASTEXITCODE" }
+
+            & $signTool.FullName verify /pa /v $exe
+            if ($LASTEXITCODE -ne 0) { throw "signtool verify failed with exit code $LASTEXITCODE" }
+          }
+          finally {
+            if (Test-Path $pfx) { Remove-Item $pfx -Force }
+          }
+
       - name: Validate release payload
         shell: pwsh
         run: |
@@ -72,12 +111,19 @@ jobs:
           $exeInfo = Get-Item $exe
           if ($exeInfo.Length -lt 1MB) { throw "MyLovePixel.Desktop.exe is unexpectedly small: $($exeInfo.Length) bytes" }
           $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $signature = Get-AuthenticodeSignature $exe
+          $signatureText = if ($signature.Status -eq 'Valid') {
+            "signed ($($signature.SignerCertificate.Subject))"
+          } else {
+            'unsigned'
+          }
           @(
             "MyLovePixel Windows x64",
             "Commit: $env:GITHUB_SHA",
             "Built: $(Get-Date -Format 'yyyy-MM-ddTHH:mm:ssK')",
             "Runtime: self-contained .NET 10",
-            "Executable: MyLovePixel.Desktop.exe"
+            "Executable: MyLovePixel.Desktop.exe",
+            "Signature: $signatureText"
           ) | Set-Content -Encoding UTF8 (Join-Path $publish 'BUILD.txt')
           "$hash  MyLovePixel.Desktop.exe" | Set-Content -Encoding ASCII (Join-Path $publish 'SHA256SUMS.txt')
           $files = Get-ChildItem $publish -File

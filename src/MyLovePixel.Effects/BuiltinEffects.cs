@@ -262,11 +262,11 @@ public sealed class PaletteMapEffectKernel : IEffectKernel
     {
         instance.TryResolveParameter("sourcePalette", context.FrameId, descriptor, out var sourcePaletteValue);
         instance.TryResolveParameter("targetPalette", context.FrameId, descriptor, out var targetPaletteValue);
-        var sourcePalette = context.Snapshot.GetPalette(sourcePaletteValue.PaletteIdValue);
-        var targetPalette = context.Snapshot.GetPalette(targetPaletteValue.PaletteIdValue);
+        if (!context.Snapshot.Palettes.TryGetValue(sourcePaletteValue.PaletteIdValue, out var sourcePalette) ||
+            !context.Snapshot.Palettes.TryGetValue(targetPaletteValue.PaletteIdValue, out var targetPalette))
+            return source;
         if (targetPalette.Count < sourcePalette.Count)
-            throw new InvalidOperationException(
-                $"Target palette {targetPaletteValue.PaletteIdValue} has {targetPalette.Count} colors, fewer than source palette {sourcePaletteValue.PaletteIdValue} with {sourcePalette.Count} colors.");
+            return source;
 
         var map = new Dictionary<Rgba32, Rgba32>();
         for (var index = 0; index < sourcePalette.Count; index++)

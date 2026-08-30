@@ -100,6 +100,51 @@ public sealed class EffectEngineTests
     }
 
     [Fact]
+    public void PaletteMap_MissingPaletteReferences_PassesThroughWithoutCrashing()
+    {
+        var document = PixelDocumentFactory.CreateBlank(1, 1);
+        var cel = document.Cels.Single();
+        var color = new Rgba32(10, 20, 30, 255);
+        document.Resources.GetSurface(cel.SurfaceId).SetPixel(0, 0, color);
+        var effect = new EffectInstance(EffectInstanceId.New(), BuiltinEffectDescriptors.PaletteMap.TypeId);
+        effect.SetParameter("sourcePalette", EffectValue.PaletteReference(PaletteId.New()), out _);
+        effect.SetParameter("targetPalette", EffectValue.PaletteReference(PaletteId.New()), out _);
+        cel.Effects.Add(effect);
+        var snapshot = DocumentSnapshot.Capture(document);
+
+        var result = EffectEngine.CreateDefault().EvaluateCel(snapshot, cel.FrameId, snapshot.Cels.Single());
+
+        Assert.Equal(color, result.Image.GetPixel(0, 0));
+    }
+
+    [Fact]
+    public void PaletteMap_TargetPaletteTooSmall_PassesThroughWithoutCrashing()
+    {
+        var document = PixelDocumentFactory.CreateBlank(1, 1);
+        var cel = document.Cels.Single();
+        var color = new Rgba32(10, 20, 30, 255);
+        document.Resources.GetSurface(cel.SurfaceId).SetPixel(0, 0, color);
+        var sourcePaletteId = PaletteId.New();
+        var targetPaletteId = PaletteId.New();
+        document.Resources.AddPalette(sourcePaletteId, new Palette([
+            color,
+            new Rgba32(40, 50, 60, 255),
+        ]));
+        document.Resources.AddPalette(targetPaletteId, new Palette([
+            new Rgba32(200, 210, 220, 255),
+        ]));
+        var effect = new EffectInstance(EffectInstanceId.New(), BuiltinEffectDescriptors.PaletteMap.TypeId);
+        effect.SetParameter("sourcePalette", EffectValue.PaletteReference(sourcePaletteId), out _);
+        effect.SetParameter("targetPalette", EffectValue.PaletteReference(targetPaletteId), out _);
+        cel.Effects.Add(effect);
+        var snapshot = DocumentSnapshot.Capture(document);
+
+        var result = EffectEngine.CreateDefault().EvaluateCel(snapshot, cel.FrameId, snapshot.Cels.Single());
+
+        Assert.Equal(color, result.Image.GetPixel(0, 0));
+    }
+
+    [Fact]
     public void UnknownEffect_PassesThroughAndExactSignatureCachesResult()
     {
         var document = PixelDocumentFactory.CreateBlank(1, 1);
