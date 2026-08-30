@@ -22,13 +22,19 @@ namespace MyLovePixel.Application;
 
 public sealed class SelectionWorkspaceRuntime
 {
-    private sealed record State(ResourceId SurfaceId, IntPoint Origin, SelectionMask Mask);
+    private sealed record State(
+        FrameId FrameId,
+        LayerId LayerId,
+        ResourceId SurfaceId,
+        IntPoint Origin,
+        SelectionMask Mask);
+
     private readonly ConditionalWeakTable<DocumentSession, Holder> _states = new();
     private sealed class Holder { public State? Value; }
 
     public SelectionOverlayPresentation? GetOverlay(DocumentSession session)
     {
-        if (!_states.TryGetValue(session, out var holder) || holder.Value is not { } state || state.Mask.IsEmpty) return null;
+        if (!TryGetActiveState(session, out var state) || state.Mask.IsEmpty) return null;
         var b = state.Mask.Bounds;
         var pixels = state.Mask.EnumerateSelected()
             .Select(point => new IntPoint(point.X + state.Origin.X, point.Y + state.Origin.Y))
@@ -47,7 +53,7 @@ public sealed class SelectionWorkspaceRuntime
         var bottom = Math.Max(ay, by) - target.Origin.Y;
         var bounds = new IntRect(left, top, right - left + 1, bottom - top + 1);
         var mask = SelectionFactory.Rectangle(target.Surface.Size, bounds);
-        _states.GetOrCreateValue(session).Value = new State(target.Cel.SurfaceId, target.Origin, mask);
+        SetState(session, target.Cel, target.Origin, mask);
     }
 
     public void SelectEllipse(DocumentSession session, int ax, int ay, int bx, int by)
@@ -58,7 +64,7 @@ public sealed class SelectionWorkspaceRuntime
         var right = Math.Max(ax, bx) - target.Origin.X;
         var bottom = Math.Max(ay, by) - target.Origin.Y;
         var mask = SelectionFactory.Ellipse(target.Surface.Size, new IntRect(left, top, right - left + 1, bottom - top + 1));
-        _states.GetOrCreateValue(session).Value = new State(target.Cel.SurfaceId, target.Origin, mask);
+        SetState(session, target.Cel, target.Origin, mask);
     }
 
     public void SelectLasso(DocumentSession session, IReadOnlyList<IntPoint> canvasVertices)
@@ -68,7 +74,7 @@ public sealed class SelectionWorkspaceRuntime
         var target = Resolve(session);
         var local = canvasVertices.Select(point => new IntPoint(point.X - target.Origin.X, point.Y - target.Origin.Y)).ToArray();
         var mask = SelectionFactory.Lasso(target.Surface.Size, local);
-        _states.GetOrCreateValue(session).Value = new State(target.Cel.SurfaceId, target.Origin, mask);
+        SetState(session, target.Cel, target.Origin, mask);
     }
 
     public void SelectByColor(DocumentSession session, int canvasX, int canvasY)
@@ -79,14 +85,14 @@ public sealed class SelectionWorkspaceRuntime
         if ((uint)x >= (uint)target.Surface.Size.Width || (uint)y >= (uint)target.Surface.Size.Height) return;
         var reference = target.Surface.GetPixel(x, y);
         var mask = SelectionFactory.ByColor(target.Surface, reference);
-        _states.GetOrCreateValue(session).Value = new State(target.Cel.SurfaceId, target.Origin, mask);
+        SetState(session, target.Cel, target.Origin, mask);
     }
 
     public void SelectAll(DocumentSession session)
     {
         var target = Resolve(session);
         var mask = SelectionFactory.Rectangle(target.Surface.Size, new IntRect(0, 0, target.Surface.Size.Width, target.Surface.Size.Height));
-        _states.GetOrCreateValue(session).Value = new State(target.Cel.SurfaceId, target.Origin, mask);
+        SetState(session, target.Cel, target.Origin, mask);
     }
 
     public void Clear(DocumentSession session) => _states.GetOrCreateValue(session).Value = null;
@@ -133,17 +139,17 @@ public sealed class SelectionWorkspaceRuntime
         ApplyFloatingTransform(session, state, surface, transformed, "Scale Selection");
     }
 
-    public void RotateDirection16(DocumentSession session, int directionIndex)
+    public void RotateDirection8(DocumentSession session, int directionIndex)
     {
-        var normalized = FloatingContentTransforms.QuantizeDirection16(
-            FloatingContentTransforms.Direction16Degrees(directionIndex));
+        var normalized = FloatingContentTransforms.QuantizeDirection8(
+            FloatingContentTransforms.Direction8Degrees(directionIndex));
         if (normalized == 0) return;
 
         var state = Require(session);
         var surface = session.Document.Resources.GetSurface(state.SurfaceId).Snapshot();
         var floating = FloatingContent.Capture(surface, state.Mask);
-        var transformed = FloatingContentTransforms.RotateDirection16(floating, normalized);
-        ApplyFloatingTransform(session, state, surface, transformed, "Rotate Selection 16-way");
+        var transformed = FloatingContentTransforms.RotateDirection8(floating, normalized);
+        ApplyFloatingTransform(session, state, surface, transformed, "Rotate Selection 8-way");
     }
 
     public void Rotate(DocumentSession session, double degrees)
@@ -205,9 +211,43 @@ public sealed class SelectionWorkspaceRuntime
         _states.GetOrCreateValue(session).Value = state with { Mask = maskTransform(state.Mask) };
     }
 
-    private State Require(DocumentSession session) => _states.TryGetValue(session, out var holder) && holder.Value is { } state
+    private void SetState(DocumentSession session, CelSnapshot cel, IntPoint origin, SelectionMask mask) =>
+        _states.GetOrCreateValue(session).Value = new State(
+            session.CurrentFrameId,
+            session.CurrentLayerId,
+            cel.SurfaceId,
+            origin,
+            mask);
+
+    private State Require(DocumentSession session) => TryGetActiveState(session, out var state)
         ? state
-        : throw new InvalidOperationException("No selection.");
+        : throw new InvalidOperationException("No selection for the current frame/layer.");
+
+    private bool TryGetActiveState(DocumentSession session, out State state)
+    {
+        state = null!;
+        if (!_states.TryGetValue(session, out var holder) || holder.Value is not { } current)
+            return false;
+
+        if (current.FrameId != session.CurrentFrameId || current.LayerId != session.CurrentLayerId)
+        {
+            holder.Value = null;
+            return false;
+        }
+
+        var snapshot = session.CaptureSnapshot();
+        var cel = snapshot.Cels.FirstOrDefault(value =>
+            value.FrameId == session.CurrentFrameId &&
+            value.LayerId == session.CurrentLayerId);
+        if (cel is null || cel.SurfaceId != current.SurfaceId || cel.Position != current.Origin)
+        {
+            holder.Value = null;
+            return false;
+        }
+
+        state = current;
+        return true;
+    }
 
     private static (CelSnapshot Cel, PixelSurfaceSnapshot Surface, IntPoint Origin) Resolve(DocumentSession session)
     {
