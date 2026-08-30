@@ -186,13 +186,15 @@ public static class FloatingContentTransforms
         var targetCenterX = (width - 1) * 0.5d;
         var targetCenterY = (height - 1) * 0.5d;
         var sampleCount = DiagonalSupersample * DiagonalSupersample;
+        var candidateIndices = new int[sampleCount];
+        var candidateScores = new int[sampleCount];
+        var candidateCoverages = new byte[sampleCount];
 
         for (var y = 0; y < height; y++)
         for (var x = 0; x < width; x++)
         {
-            Span<int> candidateIndices = stackalloc int[sampleCount];
-            Span<int> candidateScores = stackalloc int[sampleCount];
-            Span<byte> candidateCoverages = stackalloc byte[sampleCount];
+            Array.Clear(candidateScores);
+            Array.Clear(candidateCoverages);
             var candidateCount = 0;
 
             for (var sy = 0; sy < DiagonalSupersample; sy++)
