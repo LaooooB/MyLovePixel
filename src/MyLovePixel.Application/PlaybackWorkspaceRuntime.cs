@@ -23,22 +23,50 @@ namespace MyLovePixel.Application;
 public sealed class PlaybackWorkspaceRuntime
 {
     private readonly ConditionalWeakTable<DocumentSession, ClockHolder> _clocks = new();
+    private AnimationLoopMode _loopMode = AnimationLoopMode.Loop;
+
     private sealed class ClockHolder { public AnimationPlaybackClock Clock { get; } = new(); }
 
+    public AnimationLoopMode LoopMode => _loopMode;
+
     public bool IsPlaying(DocumentSession session) => _clocks.TryGetValue(session, out var holder) && holder.Clock.IsConfigured && holder.Clock.IsPlaying;
+
+    public void SetLoopMode(AnimationLoopMode loopMode, DocumentSession? session = null)
+    {
+        if (loopMode is not AnimationLoopMode.Loop and not AnimationLoopMode.PingPong)
+            throw new ArgumentOutOfRangeException(nameof(loopMode), "Timeline playback supports Loop or PingPong mode.");
+
+        _loopMode = loopMode;
+        if (session is null || !_clocks.TryGetValue(session, out var holder) || !holder.Clock.IsConfigured) return;
+
+        var autoplay = holder.Clock.IsPlaying;
+        holder.Clock.Configure(
+            session.CaptureSnapshot(),
+            startFrameId: session.CurrentFrameId,
+            autoplay: autoplay,
+            loopModeOverride: _loopMode);
+    }
 
     public void Toggle(DocumentSession session)
     {
         var clock = _clocks.GetOrCreateValue(session).Clock;
         if (!clock.IsConfigured)
         {
-            clock.Configure(session.CaptureSnapshot(), startFrameId: session.CurrentFrameId, autoplay: true);
+            clock.Configure(
+                session.CaptureSnapshot(),
+                startFrameId: session.CurrentFrameId,
+                autoplay: true,
+                loopModeOverride: _loopMode);
             return;
         }
         if (clock.IsPlaying) clock.Pause();
         else
         {
-            clock.Configure(session.CaptureSnapshot(), startFrameId: session.CurrentFrameId, autoplay: true);
+            clock.Configure(
+                session.CaptureSnapshot(),
+                startFrameId: session.CurrentFrameId,
+                autoplay: true,
+                loopModeOverride: _loopMode);
         }
     }
 
