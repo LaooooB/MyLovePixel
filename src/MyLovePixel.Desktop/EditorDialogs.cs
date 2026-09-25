@@ -117,7 +117,8 @@ public sealed class ColorDialog : Window
 
 public sealed class ExportDialog : Window
 {
-    private readonly ComboBox _layout = new() { ItemsSource = Enum.GetValues<ExportLayout>(), SelectedItem = ExportLayout.SpriteSheet };\n    private readonly TextBox _fileName = new() { Text = "sprite", Watermark = "sprite" };
+    private readonly ComboBox _layout = new() { ItemsSource = Enum.GetValues<ExportLayout>(), SelectedItem = ExportLayout.SpriteSheet };
+    private readonly TextBox _fileName = new() { Text = "sprite", Watermark = "sprite" };
     private readonly CheckBox _trim = new() { IsChecked = false, Content = "Trim transparent edges (metadata-aware pipelines only)" };
     private readonly NumericUpDown _scale = Number(1, 1, 64);
     private readonly NumericUpDown _padding = Number(0, 0, 4096);
@@ -141,7 +142,8 @@ public sealed class ExportDialog : Window
             "PNG output is lossless RGBA8 + sRGB + straight alpha. Fully transparent texels are forced to RGBA(0,0,0,0); checkerboards and preview backgrounds are never baked into assets."));
         root.Children.Add(DialogChrome.Help(
             "Every export also includes sprite metadata plus a .game-import.json file with Unity, Godot and Unreal import guidance."));
-        root.Children.Add(DialogChrome.Labeled("File name", _fileName));\n        root.Children.Add(DialogChrome.Labeled("Layout", _layout));
+        root.Children.Add(DialogChrome.Labeled("File name", _fileName));
+        root.Children.Add(DialogChrome.Labeled("Layout", _layout));
         _layoutNote.Classes.Add("muted");
         root.Children.Add(_layoutNote);
         root.Children.Add(_trim);

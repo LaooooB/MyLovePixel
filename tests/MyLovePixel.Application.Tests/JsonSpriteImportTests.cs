@@ -2,6 +2,7 @@ using MyLovePixel.Application;
 using MyLovePixel.Core.Pixel;
 using MyLovePixel.Core.Primitives;
 using MyLovePixel.Export;
+using Xunit;
 
 namespace MyLovePixel.Application.Tests;
 
