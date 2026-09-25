@@ -125,6 +125,33 @@ public static partial class AdvancedEditingExtensions
         return surface.GetPixel(local.X, local.Y);
     }
 
+    public static void EraseCanvasPixel(this DocumentSession session, int canvasX, int canvasY)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        session.CancelToolInteraction();
+        session.EnsureEditableCel();
+
+        var snapshot = session.CaptureSnapshot();
+        var cel = snapshot.Cels.First(value => value.LayerId == session.CurrentLayerId && value.FrameId == session.CurrentFrameId);
+        var local = new IntPoint(canvasX - cel.Position.X, canvasY - cel.Position.Y);
+        var surface = snapshot.GetSurface(cel.SurfaceId);
+        if ((uint)local.X >= (uint)surface.Size.Width || (uint)local.Y >= (uint)surface.Size.Height) return;
+
+        if (surface.Format != PixelFormat.Rgba32)
+        {
+            session.ConvertCurrentIndexedSurfaceToRgba();
+            snapshot = session.CaptureSnapshot();
+            cel = snapshot.Cels.First(value => value.LayerId == session.CurrentLayerId && value.FrameId == session.CurrentFrameId);
+            surface = snapshot.GetSurface(cel.SurfaceId);
+        }
+
+        if (surface.GetPixel(local.X, local.Y).A == 0) return;
+        session.Execute(new PixelPatchCommand(
+            cel.SurfaceId,
+            [new PixelWrite(local.X, local.Y, Rgba32.Transparent)],
+            "Erase Pixel"));
+    }
+
     public static IReadOnlyList<EffectItemPresentation> GetCurrentEffects(this DocumentSession session)
     {
         ArgumentNullException.ThrowIfNull(session);

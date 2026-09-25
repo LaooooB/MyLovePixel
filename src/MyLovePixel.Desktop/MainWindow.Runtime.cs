@@ -239,16 +239,12 @@ public sealed partial class MainWindow
         QueueRefreshAll();
     }
 
-    private void PickColorFromCanvas(int x, int y)
+    private void ErasePixelFromCanvas(int x, int y)
     {
         var session = Current();
         if (session is null) return;
-        Safe(() =>
-        {
-            var color = session.GetCanvasPixel(x, y);
-            var current = session.GetToolColors();
-            session.SetToolColors(color, current.Secondary);
-        });
+        Safe(() => session.EraseCanvasPixel(x, y));
+        QueueRefreshAll();
     }
 
     private async Task EditColorAsync(bool primary)

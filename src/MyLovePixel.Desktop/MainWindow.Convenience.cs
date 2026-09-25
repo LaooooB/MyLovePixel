@@ -155,7 +155,7 @@ public sealed partial class MainWindow
 
         var expander = new Expander
         {
-            Header = "Palette · 128 colors",
+            Header = "Palette · 512 colors",
             IsExpanded = true,
             Content = body,
         };
@@ -283,17 +283,15 @@ public sealed partial class MainWindow
 
     private static IReadOnlyList<Rgba32> BuildStudioPaletteColors()
     {
-        var colors = new List<Rgba32>(128);
-        var variants = new (double Saturation, double Value)[]
-        {
-            (0.90, 0.38),
-            (0.82, 0.56),
-            (0.78, 0.72),
-            (0.68, 0.84),
-            (0.58, 0.94),
-            (0.42, 0.98),
-            (0.28, 0.92),
-        };
+        var colors = new List<Rgba32>(512);
+        var variants = new List<(double Saturation, double Value)>(31);
+
+        var saturations = new[] { 0.22, 0.38, 0.54, 0.70, 0.86, 1.00 };
+        var values = new[] { 0.30, 0.46, 0.62, 0.78, 0.94 };
+        foreach (var value in values)
+        foreach (var saturation in saturations)
+            variants.Add((saturation, value));
+        variants.Add((0.12, 0.99));
 
         foreach (var variant in variants)
         for (var hueIndex = 0; hueIndex < 16; hueIndex++)
@@ -358,6 +356,7 @@ public sealed partial class MainWindow
                 FitCanvas();
                 e.Handled = true;
                 break;
+            case Key.R:
             case Key.X:
                 SwapColors();
                 e.Handled = true;

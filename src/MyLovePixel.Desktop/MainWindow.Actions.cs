@@ -42,16 +42,36 @@ public sealed partial class MainWindow
         Safe(() => _plugins.Export(session, preset, folders[0].Path.LocalPath));
     }
 
-    private async Task ImportPngAsync()
+    private async Task ImportAssetAsync()
     {
         var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title = "Import PNG",
+            Title = "Import PNG or Sprite JSON",
             AllowMultiple = false,
-            FileTypeFilter = [new FilePickerFileType("PNG") { Patterns = ["*.png"] }],
+            FileTypeFilter =
+            [
+                new FilePickerFileType("Pixel assets") { Patterns = ["*.png", "*.json"] },
+                new FilePickerFileType("PNG") { Patterns = ["*.png"] },
+                new FilePickerFileType("Sprite JSON") { Patterns = ["*.json"] },
+            ],
         });
         if (files.Count == 0) return;
-        Safe(() => _workspace.ImportPng(files[0].Path.LocalPath));
+
+        var path = files[0].Path.LocalPath;
+        Safe(() =>
+        {
+            switch (Path.GetExtension(path).ToLowerInvariant())
+            {
+                case ".json":
+                    _workspace.ImportSpriteMetadata(path);
+                    break;
+                case ".png":
+                    _workspace.ImportPng(path);
+                    break;
+                default:
+                    throw new NotSupportedException("Import supports PNG images and sprite JSON metadata.");
+            }
+        });
         _selectionMode = false;
         RefreshAll();
     }

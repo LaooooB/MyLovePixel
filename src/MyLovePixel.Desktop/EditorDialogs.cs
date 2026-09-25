@@ -117,7 +117,7 @@ public sealed class ColorDialog : Window
 
 public sealed class ExportDialog : Window
 {
-    private readonly ComboBox _layout = new() { ItemsSource = Enum.GetValues<ExportLayout>(), SelectedItem = ExportLayout.SpriteSheet };
+    private readonly ComboBox _layout = new() { ItemsSource = Enum.GetValues<ExportLayout>(), SelectedItem = ExportLayout.SpriteSheet };\n    private readonly TextBox _fileName = new() { Text = "sprite", Watermark = "sprite" };
     private readonly CheckBox _trim = new() { IsChecked = false, Content = "Trim transparent edges (metadata-aware pipelines only)" };
     private readonly NumericUpDown _scale = Number(1, 1, 64);
     private readonly NumericUpDown _padding = Number(0, 0, 4096);
@@ -130,7 +130,7 @@ public sealed class ExportDialog : Window
     {
         Title = "Export Game Assets";
         Width = 470;
-        Height = 560;
+        Height = 610;
         CanResize = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Background = EditorThemeTokens.AppBackground;
@@ -141,7 +141,7 @@ public sealed class ExportDialog : Window
             "PNG output is lossless RGBA8 + sRGB + straight alpha. Fully transparent texels are forced to RGBA(0,0,0,0); checkerboards and preview backgrounds are never baked into assets."));
         root.Children.Add(DialogChrome.Help(
             "Every export also includes sprite metadata plus a .game-import.json file with Unity, Godot and Unreal import guidance."));
-        root.Children.Add(DialogChrome.Labeled("Layout", _layout));
+        root.Children.Add(DialogChrome.Labeled("File name", _fileName));\n        root.Children.Add(DialogChrome.Labeled("Layout", _layout));
         _layoutNote.Classes.Add("muted");
         root.Children.Add(_layoutNote);
         root.Children.Add(_trim);
@@ -174,19 +174,35 @@ public sealed class ExportDialog : Window
         _columns.IsEnabled = layout == ExportLayout.SpriteSheet;
     }
 
-    private ExportPreset Build() => new()
+    private ExportPreset Build()
     {
-        Name = "Game Assets",
-        Layout = _layout.SelectedItem is ExportLayout layout ? layout : ExportLayout.SpriteSheet,
-        Trim = _trim.IsChecked == true,
-        Scale = (int)(_scale.Value ?? 1),
-        Padding = (int)(_padding.Value ?? 0),
-        Extrude = (int)(_extrude.Value ?? 0),
-        SpriteSheetColumns = (int)(_columns.Value ?? 0),
-        PowerOfTwoAtlas = _pot.IsChecked == true,
-        ImageBaseName = "sprite",
-        MetadataFileName = "sprite.json",
-    };
+        var baseName = NormalizeBaseName(_fileName.Text);
+        return new ExportPreset
+        {
+            Name = "Game Assets",
+            Layout = _layout.SelectedItem is ExportLayout layout ? layout : ExportLayout.SpriteSheet,
+            Trim = _trim.IsChecked == true,
+            Scale = (int)(_scale.Value ?? 1),
+            Padding = (int)(_padding.Value ?? 0),
+            Extrude = (int)(_extrude.Value ?? 0),
+            SpriteSheetColumns = (int)(_columns.Value ?? 0),
+            PowerOfTwoAtlas = _pot.IsChecked == true,
+            ImageBaseName = baseName,
+            MetadataFileName = $"{baseName}.json",
+        };
+    }
+
+    private static string NormalizeBaseName(string? text)
+    {
+        var value = (text ?? string.Empty).Trim();
+        if (value.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
+            value.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+            value = Path.GetFileNameWithoutExtension(value);
+
+        var invalid = Path.GetInvalidFileNameChars().ToHashSet();
+        var normalized = new string(value.Select(ch => invalid.Contains(ch) ? '_' : ch).ToArray()).Trim().Trim('.');
+        return string.IsNullOrWhiteSpace(normalized) ? "sprite" : normalized;
+    }
 
     private static NumericUpDown Number(decimal value, decimal min, decimal max) => new()
     {

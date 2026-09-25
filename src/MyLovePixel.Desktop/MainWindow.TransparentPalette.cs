@@ -20,7 +20,7 @@ public sealed partial class MainWindow
 
     private void InstallTransparentPaletteSwatch()
     {
-        if (_transparentPaletteInstalled || _studioPaletteSwatches.Children.Count < 128) return;
+        if (_transparentPaletteInstalled || _studioPaletteSwatches.Children.Count < 512) return;
         _transparentPaletteInstalled = true;
 
         var button = new Button

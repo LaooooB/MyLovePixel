@@ -104,7 +104,7 @@ public sealed partial class MainWindow : Window
         _canvas.PointerInput = DispatchCanvasPointer;
         _canvas.CancelPointerInput = CancelCanvasInteraction;
         _canvas.HoverPixelChanged = value => { _hover = value; RefreshStatus(); };
-        _canvas.SecondaryPickRequested = PickColorFromCanvas;
+        _canvas.SecondaryPickRequested = ErasePixelFromCanvas;
         _canvas.ZoomFactorRequested = ChangeZoom;
 
         Content = BuildShell();
@@ -157,7 +157,7 @@ public sealed partial class MainWindow : Window
         var project = ToolbarGroup("Project",
             TextIconButton("＋", "New", "New project · Ctrl+N", async () => await NewProjectAsync()),
             ActionTextButton(BuiltinActionIds.OpenProject, "⌂", "Open", "Open project · Ctrl+O"),
-            TextIconButton("⇥", "Import", "Import PNG", ImportPngAsync),
+            TextIconButton("⇥", "Import", "Import PNG / JSON", ImportAssetAsync),
             ActionTextButton(BuiltinActionIds.SaveProject, "▣", "Save", "Save project · Ctrl+S", primary: true),
             TextIconButton("⇧", "Save As", "Save As · Ctrl+Shift+S", async () => await InvokeActionAsync(BuiltinActionIds.SaveProjectAs)),
             TextIconButton("⇩", "Export", "Export · Ctrl+E", ExportAsync));
