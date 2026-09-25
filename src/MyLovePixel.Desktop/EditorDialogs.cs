@@ -118,7 +118,7 @@ public sealed class ColorDialog : Window
 public sealed class ExportDialog : Window
 {
     private readonly ComboBox _layout = new() { ItemsSource = Enum.GetValues<ExportLayout>(), SelectedItem = ExportLayout.SpriteSheet };
-    private readonly TextBox _fileName = new() { Text = "sprite", Watermark = "sprite" };
+    private readonly TextBox _fileName = new() { Text = "sprite", PlaceholderText = "sprite" };
     private readonly CheckBox _trim = new() { IsChecked = false, Content = "Trim transparent edges (metadata-aware pipelines only)" };
     private readonly NumericUpDown _scale = Number(1, 1, 64);
     private readonly NumericUpDown _padding = Number(0, 0, 4096);
