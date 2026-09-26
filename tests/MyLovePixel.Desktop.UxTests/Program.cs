@@ -207,7 +207,7 @@ internal static class Program
                 "Button hover background has no fade transition.");
             Check(transitions!.OfType<Avalonia.Animation.BrushTransition>().Any(t => t.Property == Button.BorderBrushProperty),
                 "Button hover border has no fade transition.");
-            var fades = transitions.OfType<Avalonia.Animation.BrushTransition>().ToArray();
+            var fades = transitions!.OfType<Avalonia.Animation.BrushTransition>().ToArray();
             Check(fades.All(t => t.Duration >= TimeSpan.FromMilliseconds(90) && t.Duration <= TimeSpan.FromMilliseconds(240)),
                 "Hover fade timing is outside the short interaction range.");
         });
