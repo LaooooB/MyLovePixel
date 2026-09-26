@@ -1,0 +1,20 @@
+name: UX Source Snapshot
+on:
+  push:
+    branches: [ux-release-p0-p1-20260926]
+    paths: ['.github/workflows/ux-source.yml']
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Archive reviewed source
+        run: |
+          git archive --format=zip HEAD -o /tmp/MyLovePixel-source.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MyLovePixel-source
+          path: /tmp/MyLovePixel-source.zip
+          retention-days: 2
