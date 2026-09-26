@@ -18,18 +18,43 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.400'
-      - name: Source inventory
+      - name: Apply reviewed source edits
         shell: pwsh
         run: |
-          Get-ChildItem src/MyLovePixel.Application,tests/MyLovePixel.Application.Tests -Name
-          Get-ChildItem -Recurse -Filter AGENTS.md | ForEach-Object { $_.FullName; Get-Content $_ }
+          if (Test-Path 'scripts/ux/apply.py') {
+            python scripts/ux/apply.py
+            if ($LASTEXITCODE -ne 0) { throw 'Source patch failed' }
+            git add src tests Directory.Packages.props MyLovePixel.slnx docs
+            git diff --cached --quiet
+            if ($LASTEXITCODE -eq 1) {
+              git -c user.name='MyLovePixel build' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'Apply UX source changes'
+              git push origin HEAD:ux-release-p0-p1-20260926
+              if ($LASTEXITCODE -ne 0) { throw 'Source commit push failed' }
+            }
+          }
+          New-Item -ItemType Directory -Force validation | Out-Null
+          git rev-parse HEAD | Set-Content validation/source-sha.txt
       - name: Build
-        run: dotnet build MyLovePixel.slnx -c Release
+        shell: pwsh
+        run: |
+          dotnet build MyLovePixel.slnx -c Release 2>&1 | Tee-Object validation/build.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
       - name: Tests
-        run: dotnet test MyLovePixel.slnx -c Release --no-build --logger "trx;LogFilePrefix=ux"
-      - name: Test reports
+        shell: pwsh
+        run: |
+          dotnet test MyLovePixel.slnx -c Release --no-build 2>&1 | Tee-Object validation/tests.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Tests failed' }
+      - name: Desktop interaction and layout regression
+        shell: pwsh
+        run: |
+          if (Test-Path 'tests/MyLovePixel.Desktop.UxTests/MyLovePixel.Desktop.UxTests.csproj') {
+            dotnet run --project tests/MyLovePixel.Desktop.UxTests -c Release -- validation 2>&1 | Tee-Object validation/desktop.txt
+            if ($LASTEXITCODE -ne 0) { throw 'Desktop UX regression failed' }
+          }
+      - name: Validation reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ux-test-reports
-          path: '**/TestResults/**'
+          name: ux-validation
+          path: validation
+          if-no-files-found: error
