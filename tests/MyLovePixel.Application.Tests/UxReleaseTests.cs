@@ -33,13 +33,31 @@ public sealed class UxReleaseTests
         var color = new Rgba32(13, 47, 201, 128);
         var session = Painted(color);
         var snapshot = session.CaptureSnapshot();
-        var surface = snapshot.GetSurface(snapshot.Cels.Single().SurfaceId);
+        var id = snapshot.Cels.Single().SurfaceId;
+        var surface = snapshot.GetSurface(id);
         var undo = session.Commands.HistoryDiagnostics;
         var sample = Read(session, 1, 0, true);
         Assert.NotNull(sample);
         Assert.Equal(color, Property<Rgba32>(sample, "Color"));
-        Assert.Equal(surface.Revision, session.CaptureSnapshot().GetSurface(surface.Id).Revision);
+        Assert.Equal(surface.Revision, session.CaptureSnapshot().GetSurface(id).Revision);
         Assert.Equal(undo, session.Commands.HistoryDiagnostics);
+    }
+
+    [Fact]
+    public void Picker_PreservesDuplicateColorIndex()
+    {
+        var session = new EditorWorkspace().NewDocument(2, 1);
+        var paletteId = session.AddDefaultPalette();
+        var color = new Rgba32(14, 27, 81, 255);
+        session.SetPaletteColor(paletteId, 1, color);
+        session.SetPaletteColor(paletteId, 2, color);
+        var id = session.CaptureSnapshot().Cels.Single().SurfaceId;
+        session.Execute(new ReplacePixelSurfaceCommand(id, PixelFormat.Indexed8, paletteId, new byte[] { 1, 2 }, "Fixture"));
+        var sample = Read(session, 1, 0, true);
+        Assert.NotNull(sample);
+        Assert.Equal(color, Property<Rgba32>(sample, "Color"));
+        Assert.Equal((byte)2, Property<byte>(sample, "Index"));
+        Assert.Equal(paletteId, Property<PaletteId>(sample, "PaletteId"));
     }
 
     [Fact]
