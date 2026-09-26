@@ -25,9 +25,10 @@ public sealed class UserPaletteStore
         {
             _colors = ReadColors().AsReadOnly();
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException)
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or JsonException)
         {
-            // Never silently replace a corrupt, newer-version or inaccessible file.
+            // InvalidDataException is not an IOException; malformed preference
+            // data must be handled explicitly, without overwriting the file.
             LoadError = $"Could not load My palette. The original file is unchanged. {error.Message}";
         }
     }

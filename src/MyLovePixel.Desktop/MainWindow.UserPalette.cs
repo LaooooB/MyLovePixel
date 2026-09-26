@@ -78,7 +78,7 @@ public sealed partial class MainWindow
             ToolTip.SetTip(_userPaletteCount, _userPaletteStore.FilePath);
             RefreshUserPalette();
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException)
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException or InvalidOperationException)
         {
             _userPaletteStatus.Text = $"My palette is unavailable: {error.Message}";
             UpdateUserPaletteButtons();
@@ -185,7 +185,7 @@ public sealed partial class MainWindow
                 ? $"Saved {HexColor.Format(color)} on this computer."
                 : $"{HexColor.Format(color)} is already saved; no duplicate was added.");
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException or System.Text.Json.JsonException)
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or InvalidOperationException or System.Text.Json.JsonException)
         {
             _userPaletteStatus.Text = $"Color was not saved: {error.Message}";
             SetError(_userPaletteStatus.Text);
@@ -201,7 +201,7 @@ public sealed partial class MainWindow
             _selectedUserPaletteColor = null;
             RefreshUserPalette($"Removed {HexColor.Format(color)}. The active drawing color is unchanged.");
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException or System.Text.Json.JsonException)
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or InvalidOperationException or System.Text.Json.JsonException)
         {
             _userPaletteStatus.Text = $"Color was not removed: {error.Message}";
             SetError(_userPaletteStatus.Text);
