@@ -36,14 +36,22 @@ jobs:
       - name: Build and test entire solution
         shell: pwsh
         run: |
-          dotnet test MyLovePixel.slnx -c Release --logger 'trx;LogFilePrefix=ux' --results-directory release/test-results
+          New-Item -ItemType Directory -Force release | Out-Null
+          dotnet build MyLovePixel.slnx -c Release 2>&1 | Tee-Object release/build.log
+          if ($LASTEXITCODE -ne 0) { throw 'Solution build failed.' }
+          dotnet test MyLovePixel.slnx -c Release --no-build 2>&1 | Tee-Object release/tests.log
           if ($LASTEXITCODE -ne 0) { throw 'Solution tests failed.' }
+          if (Test-Path tests/MyLovePixel.Desktop.UxTests/MyLovePixel.Desktop.UxTests.csproj) {
+            dotnet run --project tests/MyLovePixel.Desktop.UxTests -c Release 2>&1 | Tee-Object release/ui-tests.log
+            if ($LASTEXITCODE -ne 0) { throw 'Desktop interaction tests failed.' }
+          }
       - name: Record tested source
         shell: pwsh
         run: |
           git config user.name 'MyLovePixel Build'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add src tests scripts Directory.Packages.props MyLovePixel.slnx docs HANDOFF.md
+          git add -u
+          git add src tests docs HANDOFF.md
           git diff --cached --quiet
           if ($LASTEXITCODE -ne 0) {
             git commit -m 'Apply verified UX source changes'
@@ -52,6 +60,7 @@ jobs:
           }
           "SOURCE_SHA=$(git rev-parse HEAD)" >> $env:GITHUB_ENV
       - name: Publish self-contained Windows EXE
+        if: hashFiles('scripts/ux-release-ready') != ''
         shell: pwsh
         run: |
           dotnet publish src/MyLovePixel.Desktop/MyLovePixel.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=None -p:DebugSymbols=false -o release/windows
@@ -61,27 +70,28 @@ jobs:
           "$hash  MyLovePixel.exe" | Set-Content release/SHA256SUMS.txt
           "Source: $env:SOURCE_SHA`nRuntime: self-contained .NET 10, Windows x64`nSignature: unsigned" | Set-Content release/BUILD.txt
       - name: Test packaged Windows application
+        if: hashFiles('scripts/ux-release-ready') != ''
         shell: pwsh
         run: |
-          if (Test-Path scripts/Test-UxRelease.ps1) {
-            & scripts/Test-UxRelease.ps1 -Executable (Resolve-Path release/MyLovePixel.exe) -OutputDirectory (Join-Path $PWD release/smoke)
-          } else {
-            $p = Start-Process (Resolve-Path release/MyLovePixel.exe) -PassThru
-            Start-Sleep -Seconds 6
-            if ($p.HasExited) { throw 'Packaged application exited during startup.' }
-            Stop-Process -Id $p.Id
-          }
+          & scripts/Test-UxRelease.ps1 -Executable (Resolve-Path release/MyLovePixel.exe) -OutputDirectory (Join-Path $PWD release/smoke)
       - name: Archive verified build
+        if: hashFiles('scripts/ux-release-ready') != ''
         shell: pwsh
         run: |
           Compress-Archive -Path release/MyLovePixel.exe,release/BUILD.txt,release/SHA256SUMS.txt -DestinationPath release/MyLovePixel-Windows-x64.zip -Force
       - name: Publish downloadable binaries
+        if: hashFiles('scripts/ux-release-ready') != ''
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = "ux-$($env:SOURCE_SHA.Substring(0,12))"
-          gh release create $tag --target $env:SOURCE_SHA --title "MyLovePixel UX — $($env:SOURCE_SHA.Substring(0,7))" --prerelease --notes 'Windows x64 self-contained UX build. Source and automated test evidence are in this workflow. Unsigned executable.' release/MyLovePixel.exe release/MyLovePixel-Windows-x64.zip release/SHA256SUMS.txt release/BUILD.txt
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --target $env:SOURCE_SHA --title "MyLovePixel UX — $($env:SOURCE_SHA.Substring(0,7))" --prerelease --notes 'Windows x64 self-contained UX build. Source and automated test evidence are in this workflow. Unsigned executable.'
+            if ($LASTEXITCODE -ne 0) { throw 'Could not create release.' }
+          }
+          gh release upload $tag release/MyLovePixel.exe release/MyLovePixel-Windows-x64.zip release/SHA256SUMS.txt release/BUILD.txt --clobber
           if ($LASTEXITCODE -ne 0) { throw 'Could not publish binary assets.' }
       - uses: actions/upload-artifact@v4
         if: always()
