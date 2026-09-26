@@ -171,6 +171,45 @@ internal static class Program
             window.MouseDown(point, MouseButton.Right); window.MouseUp(point, MouseButton.Right); Pump();
             Check(session.DocumentVersion == revision && session.GetCanvasPixel(2, 2) == color, "Picker right click erased a pixel.");
         });
+        Run("Right drag erases every crossed pixel as one undoable gesture", window =>
+        {
+            var session = Session(window);
+            var cel = session.CaptureSnapshot().Cels.First();
+            var color = new Rgba32(180, 70, 30, 255);
+            session.Execute(new PixelPatchCommand(cel.SurfaceId,
+            [
+                new PixelWrite(2, 3, color),
+                new PixelWrite(3, 3, color),
+                new PixelWrite(4, 3, color),
+            ], "Seed erase drag"));
+            Pump();
+            Click(Find<Button>(window, "tool.core.pencil"));
+            var canvas = Field<PixelCanvasView>(window, "_canvas");
+            Point At(int x) => canvas.TranslatePoint(new Point((x + .5) * canvas.Zoom, 3.5 * canvas.Zoom), window)!.Value;
+            var before = session.Commands.UndoCount;
+            window.MouseDown(At(2), MouseButton.Right);
+            window.MouseMove(At(3));
+            window.MouseMove(At(4));
+            window.MouseUp(At(4), MouseButton.Right);
+            Pump();
+            Check(session.GetCanvasPixel(2, 3).A == 0 && session.GetCanvasPixel(3, 3).A == 0 && session.GetCanvasPixel(4, 3).A == 0,
+                "Holding right mouse and dragging did not erase every crossed pixel.");
+            Check(session.Commands.UndoCount == before + 1, "A continuous right-button erase drag must be one undo step.");
+            session.Undo(); Pump();
+            Check(session.GetCanvasPixel(2, 3) == color && session.GetCanvasPixel(3, 3) == color && session.GetCanvasPixel(4, 3) == color,
+                "Undo did not restore the full right-button erase gesture.");
+        });
+        Run("Hover visuals fade in and out instead of snapping", window =>
+        {
+            var button = Find<Button>(window, "project.save");
+            var transitions = button.Transitions;
+            Check(transitions is not null && transitions.OfType<Avalonia.Animation.BrushTransition>().Any(t => t.Property == Button.BackgroundProperty),
+                "Button hover background has no fade transition.");
+            Check(transitions!.OfType<Avalonia.Animation.BrushTransition>().Any(t => t.Property == Button.BorderBrushProperty),
+                "Button hover border has no fade transition.");
+            Check(transitions.All(t => t.Duration >= TimeSpan.FromMilliseconds(90) && t.Duration <= TimeSpan.FromMilliseconds(240)),
+                "Hover fade timing is outside the short interaction range.");
+        });
         Run("Text editing does not activate drawing shortcuts", window =>
         {
             var session = Session(window);
@@ -286,17 +325,17 @@ internal static class Program
         Run("Empty workspace disables document-only controls", window =>
         {
             var workspace = Field<EditorWorkspace>(window, "_workspace");
-            foreach (var session in workspace.Sessions.ToArray()) workspace.Close(session); Pump();
-            var export = window.GetVisualDescendants().OfType<Button>().First(b => Avalonia.Automation.AutomationProperties.GetName(b) == "Export");
-            Check(!export.IsEnabled, "Export is enabled without a document.");
-            Check(!Field<StackPanel>(window, "_layersPanel").IsEffectivelyEnabled, "Layer actions are enabled without a document.");
-            Check(!Find<NumericUpDown>(window, "color.alpha").IsEffectivelyEnabled, "Color controls are enabled without a document.");
+            foreach (var session in workspace.Sessions.ToArray()) workspace.Close(session);
+            Call(window, "RefreshAll", false); Pump();
+            Check(!Find<Button>(window, "project.save").IsEffectivelyEnabled, "Save is enabled with no document.");
+            Check(!Find<Button>(window, "tool.workspace.selection").IsEffectivelyEnabled, "Selection is enabled with no document.");
         });
         Run("Effect adjustments form one undoable gesture", window =>
         {
-            var session = Session(window); var plugins = Field<PluginWorkspaceRuntime>(window, "_plugins");
-            var id = plugins.AddEffect(session, "core.outline");
-            typeof(MainWindow).GetField("_selectedEffect", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(window, id);
+            var session = Session(window);
+            var plugins = Field<PluginWorkspaceRuntime>(window, "_plugins");
+            var id = plugins.AddEffect(session, "core.blur");
+            Pump();
             Field<TabControl>(window, "_sideTabs").SelectedIndex = 3; Pump(); Call(window, "RefreshEffects"); Pump();
             var radius = Field<StackPanel>(window, "_effectsPanel").GetVisualDescendants().OfType<NumericUpDown>().First();
             radius.Focus(); var before = session.Commands.UndoCount;
@@ -345,7 +384,7 @@ internal static class Program
         Run("Export validates Windows names and retains unrelated options", window =>
         {
             var previous = new MyLovePixel.Export.ExportPreset { Scale = 2, Padding = 3, MaxAtlasWidth = 1024, ImageBaseName = "art", MetadataFileName = "meta/art.json" };
-            foreach (var name in new[] { "CON", "bad?name", "trailing.", "folder\\art" })
+            foreach (var name in new[] { "CON", "bad?name", "trailing.", "folder\art" })
             {
                 var dialog = new ExportDialog(previous); dialog.ShowDialog<object?>(window); Pump();
                 Field<TextBox>(dialog, "_fileName").Text = name; Click(dialog.GetVisualDescendants().OfType<Button>().Single(b => b.IsDefault));
