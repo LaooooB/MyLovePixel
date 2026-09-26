@@ -10,11 +10,31 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Archive reviewed source
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.400'
+      - name: Restore offline dependencies
+        run: |
+          dotnet restore MyLovePixel.slnx
+          dotnet restore tests/MyLovePixel.Desktop.UxTests/MyLovePixel.Desktop.UxTests.csproj
+      - name: Archive source and build tools
         run: |
           git archive --format=zip HEAD -o /tmp/MyLovePixel-source.zip
+          mkdir -p /tmp/mlpx-tools/dotnet
+          cp -a /usr/share/dotnet/dotnet /usr/share/dotnet/LICENSE.txt /usr/share/dotnet/ThirdPartyNotices.txt /tmp/mlpx-tools/dotnet/
+          cp -a /usr/share/dotnet/host /usr/share/dotnet/packs /usr/share/dotnet/shared /usr/share/dotnet/templates /tmp/mlpx-tools/dotnet/
+          mkdir -p /tmp/mlpx-tools/dotnet/sdk
+          cp -a /usr/share/dotnet/sdk/10.0.400 /tmp/mlpx-tools/dotnet/sdk/
+          cp -a ~/.nuget/packages /tmp/mlpx-tools/packages
+          tar -czf /tmp/MyLovePixel-toolchain.tar.gz -C /tmp/mlpx-tools .
       - uses: actions/upload-artifact@v4
         with:
           name: MyLovePixel-source
           path: /tmp/MyLovePixel-source.zip
           retention-days: 2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MyLovePixel-toolchain
+          path: /tmp/MyLovePixel-toolchain.tar.gz
+          compression-level: 0
+          retention-days: 1
