@@ -1,0 +1,35 @@
+name: UX Release Validation
+on:
+  workflow_dispatch:
+  push:
+    branches: [ux-release-p0-p1-20260926]
+    paths: ['src/**', 'tests/**', 'scripts/ux/**', '.github/workflows/ux-validation.yml', 'Directory.*.props', 'MyLovePixel.slnx']
+permissions:
+  contents: write
+concurrency:
+  group: ux-validation-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.400'
+      - name: Source inventory
+        shell: pwsh
+        run: |
+          Get-ChildItem src/MyLovePixel.Application,tests/MyLovePixel.Application.Tests -Name
+          Get-ChildItem -Recurse -Filter AGENTS.md | ForEach-Object { $_.FullName; Get-Content $_ }
+      - name: Build
+        run: dotnet build MyLovePixel.slnx -c Release
+      - name: Tests
+        run: dotnet test MyLovePixel.slnx -c Release --no-build --logger "trx;LogFilePrefix=ux"
+      - name: Test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ux-test-reports
+          path: '**/TestResults/**'
