@@ -1,0 +1,91 @@
+name: UX Windows Release
+on:
+  push:
+    branches: [ux-release-20260926]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: ux-release-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply reviewed source edits
+        shell: pwsh
+        run: |
+          if (Test-Path 'scripts/ux-patches') {
+            Get-ChildItem 'scripts/ux-patches/*.py' | Sort-Object Name | ForEach-Object {
+              python $_.FullName
+              if ($LASTEXITCODE -ne 0) { throw "Source edit failed: $($_.Name)" }
+              Remove-Item $_.FullName
+            }
+          }
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.400'
+      - name: Build and test entire solution
+        shell: pwsh
+        run: |
+          dotnet test MyLovePixel.slnx -c Release --logger 'trx;LogFilePrefix=ux' --results-directory release/test-results
+          if ($LASTEXITCODE -ne 0) { throw 'Solution tests failed.' }
+      - name: Record tested source
+        shell: pwsh
+        run: |
+          git config user.name 'MyLovePixel Build'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src tests scripts Directory.Packages.props MyLovePixel.slnx docs HANDOFF.md
+          git diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) {
+            git commit -m 'Apply verified UX source changes'
+            git push origin HEAD:ux-release-20260926
+            if ($LASTEXITCODE -ne 0) { throw 'Could not record tested source.' }
+          }
+          "SOURCE_SHA=$(git rev-parse HEAD)" >> $env:GITHUB_ENV
+      - name: Publish self-contained Windows EXE
+        shell: pwsh
+        run: |
+          dotnet publish src/MyLovePixel.Desktop/MyLovePixel.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=None -p:DebugSymbols=false -o release/windows
+          if ($LASTEXITCODE -ne 0) { throw 'Windows publish failed.' }
+          Copy-Item release/windows/MyLovePixel.Desktop.exe release/MyLovePixel.exe
+          $hash = (Get-FileHash release/MyLovePixel.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  MyLovePixel.exe" | Set-Content release/SHA256SUMS.txt
+          "Source: $env:SOURCE_SHA`nRuntime: self-contained .NET 10, Windows x64`nSignature: unsigned" | Set-Content release/BUILD.txt
+      - name: Test packaged Windows application
+        shell: pwsh
+        run: |
+          if (Test-Path scripts/Test-UxRelease.ps1) {
+            & scripts/Test-UxRelease.ps1 -Executable (Resolve-Path release/MyLovePixel.exe) -OutputDirectory (Join-Path $PWD release/smoke)
+          } else {
+            $p = Start-Process (Resolve-Path release/MyLovePixel.exe) -PassThru
+            Start-Sleep -Seconds 6
+            if ($p.HasExited) { throw 'Packaged application exited during startup.' }
+            Stop-Process -Id $p.Id
+          }
+      - name: Archive verified build
+        shell: pwsh
+        run: |
+          Compress-Archive -Path release/MyLovePixel.exe,release/BUILD.txt,release/SHA256SUMS.txt -DestinationPath release/MyLovePixel-Windows-x64.zip -Force
+      - name: Publish downloadable binaries
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "ux-$($env:SOURCE_SHA.Substring(0,12))"
+          gh release create $tag --target $env:SOURCE_SHA --title "MyLovePixel UX — $($env:SOURCE_SHA.Substring(0,7))" --prerelease --notes 'Windows x64 self-contained UX build. Source and automated test evidence are in this workflow. Unsigned executable.' release/MyLovePixel.exe release/MyLovePixel-Windows-x64.zip release/SHA256SUMS.txt release/BUILD.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Could not publish binary assets.' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: MyLovePixel-UX-evidence
+          path: release/
+          retention-days: 14
