@@ -28,7 +28,6 @@ public sealed class NewProjectDialog : Window
         var root = new StackPanel { Margin = new Thickness(16), Spacing = 10 };
         var heading = new TextBlock { Text = "Canvas size", FontSize = 15, FontWeight = FontWeight.SemiBold };
         root.Children.Add(heading);
-        root.Children.Add(DialogChrome.Help("Choose a preset or enter a custom pixel size."));
 
         var presets = new WrapPanel { ItemHeight = 32 };
         foreach (var size in new[] { 16, 32, 64, 128, 256 })
@@ -45,7 +44,7 @@ public sealed class NewProjectDialog : Window
             () => Close(null),
             () => Close(new CanvasSizeChoice((int)(_width.Value ?? 64), (int)(_height.Value ?? 64))),
             "Create"));
-        Content = root;
+        DialogChrome.SetContent(this, root);
     }
 
     private static NumericUpDown Number(decimal value, decimal min, decimal max) => new()
@@ -89,7 +88,7 @@ public sealed class ColorDialog : Window
         root.Children.Add(DialogChrome.Labeled("Blue", _b));
         root.Children.Add(DialogChrome.Labeled("Alpha", _a));
         root.Children.Add(DialogChrome.ConfirmCancel(() => Close(null), () => Close(Current()), "Apply"));
-        Content = root;
+        DialogChrome.SetContent(this, root);
         RefreshPreview();
     }
 
@@ -119,29 +118,24 @@ public sealed class ExportDialog : Window
 {
     private readonly ComboBox _layout = new() { ItemsSource = Enum.GetValues<ExportLayout>(), SelectedItem = ExportLayout.SpriteSheet };
     private readonly TextBox _fileName = new() { Text = "sprite", PlaceholderText = "sprite" };
-    private readonly CheckBox _trim = new() { IsChecked = false, Content = "Trim transparent edges (metadata-aware pipelines only)" };
+    private readonly CheckBox _trim = new() { IsChecked = false, Content = "Trim transparent edges" };
     private readonly NumericUpDown _scale = Number(1, 1, 64);
     private readonly NumericUpDown _padding = Number(0, 0, 4096);
     private readonly NumericUpDown _extrude = Number(0, 0, 4096);
     private readonly NumericUpDown _columns = Number(0, 0, 4096);
-    private readonly CheckBox _pot = new() { Content = "Power-of-two atlas (streaming / mipmap compatibility)" };
+    private readonly CheckBox _pot = new() { Content = "Power-of-two atlas" };
     private readonly TextBlock _layoutNote = new() { TextWrapping = TextWrapping.Wrap };
 
     public ExportDialog()
     {
-        Title = "Export Game Assets";
-        Width = 470;
-        Height = 610;
+        Title = "Export";
+        Width = 430;
+        Height = 520;
         CanResize = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Background = EditorThemeTokens.AppBackground;
 
         var root = new StackPanel { Margin = new Thickness(16), Spacing = 9 };
-        root.Children.Add(new TextBlock { Text = "Game-ready export", FontSize = 15, FontWeight = FontWeight.SemiBold });
-        root.Children.Add(DialogChrome.Help(
-            "PNG output is lossless RGBA8 + sRGB + straight alpha. Fully transparent texels are forced to RGBA(0,0,0,0); checkerboards and preview backgrounds are never baked into assets."));
-        root.Children.Add(DialogChrome.Help(
-            "Every export also includes sprite metadata plus a .game-import.json file with Unity, Godot and Unreal import guidance."));
         root.Children.Add(DialogChrome.Labeled("File name", _fileName));
         root.Children.Add(DialogChrome.Labeled("Layout", _layout));
         _layoutNote.Classes.Add("muted");
@@ -153,7 +147,7 @@ public sealed class ExportDialog : Window
         root.Children.Add(DialogChrome.Labeled("Sheet columns", _columns));
         root.Children.Add(_pot);
         root.Children.Add(DialogChrome.ConfirmCancel(() => Close(null), () => Close(Build()), "Export"));
-        Content = root;
+        DialogChrome.SetContent(this, root);
 
         _layout.SelectionChanged += (_, _) => RefreshLayoutGuidance();
         RefreshLayoutGuidance();
@@ -165,11 +159,11 @@ public sealed class ExportDialog : Window
         _layoutNote.Text = layout switch
         {
             ExportLayout.SeparateFrames =>
-                "Safest drag-and-drop format. Each frame is an independent transparent PNG; sprite.json keeps animation/gameplay metadata.",
+                "One transparent PNG per frame.",
             ExportLayout.SpriteSheet =>
-                "Engine-safe grid by default: Trim is off so frame alignment stays stable for native Unity/Godot sprite slicing. Keep Trim off unless your importer consumes sprite.json sourceRect/sourceSize.",
+                "Keep Trim off for regular grid slicing.",
             ExportLayout.Atlas =>
-                "Packed runtime atlas. Trim is useful here because sprite.json carries exact source rects, pivots, hitboxes, sockets and events. Use Padding/Extrude when filtered atlas sampling needs edge guards.",
+                "Packed atlas. Use the exported JSON to preserve trimmed frame positions.",
             _ => string.Empty,
         };
         _pot.IsEnabled = layout == ExportLayout.Atlas;
@@ -281,7 +275,7 @@ public sealed class AnimationRangeDialog : Window
                     loop));
             },
             "Apply"));
-        Content = root;
+        DialogChrome.SetContent(this, root);
     }
 
     private static NumericUpDown Number(decimal value, decimal min, decimal max) => new()
@@ -372,7 +366,7 @@ public sealed class SpriteSliceDialog : Window
                     insets));
             },
             "Apply"));
-        Content = root;
+        DialogChrome.SetContent(this, root);
     }
 
     private static NumericUpDown Number(decimal value, decimal min, decimal max) => new()

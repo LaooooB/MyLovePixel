@@ -28,12 +28,14 @@ public sealed partial class MainWindow
         _canvas.SamplingRequested = () => _eyedropperMode || _altHeld;
         _canvas.PanningRequested = () => _spaceHeld;
         _canvas.PixelSampleRequested = PickCanvasColor;
-        _canvas.PanDeltaRequested = delta => _canvasScroll.Offset -= delta;
+        _canvas.PanDeltaRequested = delta => { _navigationVersion++; _canvasScroll.Offset -= delta; };
+        InstallWorkspacePanning();
         _canvas.ZoomAtRequested = ChangeZoomAt;
         KeyUp += OnUxKeyUp;
         Deactivated += (_, _) =>
         {
             _altHeld = _spaceHeld = false;
+            CancelWorkspacePanning();
             _canvas.CancelActivePointer();
             CancelSelectionTransformGesture();
             UpdateCanvasCursor();
@@ -68,12 +70,13 @@ public sealed partial class MainWindow
         var tip = shortcut is null ? name : $"{name} · {shortcut}";
         var button = TextIconButton(glyph, name, tip, () => SelectQuickTool(id));
         button.HorizontalAlignment = HorizontalAlignment.Stretch;
-        button.HorizontalContentAlignment = HorizontalAlignment.Left;
+        button.HorizontalContentAlignment = HorizontalAlignment.Stretch;
         button.Padding = new Thickness(7, 6);
         button.MinHeight = 36;
-        if (shortcut is not null && button.Content is StackPanel content)
+        if (shortcut is not null && button.Content is Control content)
         {
             var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 4 };
+            button.Content = null;
             row.Children.Add(content);
             row.Children.Add(Place(new TextBlock { Text = shortcut, Foreground = EditorThemeTokens.TextSecondary, FontSize = 11, VerticalAlignment = VerticalAlignment.Center }, 1));
             button.Content = row;
@@ -108,7 +111,7 @@ public sealed partial class MainWindow
     {
         var session = Current();
         var active = session is null ? "none" : _plugins.GetTools(session).FirstOrDefault(t => t.IsActive)?.Id;
-        var signature = $"{session?.SessionId}:{session?.CurrentLayerId}:{_eyedropperMode}:{_selectionMode}:{_selectionGesture}:{active}";
+        var signature = $"{session?.GetHashCode()}:{session?.CurrentLayerId}:{session?.CurrentFrameId}:{session?.HasEditableCel}:{_eyedropperMode}:{_selectionMode}:{_selectionGesture}:{active}";
         if (_optionsSignature == signature) return true;
         _optionsSignature = signature;
         if (!_eyedropperMode) return false;
@@ -274,6 +277,7 @@ public sealed partial class MainWindow
         session.SetZoom(oldZoom * factor);
         RefreshCanvas(updatePreview: false);
         UpdateLayout();
+        _navigationVersion++;
         if (anchor is { } before && _canvas.TranslatePoint(pixel * session.Zoom, _canvasScroll) is { } after)
             _canvasScroll.Offset += after - before;
         RefreshStatus();
@@ -290,6 +294,7 @@ public sealed partial class MainWindow
         session.SetZoom(Math.Clamp(zoom, 0.125d, 128d));
         RefreshCanvas(updatePreview: false);
         UpdateLayout();
+        _navigationVersion++;
         _canvasScroll.Offset = new Vector(Math.Max(0, (_canvasScroll.Extent.Width - _canvasScroll.Viewport.Width) / 2), Math.Max(0, (_canvasScroll.Extent.Height - _canvasScroll.Viewport.Height) / 2));
         RefreshStatus();
     }

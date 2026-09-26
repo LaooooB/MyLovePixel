@@ -39,7 +39,7 @@ public readonly record struct SelectionTransformPreview(
     double Height,
     double RotationDegrees);
 
-public sealed class PixelCanvasView : Control
+public sealed partial class PixelCanvasView : Control
 {
     private const double TransformHandleRadius = 7d;
     private const double RotateHandleRadius = 8d;
@@ -57,33 +57,6 @@ public sealed class PixelCanvasView : Control
     private SelectionTransformPreview? _selectionTransformPreview;
     private bool _releasingCapture;
 
-    public PixelCanvasView()
-    {
-        ClipToBounds = true;
-        Focusable = true;
-        PointerCaptureLost += (_, _) =>
-        {
-            if (_releasingCapture) return;
-            if (_activeSelectionTransform is { } operation)
-            {
-                _activeSelectionTransform = null;
-                SelectionTransformInput?.Invoke(new SelectionTransformPointerEvent(
-                    operation,
-                    SelectionTransformPhase.Canceled,
-                    0d,
-                    0d,
-                    KeyModifiers.None));
-                return;
-            }
-            CancelPointerInput?.Invoke();
-        };
-        PointerExited += (_, _) =>
-        {
-            _hoveredPixel = null;
-            HoverPixelChanged?.Invoke(null);
-            InvalidateVisual();
-        };
-    }
 
     public Action<EditorPointerEvent>? PointerInput { get; set; }
     public Action<SelectionTransformPointerEvent>? SelectionTransformInput { get; set; }
@@ -135,129 +108,10 @@ public sealed class PixelCanvasView : Control
         InvalidateVisual();
     }
 
-    public override void Render(DrawingContext context)
-    {
-        base.Render(context);
-        var presentation = _presentation;
-        if (presentation is null) return;
 
-        var bytes = presentation.Rgba.Span;
-        for (var y = 0; y < presentation.Size.Height; y++)
-        for (var x = 0; x < presentation.Size.Width; x++)
-        {
-            var offset = ((y * presentation.Size.Width) + x) * 4;
-            DrawPixel(context, x, y, bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]);
-        }
 
-        foreach (var preview in presentation.PreviewPixels)
-            DrawPixel(context, preview.Point.X, preview.Point.Y, preview.Color.R, preview.Color.G, preview.Color.B, preview.Color.A);
 
-        if (_grid && _zoom >= 8d)
-        {
-            var pen = new Pen(EditorThemeTokens.GridLine, 1d);
-            for (var x = 1; x < presentation.Size.Width; x++)
-                context.DrawLine(pen, new Point(x * _zoom, 0), new Point(x * _zoom, presentation.Size.Height * _zoom));
-            for (var y = 1; y < presentation.Size.Height; y++)
-                context.DrawLine(pen, new Point(0, y * _zoom), new Point(presentation.Size.Width * _zoom, y * _zoom));
-        }
 
-        if (_selection is { } selection)
-            DrawSelection(context, selection);
-
-        if (presentation.DirtyRegions.Count != 0)
-        {
-            var pen = new Pen(EditorThemeTokens.DirtyRegionOutline, 1d);
-            foreach (var region in presentation.DirtyRegions)
-            {
-                var rect = new Rect(region.X * _zoom, region.Y * _zoom, region.Width * _zoom, region.Height * _zoom);
-                context.DrawRectangle(null, pen, rect);
-            }
-        }
-
-        if (_hoveredPixel is { } hover &&
-            (uint)hover.X < (uint)presentation.Size.Width &&
-            (uint)hover.Y < (uint)presentation.Size.Height)
-        {
-            var rect = new Rect(hover.X * _zoom, hover.Y * _zoom, _zoom, _zoom);
-            context.FillRectangle(EditorThemeTokens.HoverCell, rect);
-            context.DrawRectangle(null, new Pen(EditorThemeTokens.HoverCellOutline, Math.Min(2d, Math.Max(1d, _zoom / 8d))), rect);
-        }
-
-        context.DrawRectangle(null, new Pen(EditorThemeTokens.StrongBorder, 1d), new Rect(0, 0, presentation.Size.Width * _zoom, presentation.Size.Height * _zoom));
-    }
-
-    protected override void OnPointerPressed(PointerPressedEventArgs e)
-    {
-        base.OnPointerPressed(e);
-        if (_presentation is null) return;
-        Focus();
-        UpdateHover(e);
-        var point = e.GetCurrentPoint(this);
-        if (point.Properties.IsRightButtonPressed && _hoveredPixel is { } hover)
-        {
-            SecondaryPickRequested?.Invoke(hover.X, hover.Y);
-            e.Handled = true;
-            return;
-        }
-
-        if (point.Properties.IsLeftButtonPressed && TryBeginSelectionTransform(e))
-        {
-            e.Pointer.Capture(this);
-            e.Handled = true;
-            return;
-        }
-
-        e.Pointer.Capture(this);
-        DispatchPointer(e, EditorPointerKind.Pressed);
-        e.Handled = true;
-    }
-
-    protected override void OnPointerMoved(PointerEventArgs e)
-    {
-        base.OnPointerMoved(e);
-        if (_presentation is null) return;
-        UpdateHover(e);
-        if (!ReferenceEquals(e.Pointer.Captured, this)) return;
-
-        if (_activeSelectionTransform is { } operation)
-        {
-            DispatchSelectionTransform(e, operation, SelectionTransformPhase.Moved);
-            e.Handled = true;
-            return;
-        }
-
-        DispatchPointer(e, EditorPointerKind.Moved);
-        e.Handled = true;
-    }
-
-    protected override void OnPointerReleased(PointerReleasedEventArgs e)
-    {
-        base.OnPointerReleased(e);
-        if (_presentation is null) return;
-        UpdateHover(e);
-        if (!ReferenceEquals(e.Pointer.Captured, this)) return;
-
-        if (_activeSelectionTransform is { } operation)
-        {
-            DispatchSelectionTransform(e, operation, SelectionTransformPhase.Released);
-            _activeSelectionTransform = null;
-            ReleaseCapture(e.Pointer);
-            e.Handled = true;
-            return;
-        }
-
-        DispatchPointer(e, EditorPointerKind.Released);
-        ReleaseCapture(e.Pointer);
-        e.Handled = true;
-    }
-
-    protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
-    {
-        base.OnPointerWheelChanged(e);
-        if ((e.KeyModifiers & KeyModifiers.Control) == 0) return;
-        ZoomFactorRequested?.Invoke(e.Delta.Y > 0 ? 1.25d : 0.8d);
-        e.Handled = true;
-    }
 
     private void DrawSelection(DrawingContext context, SelectionOverlayPresentation selection)
     {

@@ -104,28 +104,22 @@ public sealed partial class MainWindow
 
     private static Button BuildTextIconButton(string glyph, string label, string tip)
     {
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
-        if (string.Equals(label, "Eyedropper", StringComparison.Ordinal))
-        {
-            row.Children.Add(new ShapePath
-            {
-                Data = Geometry.Parse("M10 2L14 6M9 3L13 7M11 5L5 11L2 12L3 9L9 3M11 5L14 2"),
-                Width = 16, Height = 16, Stretch = Stretch.Uniform,
-                Stroke = EditorThemeTokens.TextPrimary, StrokeThickness = 1.5,
-            });
-        }
-        else if (UiIconSemantics.TryCreate(tip, glyph, 16, out var semantic)) row.Children.Add(semantic);
-        else if (UiIcons.TryResolve(tip, glyph, out var kind)) row.Children.Add(UiIcons.Create(kind, 16));
-        row.Children.Add(new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap });
+        Control? icon = null;
+        if (label == "Eyedropper")
+            icon = new ShapePath { Data = Geometry.Parse("M10 2L14 6M9 3L13 7M11 5L5 11L2 12L3 9L9 3M11 5L14 2"), Width = 16, Height = 16, Stretch = Stretch.Uniform, Stroke = EditorThemeTokens.TextPrimary, StrokeThickness = 1.5 };
+        else if (UiIconSemantics.TryCreate(tip, glyph, 16, out var semantic)) icon = semantic;
+        else if (UiIcons.TryResolve(tip, glyph, out var kind)) icon = UiIcons.Create(kind, 16);
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions(icon is null ? "*" : "Auto,*"), ColumnSpacing = icon is null ? 0 : 6 };
+        if (icon is not null) { icon.VerticalAlignment = VerticalAlignment.Center; row.Children.Add(icon); }
+        var text = new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap };
+        Grid.SetColumn(text, icon is null ? 0 : 1); row.Children.Add(text);
         var button = new Button { Content = row };
         button.Classes.Add("text-icon");
         AutomationProperties.SetName(button, label);
-        if (!string.Equals(label, tip, StringComparison.Ordinal))
+        if (label != tip)
         {
             AutomationProperties.SetHelpText(button, tip);
-            ToolTip.SetTip(button, tip);
-            ToolTip.SetPlacement(button, PlacementMode.Bottom);
-            ToolTip.SetShowDelay(button, 650);
+            ToolTip.SetTip(button, tip); ToolTip.SetPlacement(button, PlacementMode.Bottom); ToolTip.SetShowDelay(button, 650);
         }
         return button;
     }
@@ -135,18 +129,19 @@ public sealed partial class MainWindow
 
     private static Button ToggleTextButton(string glyph, string label, string tip, Func<bool> get, Action<bool> set)
     {
-        var button = new ToggleButton { Content = label, IsChecked = get() };
-        AutomationProperties.SetName(button, label);
-        ToolTip.SetTip(button, tip);
-        ToolTip.SetPlacement(button, PlacementMode.Bottom);
-        button.Click += (_, _) =>
+        var button = new ToggleButton { IsChecked = get(), Padding = new Thickness(8, 5), MinHeight = 32, CornerRadius = EditorThemeTokens.ControlRadius, BorderThickness = new Thickness(1) };
+        void Sync()
         {
-            (TopLevel.GetTopLevel(button) as MainWindow)?.FinishParameterEdit();
-            set(button.IsChecked == true);
-            SetSelected(button, get());
-        };
-        SetSelected(button, get());
-        return button;
+            var enabled = get(); button.IsChecked = enabled;
+            button.Content = label + (enabled ? ": On" : ": Off");
+            button.Background = enabled ? EditorThemeTokens.SurfaceSelected : EditorThemeTokens.SurfaceRaised;
+            button.BorderBrush = enabled ? EditorThemeTokens.Accent : EditorThemeTokens.PanelBorder;
+            button.Foreground = enabled ? EditorThemeTokens.Accent : EditorThemeTokens.TextPrimary;
+            AutomationProperties.SetName(button, label + (enabled ? ", on" : ", off"));
+        }
+        ToolTip.SetTip(button, tip); ToolTip.SetPlacement(button, PlacementMode.Bottom);
+        button.Click += (_, _) => { (TopLevel.GetTopLevel(button) as MainWindow)?.FinishParameterEdit(); set(button.IsChecked == true); Sync(); };
+        Sync(); return button;
     }
 
     private static WrapPanel Icons(params Control[] controls)
@@ -190,7 +185,12 @@ public sealed partial class MainWindow
     }
 
     private static TabItem TextTab(string title, Control content) => new() { Header = title, Content = content };
-    private static Expander Expander(string header, Control content) => new() { Header = header, Content = content, IsExpanded = false, HorizontalContentAlignment = HorizontalAlignment.Stretch };
+    private static Expander Expander(string header, Control content)
+    {
+        var expander = new Expander { Header = header, Content = content, IsExpanded = false, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch };
+        expander.Expanded += (_, _) => (TopLevel.GetTopLevel(expander) as MainWindow)?.QueueRefreshAll();
+        return expander;
+    }
     private static NumericUpDown Number(decimal value, decimal min, decimal max) => new() { Value = value, Minimum = min, Maximum = max, Increment = 1, FormatString = "0", MinWidth = 54 };
     private static Border Swatch() => new() { Width = 26, Height = 26, BorderBrush = EditorThemeTokens.StrongBorder, BorderThickness = new Thickness(1), Child = new ColorSwatchView() };
     private static IBrush Brush(Rgba32 c) => new SolidColorBrush(Color.FromArgb(c.A, c.R, c.G, c.B));

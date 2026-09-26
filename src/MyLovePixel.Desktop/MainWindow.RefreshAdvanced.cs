@@ -22,49 +22,31 @@ public sealed partial class MainWindow
     private void RefreshEffects()
     {
         _effectsPanel.Children.Clear();
-        var session = Current();
-        if (session is null) return;
-
-        AddPanelLabel(_effectsPanel, "Effect stack");
+        var session = Current(); if (session is null) return;
         var add = new ComboBox { ItemsSource = _plugins.GetEffectTypes(), SelectedIndex = 0 };
-        _effectsPanel.Children.Add(new Grid
-        {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
-            ColumnSpacing = 6,
-            Children =
-            {
-                add,
-                Place(TextIconButton("＋", "Add", "Add effect", () =>
-                {
-                    if (add.SelectedItem is string type) Safe(() => _selectedEffect = _plugins.AddEffect(session, type));
-                }), 1),
-            },
-        });
-
+        _effectsPanel.Children.Add(new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 5, Children = { add, Place(TextIconButton("＋", "Add", "Add effect to current layer / frame", () => { if (add.SelectedItem is string type) _selectedEffect = _plugins.AddEffect(session, type); }), 1) } });
         var effects = _plugins.GetEffects(session);
-        if (_selectedEffect is { } selected && effects.All(v => v.Id != selected)) _selectedEffect = null;
+        if (_selectedEffect is { } previous && effects.All(v => v.Id != previous)) _selectedEffect = null;
         foreach (var effect in effects)
         {
-            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("30,*,30,30,30"), ColumnSpacing = 4 };
-            row.Children.Add(SmallIcon(effect.Enabled ? "●" : "○", effect.Enabled ? "Disable effect" : "Enable effect", () => session.SetEffectEnabled(effect.Id, !effect.Enabled)));
-            var choose = new Button { Content = effect.DisplayName, HorizontalContentAlignment = HorizontalAlignment.Left };
-            if (_selectedEffect == effect.Id) choose.Classes.Add("selected");
-            choose.Click += (_, _) => { _selectedEffect = effect.Id; RefreshEffects(); };
-            Grid.SetColumn(choose, 1);
-            row.Children.Add(choose);
-            row.Children.Add(Place(SmallIcon("↑", "Move effect up", () => session.MoveEffect(effect.Id, -1)), 2));
-            row.Children.Add(Place(SmallIcon("↓", "Move effect down", () => session.MoveEffect(effect.Id, 1)), 3));
-            row.Children.Add(Place(SmallIcon("×", "Remove effect", () => session.RemoveEffect(effect.Id)), 4));
-            _effectsPanel.Children.Add(row);
+            var item = new StackPanel { Spacing = 4 };
+            var choose = new Button { Content = effect.DisplayName, HorizontalContentAlignment = HorizontalAlignment.Left, HorizontalAlignment = HorizontalAlignment.Stretch };
+            SetSelected(choose, _selectedEffect == effect.Id);
+            choose.Click += (_, _) => { FinishParameterEdit(); _selectedEffect = effect.Id; RefreshEffects(); };
+            item.Children.Add(choose);
+            item.Children.Add(Icons(
+                ToggleTextButton("", "Enabled", "Enable this effect", () => effect.Enabled, value => { session.SetEffectEnabled(effect.Id, value); RefreshEffects(); }),
+                TextIconButton("↑", "Up", "Move effect up", () => session.MoveEffect(effect.Id, -1)),
+                TextIconButton("↓", "Down", "Move effect down", () => session.MoveEffect(effect.Id, 1)),
+                TextIconButton("×", "Delete", "Delete effect", () => session.RemoveEffect(effect.Id))));
+            _effectsPanel.Children.Add(item);
         }
-
         if (_selectedEffect is { } id)
         {
-            AddPanelLabel(_effectsPanel, "Selected effect parameters");
-            foreach (var parameter in _plugins.GetEffectParameters(session, id))
-                _effectsPanel.Children.Add(BuildEffectParameter(session, id, parameter));
-            _effectsPanel.Children.Add(TextIconButton("", "Bake Effects", "Bake effects into the current image", () => Safe(() => _plugins.BakeEffects(session))));
+            foreach (var parameter in _plugins.GetEffectParameters(session, id)) _effectsPanel.Children.Add(BuildEffectParameter(session, id, parameter));
+            _effectsPanel.Children.Add(TextIconButton("", "Bake into Current Frame", "Bake the effect stack into current layer / frame · Undo available", () => _plugins.BakeEffects(session)));
         }
+        _effectsPanel.IsEnabled = !session.GetLayers().Any(layer => layer.IsCurrent && layer.Locked);
     }
 
     private Control BuildEffectParameter(DocumentSession session, EffectInstanceId id, EffectParameterPresentation parameter)
@@ -98,8 +80,10 @@ public sealed partial class MainWindow
                 var x = Number(parameter.Value.PointValue.X, -4096, 4096);
                 var y = Number(parameter.Value.PointValue.Y, -4096, 4096);
                 void Set() => _plugins.SetEffectParameter(session, id, parameter.Key, EffectValue.Point(new IntPoint((int)(x.Value ?? 0), (int)(y.Value ?? 0))));
-                x.ValueChanged += (_, _) => Safe(Set);
-                y.ValueChanged += (_, _) => Safe(Set);
+                x.ValueChanged += (_, _) => UpdateParameter(session, x, parameter.DisplayName, Set);
+                WireParameterCompletion(x);
+                y.ValueChanged += (_, _) => UpdateParameter(session, y, parameter.DisplayName, Set);
+                WireParameterCompletion(y);
                 editor = Icons(x, y);
                 break;
             }
@@ -148,7 +132,7 @@ public sealed partial class MainWindow
             });
             RefreshEffects();
         });
-        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,30"), ColumnSpacing = 4 };
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 4 };
         row.Children.Add(editor);
         row.Children.Add(Place(key, 1));
         return Labeled(parameter.DisplayName, row);
@@ -190,7 +174,7 @@ public sealed partial class MainWindow
         AddPanelLabel(_tilesPanel, "Tiles");
         var tiles = session.GetTiles(tilesetId, _selectedTile);
         if (_selectedTile is null && tiles.Count > 0) _selectedTile = tiles[0].Id;
-        var tileWrap = new WrapPanel { ItemWidth = 38, ItemHeight = 34 };
+        var tileWrap = new WrapPanel();
         foreach (var tile in tiles.Select((value, index) => (value, index)))
         {
             var b = new Button { Content = tile.index.ToString(), MinWidth = 34, Height = 30, Padding = new Thickness(5, 2) };

@@ -32,7 +32,7 @@ public sealed class QuantizeDialog : Window
             () => Close(null),
             () => Close(new QuantizeDialogResult((int)(max.Value ?? 16), transparent.IsChecked == true)),
             "Quantize"));
-        Content = root;
+        DialogChrome.SetContent(this, root);
     }
 
     private static NumericUpDown Number(decimal value, decimal min, decimal max) => new()
@@ -78,7 +78,7 @@ public sealed class DitherDialog : Window
                     (int)(strength.Value ?? 64)));
             },
             "Dither"));
-        Content = root;
+        DialogChrome.SetContent(this, root);
     }
 
     private static NumericUpDown Number(decimal value, decimal min, decimal max) => new()
@@ -120,7 +120,7 @@ public sealed class ShadeDialog : Window
                 Close(new ShadeDialogResult(values, (int)(step.Value ?? 1)));
             },
             "Apply"));
-        Content = root;
+        DialogChrome.SetContent(this, root);
     }
 
     private static IReadOnlyList<byte> Parse(string? text)

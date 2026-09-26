@@ -107,7 +107,7 @@ public sealed partial class MainWindow
         public readonly CheckBox Locked = new() { HorizontalAlignment = HorizontalAlignment.Center };
         public readonly TextBlock Name = new() { TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
         public readonly Button Select;
-        public readonly NumericUpDown Opacity = new() { Minimum = 0, Maximum = 100, Increment = 1, FormatString = "0.#", Padding = new Thickness(2), MinWidth = 64 };
+        public readonly NumericUpDown Opacity = new() { ShowButtonSpinner = false, Minimum = 0, Maximum = 100, Increment = 1, FormatString = "0.#", Padding = new Thickness(2), MinWidth = 64 };
         public bool Syncing;
 
         public LayerRow()

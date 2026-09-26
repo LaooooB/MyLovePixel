@@ -1,3 +1,4 @@
+using MyLovePixel.Core.Document;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -30,6 +31,8 @@ public sealed partial class MainWindow
     private Control BuildShell()
     {
         var root = new DockPanel { Background = EditorThemeTokens.AppBackground };
+        _timelineExpander.HorizontalAlignment = HorizontalAlignment.Stretch;
+        _previewExpander.HorizontalAlignment = HorizontalAlignment.Stretch;
         _toolbar = BuildTopBar();
         DockPanel.SetDock(_toolbar, Dock.Top);
         root.Children.Add(_toolbar);
@@ -121,15 +124,14 @@ public sealed partial class MainWindow
         _canvasScroll.Background = EditorThemeTokens.CanvasWorkspace;
         _canvasScroll.HorizontalScrollBarVisibility = ScrollBarVisibility.Auto;
         _canvasScroll.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
-        _canvasScroll.Content = new Border
+        _canvasScroll.Content = _navigationFrame = new Border
         {
-            BorderBrush = EditorThemeTokens.StrongBorder,
-            BorderThickness = new Thickness(1),
-            Padding = new Thickness(24),
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
+            Padding = new Thickness(400, 300),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
             Child = _canvas,
         };
+        _canvasScroll.SizeChanged += (_, _) => ResizeNavigationSpace();
         canvasArea.Children.Add(_canvasScroll);
         grid.Children.Add(Place(canvasArea, 1));
         grid.Children.Add(Place(BuildInspector(), 2));
@@ -212,6 +214,7 @@ public sealed partial class MainWindow
         footer.Children.Add(_timelineStatus);
         footer.Children.Add(Place(new TextBlock { Text = "Duration", VerticalAlignment = VerticalAlignment.Center }, 1));
         _frameDuration.Width = 84;
+        _frameDuration.ShowButtonSpinner = false;
         Named(_frameDuration, "timeline.duration", "Frame duration in milliseconds");
         _frameDuration.ValueChanged += (_, _) =>
         {

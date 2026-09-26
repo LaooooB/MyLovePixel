@@ -31,6 +31,9 @@ public sealed partial class MainWindow
         {
             case SelectionTransformPhase.Pressed:
             {
+                FinishParameterEdit();
+                _playback.Stop(session);
+                if (session.DrawingBlockedReason is { } blocked) { SetError(blocked); return; }
                 var overlay = _selection.GetOverlay(session);
                 if (overlay is null) return;
                 var centerX = overlay.Bounds.X + overlay.Bounds.Width * 0.5d;

@@ -148,7 +148,7 @@ public sealed partial class MainWindow
     {
         if (Current() is not { } session) { _contextName.Text = string.Empty; return; }
         var layer = session.GetLayers().FirstOrDefault(l => l.IsCurrent);
-        var frame = session.CaptureSnapshot().FrameOrder.IndexOf(session.CurrentFrameId) + 1;
+        var frame = session.CaptureSnapshot().FrameOrder.ToList().IndexOf(session.CurrentFrameId) + 1;
         var tool = _eyedropperMode ? "Eyedropper" : _selectionMode ? "Selection" : _plugins.GetTools(session).FirstOrDefault(t => t.IsActive)?.DisplayName;
         _contextName.Text = $"{tool} · {layer?.Name} · Frame {frame}" + (layer?.Locked == true ? " · Locked" : layer?.Visible == false ? " · Hidden" : string.Empty);
     }

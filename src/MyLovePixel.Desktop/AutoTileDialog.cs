@@ -78,7 +78,7 @@ public sealed class AutoTileDialog : Window
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             Content = body,
         });
-        Content = root;
+        DialogChrome.SetContent(this, root);
 
         if (tiles.Count > 0) AddRow(0, 0, 1);
     }

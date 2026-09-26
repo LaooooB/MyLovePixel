@@ -36,6 +36,7 @@ public sealed partial class MainWindow
         {
             var input = inputs[i];
             input.MinWidth = 48;
+            input.ShowButtonSpinner = false;
             Named(input, i == 3 ? "color.alpha" : "color." + names[i].ToLowerInvariant(), i == 3 ? "Alpha, 0 to 255" : names[i] + ", 0 to 255");
             input.ValueChanged += (_, _) => ApplyStudioRgb();
             var column = new StackPanel { Spacing = 3 };
@@ -59,6 +60,7 @@ public sealed partial class MainWindow
         body.Children.Add(hex);
         body.Children.Add(Named(_colorValidation, "color.validation", "Color validation"));
         body.Children.Add(_sampleInfo);
+        SyncStudioColor(_studioColor);
         return new Border { Padding = new Thickness(10, 8), Child = body, BorderBrush = EditorThemeTokens.PanelBorder, BorderThickness = new Thickness(0, 0, 0, 1) };
     }
 
@@ -147,7 +149,7 @@ public sealed partial class MainWindow
 
     private void ApplyStudioRgb()
     {
-        if (_syncingStudioColor) return;
+        if (_syncingStudioColor || _studioR.Value is null || _studioG.Value is null || _studioB.Value is null || _studioA.Value is null) return;
         ApplyStudioColor(new Rgba32((byte)(_studioR.Value ?? 0m), (byte)(_studioG.Value ?? 0m), (byte)(_studioB.Value ?? 0m), (byte)(_studioA.Value ?? 255m)));
     }
 
