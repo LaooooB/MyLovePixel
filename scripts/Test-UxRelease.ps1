@@ -91,6 +91,11 @@ try {
     $results.Add("OS: $([Environment]::OSVersion.VersionString); process: Windows x64; display $($screen.Width)x$($screen.Height)")
     $results | Set-Content (Join-Path $OutputDirectory 'native-smoke.txt')
     $results | Write-Output
+} catch {
+    $results.Add("FAIL " + $_.Exception.Message)
+    $results | Set-Content (Join-Path $OutputDirectory 'native-smoke.txt')
+    $results | Write-Output
+    throw
 } finally {
     if (!$p.HasExited) { Stop-Process -Id $p.Id -Force }
 }

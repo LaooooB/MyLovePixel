@@ -1,6 +1,7 @@
 using System.Reflection;
 using Avalonia;
 using Avalonia.Automation;
+using Avalonia.Automation.Peers;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
@@ -35,6 +36,16 @@ internal static class Program
             var rail = Field<StackPanel>(window, "_toolsPanel");
             foreach (var tool in rail.Children.OfType<Button>())
                 Check(tool.GetVisualDescendants().OfType<TextBlock>().Any(t => !string.IsNullOrWhiteSpace(t.Text)), "Tool has no permanent name.");
+        });
+        Run("Canvas participates in native accessibility with a stable identity", window =>
+        {
+            var canvas = Field<PixelCanvasView>(window, "_canvas");
+            var peer = ControlAutomationPeer.CreatePeerForElement(canvas);
+            Check(peer is not null, "The custom canvas has no automation peer.");
+            Check(peer!.IsControlElement() && peer.IsContentElement(), "Canvas is missing from the accessibility tree.");
+            Check(peer.GetAutomationId() == "workspace.canvas" && peer.GetName() == "Pixel canvas", "Canvas accessibility identity is not stable.");
+            Check(peer.IsKeyboardFocusable(), "The accessible canvas cannot receive keyboard focus.");
+            Check(peer.GetBoundingRectangle().Width > 0, "Canvas automation bounds are empty.");
         });
         Run("A sticky error survives coordinate updates", window =>
         {

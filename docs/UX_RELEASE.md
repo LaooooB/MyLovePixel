@@ -18,7 +18,7 @@ Scope: complete the approved P0/P1 usability pass. No new large modules, project
 
 ## Verification and delivery
 
-The release workflow builds the entire solution, runs all 258 unit tests and 32 rendered desktop interaction checks, records the exact source, publishes a self-contained Windows x64 EXE, then launches that EXE on Windows for native UI Automation smoke checks. Publishing stops on a failed gate. Actual results, source SHA, metrics and checksums are attached to that workflow; this document alone is not a passing result.
+The release workflow builds the entire solution, runs all 258 unit tests and 33 rendered desktop interaction checks, records the exact source, publishes a self-contained Windows x64 EXE, then launches that EXE on Windows for native UI Automation smoke checks. Publishing stops on a failed gate. Actual results, source SHA, metrics and checksums are attached to that workflow; this document alone is not a passing result.
 
 The desktop checks use real Avalonia controls, input routing and Skia rendering. High-DPI checks render at changed scale; they do not emulate every Windows monitor/driver combination. Performance measurements explicitly include headless queue/render drains and are not physical display latency or a universal FPS promise. Native smoke coverage includes startup, named eyedropper, painting, canceled unsaved close and a compact window.
 
