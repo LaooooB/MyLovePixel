@@ -10,7 +10,7 @@ using MyLovePixel.Tools;
 
 namespace MyLovePixel.Application;
 
-public sealed class DocumentSession
+public sealed partial class DocumentSession
 {
     private readonly FrameRenderer _renderer = new();
     private readonly Dictionary<ResourceId, List<IntRect>> _pendingDirtySurfaceRegions = [];
@@ -135,6 +135,8 @@ public sealed class DocumentSession
 
     public ToolDispatchPresentation DispatchPointer(EditorPointerEvent pointerEvent)
     {
+        if (DrawingBlockedReason is { } blocked)
+            throw new InvalidOperationException(blocked);
         if (_toolHost is null)
             return new ToolDispatchPresentation(false, false, false);
 
@@ -337,6 +339,7 @@ public sealed class DocumentSession
     private void OnDocumentChanged(object? sender, DocumentChange change)
     {
         IsDirty = true;
+        DocumentVersion++;
         foreach (var dirty in change.DirtySurfaces)
         {
             if (!_pendingDirtySurfaceRegions.TryGetValue(dirty.SurfaceId, out var regions))

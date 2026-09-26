@@ -128,6 +128,7 @@ public static partial class AdvancedEditingExtensions
     public static void EraseCanvasPixel(this DocumentSession session, int canvasX, int canvasY)
     {
         ArgumentNullException.ThrowIfNull(session);
+        if (session.DrawingBlockedReason is { } blocked) throw new InvalidOperationException(blocked);
         session.CancelToolInteraction();
         session.EnsureEditableCel();
 
