@@ -57,14 +57,16 @@ public sealed partial class MainWindow
             case EffectParameterKind.Integer:
             {
                 var n = new NumericUpDown { Value = parameter.Value.IntegerValue, Minimum = parameter.Minimum is { } min ? (decimal)min : decimal.MinValue, Maximum = parameter.Maximum is { } max ? (decimal)max : decimal.MaxValue, Increment = 1, FormatString = "0" };
-                n.ValueChanged += (_, _) => { if (n.Value is { } v) Safe(() => _plugins.SetEffectParameter(session, id, parameter.Key, EffectValue.Integer((long)v))); };
+                n.ValueChanged += (_, _) => { if (n.Value is { } v) UpdateParameter(session, n, parameter.DisplayName, () => _plugins.SetEffectParameter(session, id, parameter.Key, EffectValue.Integer((long)v))); };
+                WireParameterCompletion(n);
                 editor = n;
                 break;
             }
             case EffectParameterKind.Number:
             {
                 var n = new NumericUpDown { Value = (decimal)parameter.Value.NumberValue, Minimum = parameter.Minimum is { } min ? (decimal)min : -1000000m, Maximum = parameter.Maximum is { } max ? (decimal)max : 1000000m, Increment = 0.1m, FormatString = "0.###" };
-                n.ValueChanged += (_, _) => { if (n.Value is { } v) Safe(() => _plugins.SetEffectParameter(session, id, parameter.Key, EffectValue.Number((double)v))); };
+                n.ValueChanged += (_, _) => { if (n.Value is { } v) UpdateParameter(session, n, parameter.DisplayName, () => _plugins.SetEffectParameter(session, id, parameter.Key, EffectValue.Number((double)v))); };
+                WireParameterCompletion(n);
                 editor = n;
                 break;
             }

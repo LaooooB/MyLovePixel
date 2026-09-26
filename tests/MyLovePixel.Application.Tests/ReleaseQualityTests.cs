@@ -1,6 +1,4 @@
-from pathlib import Path
-p=Path('tests/MyLovePixel.Application.Tests/ReleaseQualityTests.cs')
-p.write_text(r'''using System.Reflection;
+using System.Reflection;
 using MyLovePixel.Application;
 using MyLovePixel.Commands.Pixel;
 using MyLovePixel.Commands.Resources;
@@ -84,60 +82,3 @@ public sealed class ReleaseQualityTests
         finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
     }
 }
-''',encoding='utf-8')
-p=Path('tests/MyLovePixel.Desktop.UxTests/Program.cs'); s=p.read_text(encoding='utf-8')
-a='        Console.WriteLine($"Desktop UX tests: {_tests - _failures}/{_tests} passed.");'; assert a in s
-s=s.replace(a,r'''
-        foreach (var scale in new[] { 1.25, 1.5, 2.0 })
-        {
-            Run($"DPI {scale * 100:0}% retains readable values and canvas", window =>
-            {
-                window.SetRenderScaling(scale); window.Width = 1280 / scale; window.Height = 800 / scale; Pump();
-                Call(window, "FitCanvas"); Pump();
-                var input = Find<NumericUpDown>(window, "color.alpha");
-                Check(input.GetVisualDescendants().OfType<TextBox>().Any(t => t.Bounds.Width >= 25 && t.Text == "255"), "Alpha value is clipped at this DPI.");
-                Check(Find<Button>(window, "tool.core.eyedropper").Bounds.Width >= 120, "Named tool row became too narrow.");
-                var viewport = Field<ScrollViewer>(window, "_canvasScroll");
-                Check(viewport.Bounds.Width >= 150 && viewport.Bounds.Height >= 90, "Dock panels consumed the canvas work area.");
-                using var frame = window.CaptureRenderedFrame();
-                Check(frame is not null && Math.Abs(frame.PixelSize.Width - window.Bounds.Width * scale) <= 2, "DPI test did not change physical render scaling.");
-                frame!.Save($"release/ui/dpi-{scale * 100:0}.png", Avalonia.Media.Imaging.PngBitmapEncoderOptions.Default);
-            });
-        }
-        Run("Canvas-edge transform handles remain reachable", window =>
-        {
-            var session = Session(window); Call(window, "SelectQuickTool", "workspace.selection");
-            Field<SelectionWorkspaceRuntime>(window, "_selection").SelectAll(session); Call(window, "RefreshCanvas", true); Pump();
-            var canvas = Field<PixelCanvasView>(window, "_canvas");
-            var method = typeof(PixelCanvasView).GetMethod("HandlePoint", BindingFlags.Instance | BindingFlags.NonPublic);
-            Check(method is not null, "Transform handles at canvas edges need a visible hit area.");
-            var point = (Point)method!.Invoke(canvas, new object[] { new Point(0, 0) })!;
-            Check(point.X >= 7 && point.Y >= 7, "Edge handle is clipped.");
-        });
-        Run("Export fields survive retry and invalid filenames stay in dialog", window =>
-        {
-            var previous = new MyLovePixel.Export.ExportPreset { Scale = 3, ImageBaseName = "retry", MetadataFileName = "retry.json" };
-            var constructor = typeof(ExportDialog).GetConstructor([typeof(MyLovePixel.Export.ExportPreset)]);
-            Check(constructor is not null, "Export options are lost when retrying.");
-            var dialog = (ExportDialog)constructor!.Invoke([previous]); dialog.ShowDialog<object?>(window); Pump();
-            Check(Field<NumericUpDown>(dialog, "_scale").Value == 3, "Export scale was reset.");
-            Field<TextBox>(dialog, "_fileName").Text = "../bad";
-            var accept = dialog.GetVisualDescendants().OfType<Button>().Single(b => b.IsDefault); Click(accept); Pump();
-            Check(dialog.IsVisible, "Invalid filename closed the export dialog."); dialog.Close(null); Pump();
-        });
-        Run("Empty workspace disables document-only controls", window =>
-        {
-            var workspace = Field<EditorWorkspace>(window, "_workspace");
-            foreach (var session in workspace.Sessions.ToArray()) workspace.Close(session); Pump();
-            var export = window.GetVisualDescendants().OfType<Button>().First(b => Avalonia.Automation.AutomationProperties.GetName(b) == "Export");
-            Check(!export.IsEnabled, "Export is enabled without a document.");
-        });
-''' + a)
-p.write_text(s,encoding='utf-8')
-# Collect independent UI failures even when a new application regression is red.
-p=Path('.github/workflows/ux-release.yml'); s=p.read_text(encoding='utf-8')
-s=s.replace("          if ($LASTEXITCODE -ne 0) { throw 'Solution tests failed.' }", "          $coreExit = $LASTEXITCODE\n          $uiExit = 0")
-s=s.replace("            if ($LASTEXITCODE -ne 0) { throw 'Desktop interaction tests failed.' }", "            $uiExit = $LASTEXITCODE")
-s=s.replace('      - name: Record tested source', "          if ($coreExit -ne 0 -or $uiExit -ne 0) { throw 'Regression tests failed.' }\n      - name: Record tested source")
-s=s.replace('git add src tests docs HANDOFF.md','git add --all -- src tests docs scripts .github HANDOFF.md')
-p.write_text(s,encoding='utf-8')

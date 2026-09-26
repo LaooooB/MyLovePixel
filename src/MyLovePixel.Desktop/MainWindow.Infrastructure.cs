@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Data;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -114,6 +115,8 @@ public sealed partial class MainWindow
         var text = new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap };
         Grid.SetColumn(text, icon is null ? 0 : 1); row.Children.Add(text);
         var button = new Button { Content = row };
+        text.Bind(TextBlock.ForegroundProperty, new Binding("Foreground") { Source = button });
+        if (icon is ShapePath path) path.Bind(ShapePath.StrokeProperty, new Binding("Foreground") { Source = button });
         button.Classes.Add("text-icon");
         AutomationProperties.SetName(button, label);
         if (label != tip)
@@ -141,8 +144,11 @@ public sealed partial class MainWindow
         }
         ToolTip.SetTip(button, tip); ToolTip.SetPlacement(button, PlacementMode.Bottom);
         button.Click += (_, _) => { (TopLevel.GetTopLevel(button) as MainWindow)?.FinishParameterEdit(); set(button.IsChecked == true); Sync(); };
+        button.Tag = new ToggleState(Sync);
         Sync(); return button;
     }
+
+    private sealed record ToggleState(Action Sync);
 
     private static WrapPanel Icons(params Control[] controls)
     {

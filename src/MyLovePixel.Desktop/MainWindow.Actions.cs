@@ -142,6 +142,13 @@ public sealed partial class MainWindow
 
     private void RefreshActions()
     {
+        var hasDocument = Current() is not null;
+        foreach (var control in _documentControls) control.IsEnabled = hasDocument;
+        _documentSelector.IsEnabled = hasDocument;
+        foreach (var panel in new Control[] { _toolOptionsPanel, _layersPanel, _palettePanel, _tilesPanel, _animationPanel, _studioPaletteSwatches })
+            panel.IsEnabled = hasDocument;
+        _effectsPanel.IsEnabled = hasDocument && !Current()!.GetLayers().Any(l => l.IsCurrent && l.Locked);
+        if (_timelineContent is not null) _timelineContent.IsEnabled = hasDocument;
         foreach (var pair in _actionControls)
         {
             var enabled = _actions.CanExecute(pair.Key, _actionContext);

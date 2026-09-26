@@ -22,6 +22,8 @@ internal static class Program
     public static int Main()
     {
         AppBuilder.Configure<EditorApp>()
+            .With(new Avalonia.Media.FontManagerOptions { DefaultFamilyName = "avares://Avalonia.Fonts.Inter/Assets#Inter" })
+            .WithInterFont()
             .UseSkia()
             .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
             .SetupWithoutStarting();
@@ -232,6 +234,160 @@ internal static class Program
             Check(dialog.GetVisualDescendants().OfType<Button>().Any(b => b.IsCancel), "Export dialog lacks Escape cancellation.");
             dialog.Close(null); Pump();
         });
+
+        foreach (var scale in new[] { 1.25, 1.5, 2.0 })
+        {
+            Run($"DPI {scale * 100:0}% retains readable values and canvas", window =>
+            {
+                window.SetRenderScaling(scale); window.Width = 1280 / scale; window.Height = 800 / scale; Pump();
+                Call(window, "FitCanvas"); Pump();
+                var input = Find<NumericUpDown>(window, "color.alpha");
+                Check(input.GetVisualDescendants().OfType<TextBox>().Any(t => t.Bounds.Width >= 25 && t.Text == "255"), "Alpha value is clipped at this DPI.");
+                Check(Find<Button>(window, "tool.core.eyedropper").Bounds.Width >= 120, "Named tool row became too narrow.");
+                var viewport = Field<ScrollViewer>(window, "_canvasScroll");
+                Check(viewport.Bounds.Width >= 150 && viewport.Bounds.Height >= 90, "Dock panels consumed the canvas work area.");
+                using var frame = window.CaptureRenderedFrame();
+                Check(frame is not null && Math.Abs(frame.PixelSize.Width - window.Bounds.Width * scale) <= 2, "DPI test did not change physical render scaling.");
+                frame!.Save($"release/ui/dpi-{scale * 100:0}.png", Avalonia.Media.Imaging.PngBitmapEncoderOptions.Default);
+            });
+        }
+        Run("Canvas-edge transform handles remain reachable", window =>
+        {
+            var session = Session(window); Call(window, "SelectQuickTool", "workspace.selection");
+            Field<SelectionWorkspaceRuntime>(window, "_selection").SelectAll(session); Call(window, "RefreshCanvas", true); Pump();
+            var canvas = Field<PixelCanvasView>(window, "_canvas");
+            var method = typeof(PixelCanvasView).GetMethod("HandlePoint", BindingFlags.Instance | BindingFlags.NonPublic);
+            Check(method is not null, "Transform handles at canvas edges need a visible hit area.");
+            var point = (Point)method!.Invoke(canvas, new object[] { new Point(0, 0) })!;
+            Check(point.X >= 7 && point.Y >= 7, "Edge handle is clipped.");
+        });
+        Run("Export fields survive retry and invalid filenames stay in dialog", window =>
+        {
+            var previous = new MyLovePixel.Export.ExportPreset { Scale = 3, ImageBaseName = "retry", MetadataFileName = "retry.json" };
+            var constructor = typeof(ExportDialog).GetConstructor([typeof(MyLovePixel.Export.ExportPreset)]);
+            Check(constructor is not null, "Export options are lost when retrying.");
+            var dialog = (ExportDialog)constructor!.Invoke([previous]); dialog.ShowDialog<object?>(window); Pump();
+            Check(Field<NumericUpDown>(dialog, "_scale").Value == 3, "Export scale was reset.");
+            Field<TextBox>(dialog, "_fileName").Text = "../bad";
+            var accept = dialog.GetVisualDescendants().OfType<Button>().Single(b => b.IsDefault); Click(accept); Pump();
+            Check(dialog.IsVisible, "Invalid filename closed the export dialog."); dialog.Close(null); Pump();
+        });
+        Run("Empty workspace disables document-only controls", window =>
+        {
+            var workspace = Field<EditorWorkspace>(window, "_workspace");
+            foreach (var session in workspace.Sessions.ToArray()) workspace.Close(session); Pump();
+            var export = window.GetVisualDescendants().OfType<Button>().First(b => Avalonia.Automation.AutomationProperties.GetName(b) == "Export");
+            Check(!export.IsEnabled, "Export is enabled without a document.");
+            Check(!Field<StackPanel>(window, "_layersPanel").IsEffectivelyEnabled, "Layer actions are enabled without a document.");
+            Check(!Find<NumericUpDown>(window, "color.alpha").IsEffectivelyEnabled, "Color controls are enabled without a document.");
+        });
+        Run("Effect adjustments form one undoable gesture", window =>
+        {
+            var session = Session(window); var plugins = Field<PluginWorkspaceRuntime>(window, "_plugins");
+            var id = plugins.AddEffect(session, "core.outline");
+            typeof(MainWindow).GetField("_selectedEffect", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(window, id);
+            Field<TabControl>(window, "_sideTabs").SelectedIndex = 3; Pump(); Call(window, "RefreshEffects"); Pump();
+            var radius = Field<StackPanel>(window, "_effectsPanel").GetVisualDescendants().OfType<NumericUpDown>().First();
+            radius.Focus(); var before = session.Commands.UndoCount;
+            radius.Value = 2; radius.Value = 3; radius.Value = 4;
+            Call(window, "FinishParameterEdit", true); Pump();
+            Check(session.Commands.UndoCount == before + 1, "Continuous effect adjustment flooded undo history.");
+            session.Undo(); Pump();
+            Check(plugins.GetEffectParameters(session, id).First(p => p.Key == "radius").Value.IntegerValue == 1, "Undo did not restore the original radius.");
+        });
+        Run("Canceling a focused parameter restores its initial value", window =>
+        {
+            var session = Session(window); Field<TabControl>(window, "_sideTabs").SelectedIndex = 1; Pump();
+            var opacity = Field<StackPanel>(window, "_layersPanel").GetVisualDescendants().OfType<NumericUpDown>().First();
+            opacity.Focus(); opacity.Value = 40;
+            window.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
+            window.KeyRelease(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null); Pump();
+            Check(session.GetLayers().Single().Opacity == 255 && !session.IsDirty && session.Commands.UndoCount == 0, "Escape committed or stranded a parameter gesture.");
+        });
+        Run("Toggle labels follow changes from another panel", window =>
+        {
+            var toggle = window.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.ToggleButton>()
+                .First(b => (b.Content as string)?.StartsWith("Onion Skin:") == true);
+            typeof(MainWindow).GetField("_onionSkin", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(window, true);
+            Call(window, "RefreshAll", false); Pump();
+            Check(toggle.IsChecked == true && (toggle.Content as string)?.EndsWith(": On") == true, "Onion skin label disagrees with actual state.");
+        });
+        Run("Primary action label has readable contrast", window =>
+        {
+            var save = Find<Button>(window, "project.save");
+            var text = save.GetVisualDescendants().OfType<TextBlock>().First(t => t.Text == "Save");
+            var fg = ((Avalonia.Media.ISolidColorBrush)text.Foreground!).Color;
+            var bg = ((Avalonia.Media.ISolidColorBrush)save.Background!).Color;
+            Check(Contrast(fg, bg) >= 4.5, "Save label has insufficient contrast against its highlighted background.");
+        });
+        Run("Actual canvas-edge resize can be canceled without mutation", window =>
+        {
+            var session = Session(window); Call(window, "SelectQuickTool", "workspace.selection");
+            Field<SelectionWorkspaceRuntime>(window, "_selection").SelectAll(session); Call(window, "RefreshCanvas", true); Pump();
+            var canvas = Field<PixelCanvasView>(window, "_canvas"); var revision = session.DocumentVersion;
+            var p = canvas.TranslatePoint(new Point(9, 9), window)!.Value;
+            window.MouseDown(p, MouseButton.Left); window.MouseMove(p + new Vector(12, 12)); Pump();
+            Check(Field<object?>(canvas, "_activeSelectionTransform")?.ToString() == "ScaleTopLeft", "Visible corner did not start a resize.");
+            window.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null); window.MouseUp(p, MouseButton.Left); Pump();
+            Check(!canvas.HasActivePointer && session.DocumentVersion == revision, "Cancel changed artwork or stranded capture.");
+        });
+        Run("Export validates Windows names and retains unrelated options", window =>
+        {
+            var previous = new MyLovePixel.Export.ExportPreset { Scale = 2, Padding = 3, MaxAtlasWidth = 1024, ImageBaseName = "art", MetadataFileName = "meta/art.json" };
+            foreach (var name in new[] { "CON", "bad?name", "trailing.", "folder\\art" })
+            {
+                var dialog = new ExportDialog(previous); dialog.ShowDialog<object?>(window); Pump();
+                Field<TextBox>(dialog, "_fileName").Text = name; Click(dialog.GetVisualDescendants().OfType<Button>().Single(b => b.IsDefault));
+                Check(dialog.IsVisible, "An invalid Windows name closed the dialog: " + name); dialog.Close(null); Pump();
+            }
+            var valid = new ExportDialog(previous); var result = valid.ShowDialog<MyLovePixel.Export.ExportPreset?>(window); Pump();
+            Click(valid.GetVisualDescendants().OfType<Button>().Single(b => b.IsDefault)); Pump();
+            Check(result.IsCompletedSuccessfully && result.Result?.MaxAtlasWidth == 1024 && result.Result?.MetadataFileName == "meta/art.json", "Retry overwrote options outside this dialog.");
+        });
+        Run("Sidebar tabs stay usable after document edits", window =>
+        {
+            var tabs = Field<TabControl>(window, "_sideTabs");
+            foreach (var tab in new[] { 1, 2, 3, 0 })
+            {
+                tabs.SelectedIndex = tab; Pump();
+                Session(window).SetToolColors(new Rgba32(12, 34, 56, 255), Rgba32.Transparent); Pump();
+                Check(tabs.SelectedIndex == tab, "An edit reset the active sidebar tab.");
+                Check(!Field<Border>(window, "_noticeHost").IsVisible, "Opening a sidebar caused an error.");
+                using var image = window.CaptureRenderedFrame();
+                image?.Save($"release/ui/sidebar-{tab}.png", Avalonia.Media.Imaging.PngBitmapEncoderOptions.Default);
+            }
+        });
+        Run("Repeated painting, zoom and undo retain a consistent editor", window =>
+        {
+            var session = Field<EditorWorkspace>(window, "_workspace").NewDocument(256, 256);
+            Pump(); Call(window, "FitCanvas"); Pump();
+            var canvas = Field<PixelCanvasView>(window, "_canvas");
+            session.SetToolColors(new Rgba32(60, 160, 210, 255), Rgba32.Transparent);
+            var timings = new List<double>(); var before = session.Commands.UndoCount;
+            var memory = GC.GetTotalMemory(true);
+            for (var i = 0; i < 96; i++)
+            {
+                var point = canvas.TranslatePoint(new Point((40.5 + i % 24 * 4) * canvas.Zoom, (60.5 + i / 24 * 8) * canvas.Zoom), window)!.Value;
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                window.MouseDown(point, MouseButton.Left); window.MouseUp(point, MouseButton.Left); Pump();
+                timings.Add(watch.Elapsed.TotalMilliseconds);
+            }
+            Check(session.Commands.UndoCount == before + 96, "Repeated painting lost or duplicated an edit.");
+            var retained = GC.GetTotalMemory(true) - memory;
+            var ordered = timings.Order().ToArray();
+            File.WriteAllText("release/performance.json", System.Text.Json.JsonSerializer.Serialize(new
+            {
+                environment = System.Runtime.InteropServices.RuntimeInformation.OSDescription,
+                runtime = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
+                processors = Environment.ProcessorCount,
+                scenario = "256x256 canvas; 96 real pointer strokes and UI/render queue drains; headless Skia, not physical input latency",
+                p50Milliseconds = ordered[ordered.Length / 2], p95Milliseconds = ordered[(int)(ordered.Length * .95)],
+                maxMilliseconds = ordered[^1], retainedManagedBytes = retained,
+            }, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+            for (var i = 0; i < 96; i++) session.Undo(); Pump();
+            Check(session.Commands.UndoCount == before && !session.IsDirty, "Repeated undo did not return to the initial document.");
+            Check(Find<Button>(window, "tool.core.eyedropper").IsEffectivelyEnabled, "Repeated editing left controls disabled.");
+        });
         Console.WriteLine($"Desktop UX tests: {_tests - _failures}/{_tests} passed.");
         return _failures == 0 ? 0 : 1;
     }
@@ -287,5 +443,11 @@ internal static class Program
     private static T Find<T>(Window window, string id) where T : Control =>
         window.GetVisualDescendants().OfType<T>().FirstOrDefault(c => AutomationProperties.GetAutomationId(c) == id)
         ?? throw new InvalidOperationException("Missing accessible control: " + id);
+    private static double Contrast(Avalonia.Media.Color a, Avalonia.Media.Color b)
+    {
+        static double Channel(byte c) { var v = c / 255d; return v <= .04045 ? v / 12.92 : Math.Pow((v + .055) / 1.055, 2.4); }
+        static double Light(Avalonia.Media.Color c) => .2126 * Channel(c.R) + .7152 * Channel(c.G) + .0722 * Channel(c.B);
+        var x = Light(a); var y = Light(b); return (Math.Max(x, y) + .05) / (Math.Min(x, y) + .05);
+    }
     private static void Check(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
 }

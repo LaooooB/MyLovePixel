@@ -11,7 +11,7 @@ namespace MyLovePixel.Desktop;
 public sealed partial class MainWindow
 {
     private readonly ScrollViewer _canvasScroll = new();
-    private readonly ComboBox _documentSelector = new() { MinWidth = 140, HorizontalAlignment = HorizontalAlignment.Stretch };
+    private readonly ComboBox _documentSelector = new() { MinWidth = 0, HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly TextBlock _contextName = new() { VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly TextBlock _notice = new() { TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
     private readonly Border _noticeHost = new() { IsVisible = false };
@@ -23,6 +23,11 @@ public sealed partial class MainWindow
     private readonly Button _previousPage = new();
     private readonly Button _nextPage = new();
     private readonly NumericUpDown _frameDuration = Number(100, 1, 60_000);
+    private Grid? _workspaceGrid;
+    private ScrollViewer? _timelineContent;
+    private Control? _fullViewOptions;
+    private Control? _compactViewOptions;
+    private readonly List<Control> _documentControls = [];
     private Control? _toolbar;
     private Control? _editorBody;
     private Control? _colorEditor;
@@ -54,13 +59,20 @@ public sealed partial class MainWindow
         DockPanel.SetDock(_noticeHost, Dock.Bottom);
         root.Children.Add(_noticeHost);
 
-        _timelineExpander.Content = BuildTimeline();
+        _timelineExpander.Content = _timelineContent = new ScrollViewer
+        {
+            Content = BuildTimeline(),
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        };
         _timelineExpander.HorizontalContentAlignment = HorizontalAlignment.Stretch;
         DockPanel.SetDock(_timelineExpander, Dock.Bottom);
         root.Children.Add(_timelineExpander);
 
         _editorBody = BuildWorkspace();
         root.Children.Add(_editorBody);
+        SizeChanged += (_, _) => UpdateAdaptiveLayout();
+        UpdateAdaptiveLayout();
         return root;
     }
 
@@ -72,16 +84,16 @@ public sealed partial class MainWindow
             TextIconButton("⇥", "Import", "Import PNG or sprite JSON", ImportAssetAsync),
             ActionTextButton(BuiltinActionIds.SaveProject, "▣", "Save", "Save project · Ctrl+S", true),
             ActionTextButton(BuiltinActionIds.SaveProjectAs, "⇧", "Save As", "Save project as · Ctrl+Shift+S"),
-            TextIconButton("⇩", "Export", "Export assets · Ctrl+E", ExportAsync),
+            ActionTextButton(BuiltinActionIds.ExportProject, "⇩", "Export", "Export assets · Ctrl+E"),
             ActionTextButton(BuiltinActionIds.Undo, "↶", "Undo", "Undo · Ctrl+Z"),
             ActionTextButton(BuiltinActionIds.Redo, "↷", "Redo", "Redo · Ctrl+Y / Ctrl+Shift+Z"),
-            TextIconButton("×", "Clear Canvas", "Clear current layer / frame · Undo available", ClearCanvas));
+            DocumentControl(TextIconButton("×", "Clear Frame", "Clear unlocked layers in the current frame · Undo available", ClearCanvas)));
         return new Border { Background = EditorThemeTokens.Surface, Padding = new Thickness(8, 7, 3, 2), Child = row };
     }
 
     private Control BuildWorkspace()
     {
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions($"{EditorThemeTokens.ToolRailWidth},*,{EditorThemeTokens.RightPanelWidth}") };
+        var grid = _workspaceGrid = new Grid { ColumnDefinitions = new ColumnDefinitions($"{EditorThemeTokens.ToolRailWidth},*,{EditorThemeTokens.RightPanelWidth}") };
         _toolsPanel.Margin = new Thickness(7, 8);
         var rail = new Border
         {
@@ -103,17 +115,20 @@ public sealed partial class MainWindow
             _workspace.Activate(choice.Session);
         };
         documentRow.Children.Add(_documentSelector);
-        documentRow.Children.Add(Place(Named(TextIconButton("×", "Close", "Close document · Ctrl+W", CloseCurrentDocumentAsync), "project.close", "Close document"), 1));
+        documentRow.Children.Add(Place(DocumentControl(Named(TextIconButton("×", "Close", "Close document · Ctrl+W", CloseCurrentDocumentAsync), "project.close", "Close document")), 1));
         DockPanel.SetDock(documentRow, Dock.Top);
         canvasArea.Children.Add(documentRow);
 
-        var viewRow = Icons(
+        _fullViewOptions = Icons(BuildGridToggleButton(),
+            ToggleTextButton("◐", "Invert View", "Display-only inversion", () => _invertView,
+                value => { _invertView = value; _canvas.SetInvert(value); }));
+        _compactViewOptions = TextIconButton("", "View", "Grid and display options", ShowViewMenu);
+        var viewRow = DocumentControl(Icons(
             TextIconButton("", "Fit", "Fit canvas · F", FitCanvas),
             TextIconButton("", "100%", "Actual size · 1", () => SetZoom(1d)),
             TextIconButton("−", "Zoom −", "Zoom out", () => ChangeZoom(0.8)),
             TextIconButton("＋", "Zoom +", "Zoom in", () => ChangeZoom(1.25)),
-            BuildGridToggleButton(),
-            ToggleTextButton("◐", "Invert View", "Display-only inversion", () => _invertView, value => { _invertView = value; _canvas.SetInvert(value); }));
+            _fullViewOptions, _compactViewOptions));
         viewRow.Margin = new Thickness(8, 0, 3, 0);
         DockPanel.SetDock(viewRow, Dock.Top);
         canvasArea.Children.Add(viewRow);
@@ -141,7 +156,7 @@ public sealed partial class MainWindow
     private Control BuildInspector()
     {
         var root = new DockPanel { Background = EditorThemeTokens.Surface };
-        _colorEditor = BuildColorEditor();
+        _colorEditor = DocumentControl(BuildColorEditor());
         DockPanel.SetDock(_colorEditor, Dock.Top);
         root.Children.Add(_colorEditor);
 

@@ -1,5 +1,10 @@
 # MyLovePixel — Handoff
 
+## UX P0/P1 release continuation — 2026-09-26
+
+Work branch: `ux-release-20260926`. See `docs/UX_RELEASE.md` for implemented scope and verification boundaries. The current release gate is the Windows UX workflow, including the final packaged EXE smoke run; the old main branch and historical batch CI are not release evidence. Desktop regression entry: `tests/MyLovePixel.Desktop.UxTests`; native entry: `scripts/Test-UxRelease.ps1`. Delivered source and SHA are recorded by the workflow, and checksums identify the actual binary. The public EXE is unsigned. Core/schema/plugin boundaries below remain unchanged.
+
+
 > 继续开发时先确认 `main` HEAD 与最新 GitHub Actions，再读本文件、`docs/IMPLEMENTATION_PLAN.md`、`docs/ARCHITECTURE.md` 和 `docs/DECISIONS/`。不要仅凭本文记录的 SHA 判断仓库是否已经继续更新。
 
 ## 1. 项目目标与永久边界

@@ -6,5 +6,7 @@
   <ItemGroup>
     <ProjectReference Include="../../src/MyLovePixel.Desktop/MyLovePixel.Desktop.csproj" />
     <PackageReference Include="Avalonia.Headless" VersionOverride="12.1.1" />
+    <PackageReference Include="Avalonia.Fonts.Inter" VersionOverride="12.1.1" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" VersionOverride="3.119.4" ExcludeAssets="all" />
   </ItemGroup>
 </Project>

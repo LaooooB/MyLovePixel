@@ -31,7 +31,7 @@ public sealed record AutosaveAttemptPresentation(
     string? RecoveryId,
     string? Error);
 
-public sealed class RecoveryWorkspaceCoordinator
+public sealed partial class RecoveryWorkspaceCoordinator
 {
     private readonly EditorWorkspace _workspace;
     private readonly RecoveryStore _store;

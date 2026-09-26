@@ -9,6 +9,9 @@
     <PackageReference Include="Avalonia.Desktop" />
     <PackageReference Include="Avalonia.Themes.Fluent" />
     <PackageReference Include="SkiaSharp" />
+    <!-- Avalonia brings an older native Skia build; the renderer uses Skia 151. -->
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" VersionOverride="3.119.4" ExcludeAssets="all" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../MyLovePixel.Application/MyLovePixel.Application.csproj" />

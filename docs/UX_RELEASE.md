@@ -1,15 +1,27 @@
 # UX release — 2026-09-26
 
-Approved scope: all P0/P1 items in the conversation's UX audit; preserve existing capabilities, remove redundant descriptions, ship a Windows x64 self-contained executable. No new large modules.
+Scope: complete the approved P0/P1 usability pass. No new large modules, project schema changes, or plugin API changes. Main baseline: 26b8a0b. Work continues on ux-release-20260926.
 
-Baseline: 26b8a0b2460733060f4b8d700caeaa06503e09b4.
+| Area | Implementation / regression coverage |
+| --- | --- |
+| Eyedropper | I and held Alt; visible composite / raw current layer; exact RGBA and indexed identity; excludes overlays; read-only; right button cannot erase while sampling. |
+| Controls | Persistent sidebar names, real shortcut catalog, accessible names, visible toggle state, focus outlines, readable primary-action contrast. |
+| Workspace | Responsive labeled rail and inspector; compact View menu; timeline/preview collapse at short heights; scrollable sections; 125/150/200% rendering tests. |
+| Canvas | Mouse-anchored zoom, fit/100%, space/middle-button panning, brush footprint, cancel-safe capture, visible and hittable edge-transform handles. |
+| Colors | Foreground/background targets, RGBA/HEX, inline validation, checkerboard transparency, bounded color library, exact indexed palette matching. |
+| Layers / timeline | Stable rows, rename on double click/F2, visible lock/opacity %, frame thumbnails and linked/empty state, paging beyond 24 frames, explicit playback state. |
+| Editing | Local refresh preserves controls, focus and scroll state; context-aware shortcuts; parameter gestures form one undo unit and Esc rolls back. Clear Frame preserves locked layers and other linked frames; an empty clear is a no-op. |
+| Documents | Separate durable errors and coordinate status; disabled document-only actions in an empty workspace; save/discard/cancel on close; exact dirty savepoints; guarded asynchronous file tasks. |
+| Recovery | Detached snapshot before background I/O; recovery provenance remains distinct from a formally saved project. |
+| Export / dialogs | Retry retains settings; invalid Windows filenames remain in the dialog; owned compact dialogs with explicit confirm/cancel and keyboard behavior. |
+| Performance | Bitmap presentation cache, no sidebar rebuild or recovery scan on pointer move; visible-frame previews; measured 256x256 / 96-pointer-stroke scenario with 96 undos. |
 
-Execution batches:
-1. Read-only exact pixel sampling and a shared shortcut catalog. Regression tests first.
-2. Named controls, compact responsive shell, unified focus-aware input, canvas navigation, persistent notifications and close/save protection.
-3. Stable panel refresh, explicit colors/alpha, layers and paged thumbnail timeline, dialog/accessible-state cleanup.
-4. Whole solution tests and packaged Windows UI smoke checks, inspect failures, publish source and EXE with a checksum.
+## Verification and delivery
 
-Transport note: this session has no network-enabled local .NET runtime. Reviewed, exact-match source patches are applied on the repository's isolated Windows runner and committed on the feature branch after the test suite succeeds. They are not runtime application code.
+The release workflow builds the entire solution, runs all 258 unit tests and 32 rendered desktop interaction checks, records the exact source, publishes a self-contained Windows x64 EXE, then launches that EXE on Windows for native UI Automation smoke checks. Publishing stops on a failed gate. Actual results, source SHA, metrics and checksums are attached to that workflow; this document alone is not a passing result.
 
-Status: regression baseline pending. Completion is recorded only against actual test/build results. Author review is used; no independent reviewer is available in this session.
+The desktop checks use real Avalonia controls, input routing and Skia rendering. High-DPI checks render at changed scale; they do not emulate every Windows monitor/driver combination. Performance measurements explicitly include headless queue/render drains and are not physical display latency or a universal FPS promise. Native smoke coverage includes startup, named eyedropper, painting, canceled unsaved close and a compact window.
+
+`MyLovePixel.exe` embeds .NET and native libraries; no separate .NET installation is needed. It is unsigned. Source and third-party notices are shipped separately. No main-branch history rewrite is performed.
+
+Author review was performed against implementation, tests and screenshots. No independent reviewer or separate human usability study is claimed. Transport patch scripts are consumed on CI and removed from the recorded application source; they are not runtime code.

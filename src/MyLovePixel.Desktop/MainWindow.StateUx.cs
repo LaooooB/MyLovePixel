@@ -49,6 +49,9 @@ public sealed partial class MainWindow
             RefreshLazy(_recoveryPanel, "recovery", RefreshRecovery, false);
             RefreshDocumentPicker();
             RefreshPlaybackState();
+            SyncGridShortcutButton();
+            foreach (var toggle in this.GetVisualDescendants().OfType<Control>())
+                if (toggle.Tag is ToggleState state) state.Sync();
             RefreshContext();
             RefreshStatus();
             _lastUiSession = session;

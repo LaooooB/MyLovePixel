@@ -32,6 +32,7 @@ public sealed partial class DocumentSession
         RecoveryId = string.IsNullOrWhiteSpace(recoveryId) ? null : recoveryId;
         IsRecovered = RecoveryId is not null;
         IsDirty = IsRecovered;
+        _savedSemanticHash = IsRecovered ? null : ProjectSemanticHash.Compute(Document);
         Commands = new CommandBus(project.Document);
         CurrentFrameId = project.Document.FrameOrder.First();
         CurrentLayerId = project.Document.LayerOrder.First();
@@ -70,6 +71,7 @@ public sealed partial class DocumentSession
     {
         Commands.Undo();
         RefreshToolTarget();
+        RefreshSavedState();
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -77,6 +79,7 @@ public sealed partial class DocumentSession
     {
         Commands.Redo();
         RefreshToolTarget();
+        RefreshSavedState();
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -244,6 +247,7 @@ public sealed partial class DocumentSession
         RecoverySourcePath = null;
         RecoveryId = null;
         IsRecovered = false;
+        _savedSemanticHash = ProjectSemanticHash.Compute(Document);
         IsDirty = false;
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -254,6 +258,7 @@ public sealed partial class DocumentSession
         RecoverySourcePath = null;
         RecoveryId = null;
         IsRecovered = false;
+        _savedSemanticHash = null;
         IsDirty = true;
         StateChanged?.Invoke(this, EventArgs.Empty);
     }

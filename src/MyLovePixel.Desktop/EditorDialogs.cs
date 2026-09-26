@@ -126,8 +126,22 @@ public sealed class ExportDialog : Window
     private readonly CheckBox _pot = new() { Content = "Power-of-two atlas" };
     private readonly TextBlock _layoutNote = new() { TextWrapping = TextWrapping.Wrap };
 
-    public ExportDialog()
+    private readonly ExportPreset _initial;
+    private readonly TextBlock _validation = new() { IsVisible = false, TextWrapping = TextWrapping.Wrap, Foreground = EditorThemeTokens.Danger };
+
+    public ExportDialog() : this(null) { }
+
+    public ExportDialog(ExportPreset? initial)
     {
+        _initial = initial ?? new ExportPreset { Name = "Game Assets" };
+        _layout.SelectedItem = _initial.Layout;
+        _fileName.Text = _initial.ImageBaseName;
+        _trim.IsChecked = _initial.Trim;
+        _scale.Value = _initial.Scale;
+        _padding.Value = _initial.Padding;
+        _extrude.Value = _initial.Extrude;
+        _columns.Value = _initial.SpriteSheetColumns;
+        _pot.IsChecked = _initial.PowerOfTwoAtlas;
         Title = "Export";
         Width = 430;
         Height = 520;
@@ -137,6 +151,8 @@ public sealed class ExportDialog : Window
 
         var root = new StackPanel { Margin = new Thickness(16), Spacing = 9 };
         root.Children.Add(DialogChrome.Labeled("File name", _fileName));
+        root.Children.Add(_validation);
+        Avalonia.Automation.AutomationProperties.SetAutomationId(_validation, "export.validation");
         root.Children.Add(DialogChrome.Labeled("Layout", _layout));
         _layoutNote.Classes.Add("muted");
         root.Children.Add(_layoutNote);
@@ -146,7 +162,7 @@ public sealed class ExportDialog : Window
         root.Children.Add(DialogChrome.Labeled("Extrude", _extrude));
         root.Children.Add(DialogChrome.Labeled("Sheet columns", _columns));
         root.Children.Add(_pot);
-        root.Children.Add(DialogChrome.ConfirmCancel(() => Close(null), () => Close(Build()), "Export"));
+        root.Children.Add(DialogChrome.ConfirmCancel(() => Close(null), Accept, "Export"));
         DialogChrome.SetContent(this, root);
 
         _layout.SelectionChanged += (_, _) => RefreshLayoutGuidance();
@@ -173,9 +189,8 @@ public sealed class ExportDialog : Window
     private ExportPreset Build()
     {
         var baseName = NormalizeBaseName(_fileName.Text);
-        return new ExportPreset
+        var preset = _initial with
         {
-            Name = "Game Assets",
             Layout = _layout.SelectedItem is ExportLayout layout ? layout : ExportLayout.SpriteSheet,
             Trim = _trim.IsChecked == true,
             Scale = (int)(_scale.Value ?? 1),
@@ -184,20 +199,43 @@ public sealed class ExportDialog : Window
             SpriteSheetColumns = (int)(_columns.Value ?? 0),
             PowerOfTwoAtlas = _pot.IsChecked == true,
             ImageBaseName = baseName,
-            MetadataFileName = $"{baseName}.json",
+            MetadataFileName = baseName == _initial.ImageBaseName ? _initial.MetadataFileName : $"{baseName}.json",
         };
+        preset.Validate();
+        return preset;
     }
 
     private static string NormalizeBaseName(string? text)
     {
-        var value = (text ?? string.Empty).Trim();
+        var value = text ?? string.Empty;
         if (value.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
             value.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
-            value = Path.GetFileNameWithoutExtension(value);
+            value = value[..value.LastIndexOf('.')];
+        if (string.IsNullOrWhiteSpace(value) || value.EndsWith('.') || value.EndsWith(' ') ||
+            value.Any(ch => ch < 32 || "<>:\"/\\|?*".Contains(ch)))
+            throw new ArgumentException("Enter a file name without folders or special characters.");
+        var root = value.Split('.')[0].ToUpperInvariant();
+        if (root is "CON" or "PRN" or "AUX" or "NUL" ||
+            (root.Length == 4 && (root.StartsWith("COM") || root.StartsWith("LPT")) && root[3] is >= '1' and <= '9'))
+            throw new ArgumentException("This name is reserved by Windows. Choose another name.");
+        return value;
+    }
 
-        var invalid = Path.GetInvalidFileNameChars().ToHashSet();
-        var normalized = new string(value.Select(ch => invalid.Contains(ch) ? '_' : ch).ToArray()).Trim().Trim('.');
-        return string.IsNullOrWhiteSpace(normalized) ? "sprite" : normalized;
+    private void Accept()
+    {
+        try
+        {
+            var preset = Build();
+            DataValidationErrors.ClearErrors(_fileName);
+            Close(preset);
+        }
+        catch (ArgumentException ex)
+        {
+            _validation.Text = ex.Message;
+            _validation.IsVisible = true;
+            DataValidationErrors.SetErrors(_fileName, new[] { ex.Message });
+            _fileName.Focus();
+        }
     }
 
     private static NumericUpDown Number(decimal value, decimal min, decimal max) => new()

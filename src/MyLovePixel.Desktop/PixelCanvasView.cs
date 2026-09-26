@@ -178,8 +178,9 @@ public sealed partial class PixelCanvasView : Control
             context.DrawLine(pen, corners[index], corners[(index + 1) % corners.Length]);
 
         if (!drawHandles) return;
-        foreach (var corner in corners)
+        foreach (var rawCorner in corners)
         {
+            var corner = HandlePoint(rawCorner);
             context.FillRectangle(
                 EditorThemeTokens.SurfaceRaised,
                 new Rect(
@@ -222,13 +223,13 @@ public sealed partial class PixelCanvasView : Control
 
         if (Distance(pointer, rotateHandle) <= RotateHandleRadius + 4d)
             operation = SelectionTransformOperation.Rotate;
-        else if (Distance(pointer, corners[0]) <= TransformHandleRadius + 4d)
+        else if (Distance(pointer, HandlePoint(corners[0])) <= TransformHandleRadius + 4d)
             operation = SelectionTransformOperation.ScaleTopLeft;
-        else if (Distance(pointer, corners[1]) <= TransformHandleRadius + 4d)
+        else if (Distance(pointer, HandlePoint(corners[1])) <= TransformHandleRadius + 4d)
             operation = SelectionTransformOperation.ScaleTopRight;
-        else if (Distance(pointer, corners[2]) <= TransformHandleRadius + 4d)
+        else if (Distance(pointer, HandlePoint(corners[2])) <= TransformHandleRadius + 4d)
             operation = SelectionTransformOperation.ScaleBottomRight;
-        else if (Distance(pointer, corners[3]) <= TransformHandleRadius + 4d)
+        else if (Distance(pointer, HandlePoint(corners[3])) <= TransformHandleRadius + 4d)
             operation = SelectionTransformOperation.ScaleBottomLeft;
         else
         {
@@ -279,13 +280,24 @@ public sealed partial class PixelCanvasView : Control
         ];
     }
 
+    private Point HandlePoint(Point point)
+    {
+        // Keep hit testing and the visible handle on the same point without
+        // changing the selection's artwork coordinates.
+        const double inset = RotateHandleRadius + 1d;
+        var xInset = Math.Min(inset, Bounds.Width / 2d);
+        var yInset = Math.Min(inset, Bounds.Height / 2d);
+        return new Point(Math.Clamp(point.X, xInset, Math.Max(xInset, Bounds.Width - xInset)),
+            Math.Clamp(point.Y, yInset, Math.Max(yInset, Bounds.Height - yInset)));
+    }
+
     private Point GetRotateHandle(IReadOnlyList<Point> corners)
     {
         var topMiddle = Midpoint(corners[0], corners[1]);
         var edgeX = corners[1].X - corners[0].X;
         var edgeY = corners[1].Y - corners[0].Y;
         var length = Math.Sqrt(edgeX * edgeX + edgeY * edgeY);
-        if (length < 0.000001d) return topMiddle;
+        if (length < 0.000001d) return HandlePoint(topMiddle);
         var normalX = edgeY / length;
         var normalY = -edgeX / length;
         var candidate = new Point(
@@ -299,7 +311,7 @@ public sealed partial class PixelCanvasView : Control
                 topMiddle.X - normalX * RotateHandleOffset,
                 topMiddle.Y - normalY * RotateHandleOffset);
         }
-        return candidate;
+        return HandlePoint(candidate);
     }
 
     private void UpdateHover(PointerEventArgs e)

@@ -53,7 +53,7 @@ public sealed partial class MainWindow
     {
         if (_busy || Current() is not { } session) return;
         FinishParameterEdit();
-        var preset = await new ExportDialog().ShowDialog<ExportPreset?>(this);
+        var preset = await new ExportDialog(_lastExportPreset).ShowDialog<ExportPreset?>(this);
         if (preset is null) return;
         _lastExportPreset = preset;
         var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = "Export folder", AllowMultiple = false });
@@ -187,22 +187,19 @@ public sealed partial class MainWindow
         finally { _closingPrompt = false; }
     }
 
-    private void OnAutosaveTick(object? sender, EventArgs e)
+    private async void OnAutosaveTick(object? sender, EventArgs e)
     {
         if (_closed || _busy || _autosaveRunning || _canvasPointerActive || _parameterEdit is not null) return;
         _autosaveRunning = true;
-        Dispatcher.UIThread.Post(() =>
+        try
         {
-            try
-            {
-                if (_closed || _busy || _canvasPointerActive || _parameterEdit is not null) return;
-                var attempts = _recovery.Tick(DateTimeOffset.UtcNow);
-                var failure = attempts.FirstOrDefault(a => !a.WroteCheckpoint);
-                if (failure is not null) SetError(failure.Error ?? "Could not save a recovery copy.");
-                if (attempts.Count > 0) _panelStamps.Remove(_recoveryPanel);
-            }
-            catch (Exception ex) { SetError(ex.Message); }
-            finally { _autosaveRunning = false; }
-        }, DispatcherPriority.ApplicationIdle);
+            var attempts = await _recovery.TickAsync(DateTimeOffset.UtcNow);
+            if (_closed) return;
+            var failure = attempts.FirstOrDefault(a => !a.WroteCheckpoint);
+            if (failure is not null) SetError(failure.Error ?? "Could not save a recovery copy.");
+            if (attempts.Count > 0) _panelStamps.Remove(_recoveryPanel);
+        }
+        catch (Exception ex) { if (!_closed) SetError(ex.Message); }
+        finally { _autosaveRunning = false; }
     }
 }

@@ -16,7 +16,7 @@ public static partial class AdvancedEditingExtensions
         var frameId = session.CurrentFrameId;
         var initial = session.CaptureSnapshot();
         var celIds = initial.Cels
-            .Where(value => value.FrameId == frameId)
+            .Where(value => value.FrameId == frameId && !initial.Layers[value.LayerId].Locked)
             .Select(value => value.Id)
             .ToArray();
         if (celIds.Length == 0) return;
@@ -30,12 +30,17 @@ public static partial class AdvancedEditingExtensions
                 var snapshot = session.CaptureSnapshot();
                 var cel = snapshot.Cels.First(value => value.Id == celId);
 
+                var original = snapshot.GetSurface(cel.SurfaceId);
+                if (original.Format == PixelFormat.Rgba32 && original.Bytes.Span.IndexOfAnyExcept((byte)0) < 0) continue;
+                if (original.Format == PixelFormat.Indexed8 && original.PaletteId is { } pid &&
+                    snapshot.GetPalette(pid).TransparentIndex is { } ti && original.Bytes.Span.IndexOfAnyExcept(ti) < 0) continue;
+
                 // Linked frame copies share the same pixel surface. Detach the current
                 // frame before clearing so this destructive action never wipes pixels
-                // from another frame as a side effect.
+                // from another frame or a locked layer as a side effect.
                 var sharedWithAnotherFrame = snapshot.Cels.Any(value =>
                     value.Id != cel.Id &&
-                    value.FrameId != frameId &&
+                    !celIds.Contains(value.Id) &&
                     value.SurfaceId == cel.SurfaceId);
                 if (sharedWithAnotherFrame)
                 {
