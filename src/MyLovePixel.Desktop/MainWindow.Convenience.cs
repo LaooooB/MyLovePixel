@@ -1,6 +1,7 @@
-using System.Globalization;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -17,7 +18,7 @@ public sealed partial class MainWindow
     private readonly NumericUpDown _studioR = ChannelInput();
     private readonly NumericUpDown _studioG = ChannelInput();
     private readonly NumericUpDown _studioB = ChannelInput();
-    private readonly TextBox _studioHex = new() { Text = "#000000", MinWidth = 112 };
+    private readonly TextBox _studioHex = new() { Text = "#000000", PlaceholderText = "#654321", MinWidth = 112, MaxLength = 32 };
     private readonly Border _studioColorPreview = Swatch();
     private bool _convenienceInstalled;
     private bool _syncingStudioColor;
@@ -123,17 +124,30 @@ public sealed partial class MainWindow
 
         _studioColorPreview.Width = 28;
         _studioColorPreview.Height = 28;
-
+        AutomationProperties.SetAutomationId(_studioHex, "studio-hex-input");
+        AutomationProperties.SetName(_studioHex, "HEX color, RRGGBB or RRGGBBAA");
         _studioR.ValueChanged += (_, _) => ApplyStudioRgb();
         _studioG.ValueChanged += (_, _) => ApplyStudioRgb();
         _studioB.ValueChanged += (_, _) => ApplyStudioRgb();
+        _studioHex.TextChanged += (_, _) => RefreshStudioHexFeedback();
         _studioHex.KeyDown += (_, e) =>
         {
-            if (e.Key != Key.Enter) return;
-            ApplyStudioHex();
-            e.Handled = true;
+            if (e.Key == Key.Enter)
+            {
+                ApplyStudioHex();
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Escape)
+            {
+                SyncStudioColor(_studioColor);
+                e.Handled = true;
+            }
         };
         _studioHex.LostFocus += (_, _) => ApplyStudioHex();
+        _studioApplyHex = new Button { Content = "Apply", Padding = new Thickness(8, 5) };
+        _studioApplyHex.Classes.Add("text-action");
+        AutomationProperties.SetAutomationId(_studioApplyHex, "studio-hex-apply");
+        _studioApplyHex.Click += (_, _) => ApplyStudioHex();
 
         var rgb = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,*,Auto,*"), ColumnSpacing = 5 };
         rgb.Children.Add(ChannelLabel("R"));
@@ -143,32 +157,44 @@ public sealed partial class MainWindow
         rgb.Children.Add(Place(ChannelLabel("B"), 4));
         rgb.Children.Add(Place(_studioB, 5));
 
-        var hex = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), ColumnSpacing = 6 };
+        var hex = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto"), ColumnSpacing = 6 };
         hex.Children.Add(ChannelLabel("HEX"));
         hex.Children.Add(Place(_studioHex, 1));
-        hex.Children.Add(Place(_studioColorPreview, 2));
+        hex.Children.Add(Place(_studioApplyHex, 2));
+        hex.Children.Add(Place(_studioColorPreview, 3));
 
+        // Keep direct entry visible even when the 512-color grid is collapsed.
         var body = new StackPanel { Spacing = 8 };
-        body.Children.Add(_studioPaletteSwatches);
-        body.Children.Add(rgb);
         body.Children.Add(hex);
-
-        var expander = new Expander
+        body.Children.Add(_studioHexHint);
+        body.Children.Add(rgb);
+        body.Children.Add(new Expander
         {
             Header = "Palette · 512 colors",
             IsExpanded = true,
-            Content = body,
-        };
+            Content = new ScrollViewer
+            {
+                MaxHeight = 160,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Content = _studioPaletteSwatches,
+            },
+        });
 
-        return new Border
+        var result = new StackPanel { Spacing = 10 };
+        result.Children.Add(new Border
         {
             Padding = new Thickness(10, 7),
             CornerRadius = EditorThemeTokens.CardRadius,
             Background = EditorThemeTokens.SurfaceRaised,
             BorderBrush = EditorThemeTokens.PanelBorder,
             BorderThickness = new Thickness(1),
-            Child = expander,
-        };
+            Child = body,
+        });
+        // Personal swatches live directly below the existing studio palette.
+        result.Children.Add(BuildUserPaletteEditor());
+        RefreshStudioHexFeedback();
+        return result;
     }
 
     private static NumericUpDown ChannelInput() => new()
@@ -240,7 +266,8 @@ public sealed partial class MainWindow
         if (_syncingStudioColor || !_studioHex.IsInitialized) return;
         if (!TryParseHex(_studioHex.Text, out var color))
         {
-            SetError("HEX color must be #RRGGBB or #RRGGBBAA.");
+            _studioHexHint.Text = "Invalid HEX. Use #RRGGBB or #RRGGBBAA, for example #654321.";
+            SetError("HEX color must be #RRGGBB or #RRGGBBAA. The drawing color has not changed.");
             return;
         }
         ApplyStudioColor(color);
@@ -255,31 +282,17 @@ public sealed partial class MainWindow
             _studioR.Value = color.R;
             _studioG.Value = color.G;
             _studioB.Value = color.B;
-            _studioHex.Text = color.A == 255
-                ? $"#{color.R:X2}{color.G:X2}{color.B:X2}"
-                : $"#{color.R:X2}{color.G:X2}{color.B:X2}{color.A:X2}";
+            _studioHex.Text = HexColor.Format(color);
             _studioColorPreview.Background = Brush(color);
         }
         finally
         {
             _syncingStudioColor = false;
         }
+        RefreshStudioHexFeedback();
     }
 
-    private static bool TryParseHex(string? text, out Rgba32 color)
-    {
-        color = default;
-        var value = (text ?? string.Empty).Trim();
-        if (value.StartsWith('#')) value = value[1..];
-        if (value.Length is not (6 or 8)) return false;
-        if (!byte.TryParse(value.AsSpan(0, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var r) ||
-            !byte.TryParse(value.AsSpan(2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var g) ||
-            !byte.TryParse(value.AsSpan(4, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var b)) return false;
-        var a = (byte)255;
-        if (value.Length == 8 && !byte.TryParse(value.AsSpan(6, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out a)) return false;
-        color = new Rgba32(r, g, b, a);
-        return true;
-    }
+    private static bool TryParseHex(string? text, out Rgba32 color) => HexColor.TryParse(text, out color);
 
     private static IReadOnlyList<Rgba32> BuildStudioPaletteColors()
     {
