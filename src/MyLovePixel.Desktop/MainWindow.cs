@@ -104,7 +104,6 @@ public sealed partial class MainWindow : Window
         _canvas.PointerInput = DispatchCanvasPointer;
         _canvas.CancelPointerInput = CancelCanvasInteraction;
         _canvas.HoverPixelChanged = value => { _hover = value; RefreshStatus(); };
-        _canvas.SecondaryPickRequested = ErasePixelFromCanvas;
         _canvas.ZoomFactorRequested = ChangeZoom;
 
         Content = BuildShell();

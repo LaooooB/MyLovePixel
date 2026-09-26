@@ -14,6 +14,7 @@ public sealed partial class PixelCanvasView
     private bool _sampling;
     private bool _panning;
     private bool _drawing;
+    private bool _secondaryErasing;
     private Point _lastPan;
     private bool _samplerCursor;
     private bool _panCursor;
@@ -31,9 +32,10 @@ public sealed partial class PixelCanvasView
     {
         ClipToBounds = true;
         Focusable = true;
+        Transitions = new Avalonia.Animation.Transitions { EditorMotion.OpacityFade(HoverOpacityProperty) };
         RenderOptions.SetBitmapInterpolationMode(this, BitmapInterpolationMode.None);
         PointerCaptureLost += (_, _) => { if (!_releasingCapture) CancelActivePointer(); };
-        PointerExited += (_, _) => { _hoveredPixel = null; HoverPixelChanged?.Invoke(null); InvalidateVisual(); };
+        PointerExited += (_, _) => { _hoveredPixel = null; UpdateHoverAppearance(null); HoverPixelChanged?.Invoke(null); InvalidateVisual(); };
     }
 
     public void SetInteractionAppearance(bool sampler, bool pan, bool selection, int brushDiameter)
@@ -51,7 +53,7 @@ public sealed partial class PixelCanvasView
         var pointer = _capturedPointer;
         _capturedPointer = null;
         var wasDrawing = _drawing;
-        _sampling = _panning = _drawing = false;
+        _sampling = _panning = _drawing = _secondaryErasing = false;
         if (_activeSelectionTransform is { } operation)
         {
             _activeSelectionTransform = null;
@@ -66,6 +68,7 @@ public sealed partial class PixelCanvasView
     {
         base.OnPointerPressed(e);
         if (_presentation is null) return;
+        if (HasActivePointer) { e.Handled = true; return; }
         Focus();
         UpdateHover(e);
         var point = e.GetCurrentPoint(this);
@@ -86,9 +89,11 @@ public sealed partial class PixelCanvasView
             e.Handled = true;
             return;
         }
-        if (point.Properties.IsRightButtonPressed && _hoveredPixel is { } hover)
+        if (point.Properties.IsRightButtonPressed && _hoveredPixel is not null)
         {
-            SecondaryPickRequested?.Invoke(hover.X, hover.Y);
+            _secondaryErasing = _drawing = true;
+            Capture(e.Pointer);
+            DispatchPointer(e, EditorPointerKind.Pressed);
             e.Handled = true;
             return;
         }
@@ -124,6 +129,11 @@ public sealed partial class PixelCanvasView
     {
         base.OnPointerReleased(e);
         if (_presentation is null || !ReferenceEquals(e.Pointer.Captured, this)) return;
+        if (_secondaryErasing && e.GetCurrentPoint(this).Properties.PointerUpdateKind != PointerUpdateKind.RightButtonReleased)
+        {
+            e.Handled = true;
+            return;
+        }
         UpdateHover(e);
         if (_sampling) SampleHover();
         else if (_activeSelectionTransform is { } operation)
@@ -132,7 +142,7 @@ public sealed partial class PixelCanvasView
             DispatchSelectionTransform(e, operation, SelectionTransformPhase.Released);
         }
         else if (_drawing) DispatchPointer(e, EditorPointerKind.Released);
-        _drawing = _sampling = _panning = false;
+        _drawing = _sampling = _panning = _secondaryErasing = false;
         _capturedPointer = null;
         ReleaseCapture(e.Pointer);
         Cursor = new Cursor(_panCursor ? StandardCursorType.Hand : StandardCursorType.Cross);
@@ -175,9 +185,10 @@ public sealed partial class PixelCanvasView
         if (_selection is { } selection) DrawSelection(context, selection);
         foreach (var region in presentation.DirtyRegions)
             context.DrawRectangle(null, new Pen(EditorThemeTokens.DirtyRegionOutline, 1), new Rect(region.X * _zoom, region.Y * _zoom, region.Width * _zoom, region.Height * _zoom));
-        if (_hoveredPixel is { } hover && !_panCursor && !_panning)
+        if (_hoverVisualPixel is { } hover && HoverOpacity > 0 && !_panCursor && !_panning)
         {
-            var diameter = _samplerCursor || _selectionCursor ? 1 : _brushDiameter;
+            using var hoverOpacity = context.PushOpacity(HoverOpacity);
+            var diameter = _samplerCursor || _selectionCursor || _secondaryErasing ? 1 : _brushDiameter;
             var offset = (diameter - 1) / 2;
             var rect = new Rect((hover.X - offset) * _zoom, (hover.Y - offset) * _zoom, diameter * _zoom, diameter * _zoom);
             context.DrawRectangle(null, new Pen(Brushes.Black, 3), rect);

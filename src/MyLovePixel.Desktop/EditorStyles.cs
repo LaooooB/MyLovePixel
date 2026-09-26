@@ -11,6 +11,7 @@ public static class EditorStyles
     public static void Apply(Avalonia.Application app)
     {
         ArgumentNullException.ThrowIfNull(app);
+        EditorMotion.Install();
 
         app.Resources["ExpanderMinHeight"] = 34d;
         app.Resources["ExpanderHeaderPadding"] = new Thickness(9, 0, 0, 0);

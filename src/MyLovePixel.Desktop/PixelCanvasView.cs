@@ -62,7 +62,6 @@ public sealed partial class PixelCanvasView : Control
     public Action<SelectionTransformPointerEvent>? SelectionTransformInput { get; set; }
     public Action? CancelPointerInput { get; set; }
     public Action<(int X, int Y)?>? HoverPixelChanged { get; set; }
-    public Action<int, int>? SecondaryPickRequested { get; set; }
     public Action<double>? ZoomFactorRequested { get; set; }
     public CanvasPresentation? Presentation => _presentation;
     public double Zoom => _zoom;
@@ -326,6 +325,7 @@ public sealed partial class PixelCanvasView : Control
             : null;
         if (_hoveredPixel == next) return;
         _hoveredPixel = next;
+        UpdateHoverAppearance(next);
         HoverPixelChanged?.Invoke(next is { } value ? (value.X, value.Y) : null);
         InvalidateVisual();
     }
@@ -335,8 +335,14 @@ public sealed partial class PixelCanvasView : Control
         var presentation = _presentation;
         if (presentation is null) return;
         var point = e.GetCurrentPoint(this);
-        var x = Math.Clamp((int)Math.Floor(point.Position.X / _zoom), 0, presentation.Size.Width - 1);
-        var y = Math.Clamp((int)Math.Floor(point.Position.Y / _zoom), 0, presentation.Size.Height - 1);
+        var x = (int)Math.Floor(point.Position.X / _zoom);
+        var y = (int)Math.Floor(point.Position.Y / _zoom);
+        // Erase uses raw coordinates to break the path while outside the canvas.
+        if (!_secondaryErasing)
+        {
+            x = Math.Clamp(x, 0, presentation.Size.Width - 1);
+            y = Math.Clamp(y, 0, presentation.Size.Height - 1);
+        }
         var properties = point.Properties;
         var buttons = EditorPointerButtons.None;
         if (properties.IsLeftButtonPressed) buttons |= EditorPointerButtons.Primary;

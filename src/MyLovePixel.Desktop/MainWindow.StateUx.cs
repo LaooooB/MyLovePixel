@@ -82,6 +82,7 @@ public sealed partial class MainWindow
     private void ObserveCurrentSession()
     {
         if (ReferenceEquals(_observedSession, Current())) return;
+        _canvas.CancelActivePointer();
         if (_observedSession is not null) _observedSession.StateChanged -= OnSessionChanged;
         _observedSession = Current();
         if (_observedSession is not null) _observedSession.StateChanged += OnSessionChanged;

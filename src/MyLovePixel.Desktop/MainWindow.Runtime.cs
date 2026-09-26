@@ -92,10 +92,14 @@ public sealed partial class MainWindow
         if (session is null) return;
         try
         {
+            if (_busy) return;
+            if (_secondaryEraseGesture is not null || (e.Buttons & EditorPointerButtons.Secondary) != 0)
+            {
+                HandleSecondaryErase(session, e);
+                return;
+            }
             if (!_selectionMode && e.Kind == EditorPointerKind.Pressed)
                 _canvasPointerActive = true;
-
-            if (_busy) return;
             if (e.Kind == EditorPointerKind.Pressed)
             {
                 FinishParameterEdit();
@@ -159,6 +163,7 @@ public sealed partial class MainWindow
         }
         catch (Exception ex)
         {
+            FinishSecondaryErase(false);
             _canvasPointerActive = false;
             CrashLog.Write("CanvasPointer", ex);
             try { _plugins.CancelTool(session); }
@@ -169,6 +174,7 @@ public sealed partial class MainWindow
 
     private void CancelCanvasInteraction()
     {
+        FinishSecondaryErase(false);
         _canvasPointerActive = false;
         if (Current() is { } session)
         {
@@ -181,17 +187,6 @@ public sealed partial class MainWindow
         }
         _selectionStart = null;
         _selectionVertices.Clear();
-        QueueRefreshAll();
-    }
-
-    private void ErasePixelFromCanvas(int x, int y)
-    {
-        var session = Current();
-        if (session is null) return;
-        if (_busy) return;
-        FinishParameterEdit();
-        _playback.Stop(session);
-        Safe(() => session.EraseCanvasPixel(x, y));
         QueueRefreshAll();
     }
 

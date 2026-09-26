@@ -76,6 +76,49 @@ try {
     Alive
     Find-Control 'workspace.canvas' | Out-Null
     $results.Add('PASS native paint and canceled unsaved-document close')
+    # Draw an opaque horizontal path, erase it with one right drag, and sample
+    # interior pixels through the actual packaged UI before/after one Undo.
+    Invoke-Control 'tool.core.pencil'
+    $hex = Find-Control 'color.hex'
+    $hex.SetFocus()
+    [System.Windows.Forms.SendKeys]::SendWait('^a')
+    [System.Windows.Forms.SendKeys]::SendWait('#336699FF')
+    [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+    $canvas = Find-Control 'workspace.canvas'
+    $rect = $canvas.Current.BoundingRectangle
+    $y = $rect.Y + $rect.Height * 0.45
+    $x1 = $rect.X + $rect.Width * 0.35
+    $x2 = $rect.X + $rect.Width * 0.65
+    [NativeUi]::SetCursorPos([int]$x1, [int]$y) | Out-Null
+    [NativeUi]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero)
+    for ($i = 1; $i -le 12; $i++) {
+        [NativeUi]::SetCursorPos([int]($x1 + ($x2-$x1)*$i/12), [int]$y) | Out-Null
+        Start-Sleep -Milliseconds 16
+    }
+    [NativeUi]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 150
+    [NativeUi]::SetCursorPos([int]$x1, [int]$y) | Out-Null
+    [NativeUi]::mouse_event(8, 0, 0, 0, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 30
+    [NativeUi]::SetCursorPos([int]$x2, [int]$y) | Out-Null
+    Start-Sleep -Milliseconds 40
+    [NativeUi]::mouse_event(16, 0, 0, 0, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 150
+    Invoke-Control 'tool.core.eyedropper'
+    foreach ($fraction in @(0.2, 0.5, 0.8)) {
+        Click-Point ($x1+($x2-$x1)*$fraction) $y
+        $alpha = Find-Control 'color.alpha'
+        $range = $alpha.GetCurrentPattern([System.Windows.Automation.RangeValuePattern]::Pattern)
+        if ($range.Current.Value -ne 0) { throw 'Native right drag left an opaque interior pixel.' }
+    }
+    Invoke-Control 'edit.undo'
+    foreach ($fraction in @(0.2, 0.5, 0.8)) {
+        Click-Point ($x1+($x2-$x1)*$fraction) $y
+        $alpha = Find-Control 'color.alpha'
+        $range = $alpha.GetCurrentPattern([System.Windows.Automation.RangeValuePattern]::Pattern)
+        if ($range.Current.Value -ne 255) { throw 'One native Undo failed to restore the erase path.' }
+    }
+    $results.Add('PASS packaged right-button drag, gap-free erase, and whole-stroke Undo')
     [NativeUi]::SetWindowPos($p.MainWindowHandle, [IntPtr]::Zero, 0, 0, 960, 640, 6) | Out-Null
     Start-Sleep -Milliseconds 400
     $eye = Find-Control 'tool.core.eyedropper'

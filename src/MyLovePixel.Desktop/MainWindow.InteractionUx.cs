@@ -188,6 +188,8 @@ public sealed partial class MainWindow
             }
             e.Handled = true; return;
         }
+        if (_canvas.HasActivePointer && (e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.Key == Key.P))
+            _canvas.CancelActivePointer();
         if (e.KeyModifiers == KeyModifiers.Control && e.Key == Key.W) { e.Handled = true; await CloseCurrentDocumentAsync(); return; }
         if (e.KeyModifiers == KeyModifiers.Control && e.Key == Key.A && Current() is { } selectSession)
         {
