@@ -181,6 +181,8 @@ internal static class Program
                 new PixelWrite(2, 3, color),
                 new PixelWrite(3, 3, color),
                 new PixelWrite(4, 3, color),
+                new PixelWrite(5, 3, color),
+                new PixelWrite(6, 3, color),
             ], "Seed erase drag"));
             Pump();
             Click(Find<Button>(window, "tool.core.pencil"));
@@ -188,15 +190,15 @@ internal static class Program
             Point At(int x) => canvas.TranslatePoint(new Point((x + .5) * canvas.Zoom, 3.5 * canvas.Zoom), window)!.Value;
             var before = session.Commands.UndoCount;
             window.MouseDown(At(2), MouseButton.Right);
-            window.MouseMove(At(3));
-            window.MouseMove(At(4));
-            window.MouseUp(At(4), MouseButton.Right);
+            // One large move must erase the pixels crossed between pointer events too.
+            window.MouseMove(At(6));
+            window.MouseUp(At(6), MouseButton.Right);
             Pump();
-            Check(session.GetCanvasPixel(2, 3).A == 0 && session.GetCanvasPixel(3, 3).A == 0 && session.GetCanvasPixel(4, 3).A == 0,
+            Check(Enumerable.Range(2, 5).All(x => session.GetCanvasPixel(x, 3).A == 0),
                 "Holding right mouse and dragging did not erase every crossed pixel.");
             Check(session.Commands.UndoCount == before + 1, "A continuous right-button erase drag must be one undo step.");
             session.Undo(); Pump();
-            Check(session.GetCanvasPixel(2, 3) == color && session.GetCanvasPixel(3, 3) == color && session.GetCanvasPixel(4, 3) == color,
+            Check(Enumerable.Range(2, 5).All(x => session.GetCanvasPixel(x, 3) == color),
                 "Undo did not restore the full right-button erase gesture.");
         });
         Run("Hover visuals fade in and out instead of snapping", window =>
