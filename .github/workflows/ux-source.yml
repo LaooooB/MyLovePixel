@@ -8,6 +8,8 @@ permissions:
 jobs:
   snapshot:
     runs-on: ubuntu-latest
+    env:
+      NUGET_PACKAGES: /tmp/mlpx-packages
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -17,16 +19,26 @@ jobs:
         run: |
           dotnet restore MyLovePixel.slnx
           dotnet restore tests/MyLovePixel.Desktop.UxTests/MyLovePixel.Desktop.UxTests.csproj
-      - name: Archive source and build tools
+      - name: Archive source and required build tools
         run: |
+          set -e
           git archive --format=zip HEAD -o /tmp/MyLovePixel-source.zip
-          mkdir -p /tmp/mlpx-tools/dotnet
-          cp -a /usr/share/dotnet/dotnet /usr/share/dotnet/LICENSE.txt /usr/share/dotnet/ThirdPartyNotices.txt /tmp/mlpx-tools/dotnet/
-          cp -a /usr/share/dotnet/host /usr/share/dotnet/packs /usr/share/dotnet/shared /usr/share/dotnet/templates /tmp/mlpx-tools/dotnet/
-          mkdir -p /tmp/mlpx-tools/dotnet/sdk
-          cp -a /usr/share/dotnet/sdk/10.0.400 /tmp/mlpx-tools/dotnet/sdk/
-          cp -a ~/.nuget/packages /tmp/mlpx-tools/packages
-          tar -czf /tmp/MyLovePixel-toolchain.tar.gz -C /tmp/mlpx-tools .
+          root=/tmp/mlpx-tools
+          mkdir -p "$root/dotnet/sdk" "$root/dotnet/host/fxr" "$root/dotnet/shared/Microsoft.NETCore.App" "$root/dotnet/packs"
+          cp /usr/share/dotnet/dotnet /usr/share/dotnet/LICENSE.txt /usr/share/dotnet/ThirdPartyNotices.txt "$root/dotnet/"
+          cp -a /usr/share/dotnet/sdk/10.0.400 "$root/dotnet/sdk/"
+          cp -a /usr/share/dotnet/host/fxr/10.* "$root/dotnet/host/fxr/"
+          cp -a /usr/share/dotnet/shared/Microsoft.NETCore.App/10.* "$root/dotnet/shared/Microsoft.NETCore.App/"
+          for pack in Microsoft.NETCore.App.Ref Microsoft.NETCore.App.Host.linux-x64 Microsoft.AspNetCore.App.Ref; do
+            mkdir -p "$root/dotnet/packs/$pack"
+            cp -a /usr/share/dotnet/packs/$pack/10.* "$root/dotnet/packs/$pack/"
+          done
+          cp -a /tmp/mlpx-packages "$root/packages"
+          find "$root/packages" -name '*.nupkg' -delete
+          find "$root/packages" -type d -path '*/runtimes/*' -mindepth 4 -maxdepth 4 ! -name 'linux-x64' ! -name 'linux' ! -name 'unix' ! -name 'win-x64' -print
+          du -sh "$root"/*
+          tar -czf /tmp/MyLovePixel-toolchain-slim.tar.gz -C "$root" .
+          ls -lh /tmp/MyLovePixel-toolchain-slim.tar.gz
       - uses: actions/upload-artifact@v4
         with:
           name: MyLovePixel-source
@@ -34,7 +46,7 @@ jobs:
           retention-days: 2
       - uses: actions/upload-artifact@v4
         with:
-          name: MyLovePixel-toolchain
-          path: /tmp/MyLovePixel-toolchain.tar.gz
+          name: MyLovePixel-toolchain-slim
+          path: /tmp/MyLovePixel-toolchain-slim.tar.gz
           compression-level: 0
           retention-days: 1
