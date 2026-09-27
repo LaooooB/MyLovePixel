@@ -408,6 +408,7 @@ internal static partial class Program
         });
         RunInteractionPolishTests();
         RunNamedPaletteTests();
+        RunPreviewUxTests();
         Console.WriteLine($"Desktop UX tests: {_tests - _failures}/{_tests} passed.");
         return _failures == 0 ? 0 : 1;
     }

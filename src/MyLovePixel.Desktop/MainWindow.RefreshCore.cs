@@ -34,7 +34,7 @@ public sealed partial class MainWindow
         _canvas.SelectionTransformInput = DispatchSelectionTransform;
         _canvas.SetPresentation(presentation, session?.Zoom ?? 1d, selectionOverlay);
         _canvas.SetSelectionTransformEnabled(_selectionMode && selectionOverlay is not null);
-        if (updatePreview) _quickPreview.SetPresentation(presentation);
+        if (updatePreview) RefreshFinalPreview(session);
         if (session is null || presentation?.Diagnostics is not { } d)
         {
             _diagnostics.Text = string.Empty;

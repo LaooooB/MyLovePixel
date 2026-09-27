@@ -58,41 +58,6 @@ internal static class PixelBackdrop
     }
 }
 
-internal sealed class PixelPreviewView : Control
-{
-    private readonly PixelBitmapCache _bitmap = new();
-    private CanvasPresentation? _presentation;
-
-    public PixelPreviewView()
-    {
-        ClipToBounds = true;
-        RenderOptions.SetBitmapInterpolationMode(this, BitmapInterpolationMode.None);
-    }
-
-    public void SetPresentation(CanvasPresentation? presentation)
-    {
-        _presentation = presentation;
-        _bitmap.Update(presentation);
-        InvalidateVisual();
-    }
-
-    public override void Render(DrawingContext context)
-    {
-        base.Render(context);
-        context.FillRectangle(PixelBackdrop.Checker, new Rect(Bounds.Size));
-        if (_presentation is not { } presentation || Bounds.Width <= 0 || Bounds.Height <= 0) return;
-        _bitmap.Update(presentation);
-        if (_bitmap.Image is not { } image) return;
-        var scale = Math.Min(Bounds.Width / presentation.Size.Width, Bounds.Height / presentation.Size.Height);
-        if (scale >= 1d) scale = Math.Max(1d, Math.Floor(scale));
-        var width = presentation.Size.Width * scale;
-        var height = presentation.Size.Height * scale;
-        context.DrawImage(image, new Rect(0, 0, presentation.Size.Width, presentation.Size.Height), new Rect((Bounds.Width - width) / 2, (Bounds.Height - height) / 2, width, height));
-    }
-
-    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e) { _bitmap.Dispose(); base.OnDetachedFromVisualTree(e); }
-}
-
 internal sealed class ColorSwatchView : Control
 {
     private Rgba32 _color;

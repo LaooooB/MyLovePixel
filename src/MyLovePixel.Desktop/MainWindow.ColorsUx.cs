@@ -95,12 +95,6 @@ public sealed partial class MainWindow
         return expander;
     }
 
-    private Control BuildInspectorPreviewBox()
-    {
-        _quickPreview.Height = 132;
-        return new Border { Margin = new Thickness(10, 0, 10, 8), Child = _quickPreview, ClipToBounds = true };
-    }
-
     private void RefreshPalette()
     {
         var session = Current();

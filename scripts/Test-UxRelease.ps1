@@ -148,6 +148,38 @@ try {
     $value = (Find-Control 'color.hex').GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value
     if ($value -ne '#654321') { throw 'Reloaded named color does not apply to drawing.' }
     $results.Add('PASS native restart retains the custom name and color and can use it again')
+    Invoke-Control 'preview.enlarge'
+    $previewWindow = Find-Control 'preview.window'
+    $previewView = Find-Control 'preview.large.viewport'
+    $previewRect = $previewView.Current.BoundingRectangle
+    if ($previewRect.Width -lt 300 -or $previewRect.Height -lt 180) { throw 'Enlarged preview has no useful viewing area.' }
+    $beforeZoom = (Find-Control 'preview.large.zoom.actual').Current.Name
+    Invoke-Control 'preview.large.zoom.in'
+    $afterZoom = (Find-Control 'preview.large.zoom.actual').Current.Name
+    if ($beforeZoom -eq $afterZoom) { throw 'Native preview zoom-in did not change the displayed zoom.' }
+    Invoke-Control 'preview.large.zoom.out'
+    Invoke-Control 'preview.large.zoom.actual'
+    if (!(Find-Control 'preview.large.zoom.actual').Current.Name.Contains('100%')) { throw 'Native preview actual-size reset failed.' }
+    Invoke-Control 'preview.large.zoom.fit'
+    [NativeUi]::SetCursorPos(0, 0) | Out-Null
+    Start-Sleep -Milliseconds 300
+    $previewRect = (Find-Control 'preview.large.viewport').Current.BoundingRectangle
+    $previewBitmap = New-Object System.Drawing.Bitmap([int]$previewRect.Width, [int]$previewRect.Height)
+    $previewGraphics = [System.Drawing.Graphics]::FromImage($previewBitmap)
+    try {
+        $previewGraphics.CopyFromScreen([int]$previewRect.X, [int]$previewRect.Y, 0, 0, $previewBitmap.Size)
+        foreach ($fraction in @(0.1, 0.3, 0.5, 0.7, 0.9)) {
+            $pixel = $previewBitmap.GetPixel([int]($previewBitmap.Width * $fraction), [int]($previewBitmap.Height * $fraction))
+            if ($pixel.R -ne 255 -or $pixel.G -ne 255 -or $pixel.B -ne 255) { throw 'The packaged preview background is not pure white.' }
+        }
+        $previewBitmap.Save((Join-Path $OutputDirectory 'preview-white.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+    } finally { $previewGraphics.Dispose(); $previewBitmap.Dispose() }
+    $previewWindow.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern).Close()
+    Start-Sleep -Milliseconds 250
+    Invoke-Control 'preview.enlarge'
+    (Find-Control 'preview.window').GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern).Close()
+    Find-Control 'workspace.canvas' | Out-Null
+    $results.Add('PASS native resizable Preview window, zoom-in/out, actual-size, fit, pure white background and reopen')
     [NativeUi]::SetWindowPos($p.MainWindowHandle, [IntPtr]::Zero, 0, 0, 960, 640, 6) | Out-Null
     Start-Sleep -Milliseconds 400
     $eye = Find-Control 'tool.core.eyedropper'

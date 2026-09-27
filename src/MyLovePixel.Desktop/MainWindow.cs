@@ -116,6 +116,7 @@ public sealed partial class MainWindow : Window
         Closed += (_, _) =>
         {
             _closed = true;
+            _previewWindow?.Close();
             FinishParameterEdit();
             _autosaveTimer.Stop();
             _playbackTimer.Stop();

@@ -18,7 +18,7 @@ public static class SpecialToolDescriptors
 {
     private static ToolOptionSchema ModifierOptions(int defaultStrength = 30) => new(
     [
-        ToolOptionDefinition.Integer(ToolOptionIds.BrushSize, "Brush Size", 3, 1, 64),
+        ToolOptionDefinition.Integer(ToolOptionIds.BrushSize, "Brush Size", 1, 1, 64),
         ToolOptionDefinition.Integer(ToolOptionIds.Spacing, "Spacing", 1, 1, 64),
         ToolOptionDefinition.Integer(SpecialToolOptionIds.Strength, "Strength", defaultStrength, 1, 100),
     ]);
@@ -37,7 +37,7 @@ public static class SpecialToolDescriptors
         "Blur Brush",
         new ToolOptionSchema(
         [
-            ToolOptionDefinition.Integer(ToolOptionIds.BrushSize, "Brush Size", 3, 1, 64),
+            ToolOptionDefinition.Integer(ToolOptionIds.BrushSize, "Brush Size", 1, 1, 64),
             ToolOptionDefinition.Integer(ToolOptionIds.Spacing, "Spacing", 1, 1, 64),
             ToolOptionDefinition.Integer(SpecialToolOptionIds.Radius, "Radius", 1, 1, 4),
             ToolOptionDefinition.Integer(SpecialToolOptionIds.Strength, "Strength", 40, 1, 100),
