@@ -19,6 +19,10 @@ public static class NativeUi {
 '@
 New-Item -ItemType Directory -Force $OutputDirectory | Out-Null
 $results = New-Object System.Collections.Generic.List[string]
+$paletteFile = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'MyLovePixel\user-palette.json'
+$paletteBackup = Join-Path $OutputDirectory 'original-palette.json'
+$hadPalette = Test-Path $paletteFile
+if ($hadPalette) { Copy-Item $paletteFile $paletteBackup -Force }
 $p = Start-Process $Executable -PassThru
 function Alive {
     $p.Refresh()
@@ -119,11 +123,37 @@ try {
         if ($range.Current.Value -ne 255) { throw 'One native Undo failed to restore the erase path.' }
     }
     $results.Add('PASS packaged right-button drag, gap-free erase, and whole-stroke Undo')
+    Invoke-Control 'palette.open'
+    $savedHex = Find-Control 'palette.hex'
+    $savedHex.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue('#654321')
+    $savedName = Find-Control 'palette.name'
+    $name1 = -join @([char]0x6728, [char]0x5934, [char]0x9634, [char]0x5F71)
+    $savedName.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue($name1)
+    Invoke-Control 'palette.save'
+    $swatch = Find-Control 'palette.swatch.654321'
+    if (!$swatch.Current.Name.Contains($name1)) { throw 'The saved name is not exposed on the swatch.' }
+    Invoke-Control 'palette.rename'
+    $name2 = $name1 + ' 2'
+    (Find-Control 'palette.name').GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue($name2)
+    Invoke-Control 'palette.save'
+    $data = Get-Content -Raw -Encoding UTF8 $paletteFile | ConvertFrom-Json
+    $named = @($data.colors | Where-Object { $_.hex -eq '#654321' })
+    if ($named.Count -ne 1 -or $named[0].name -ne $name2) { throw 'Name and HEX were not durably saved without duplicates.' }
+    $results.Add('PASS native HEX entry, visible Unicode name, rename and persistent named palette')
+    Stop-Process -Id $p.Id -Force
+    $p = Start-Process $Executable -PassThru
+    $swatch = Find-Control 'palette.swatch.654321'
+    if (!$swatch.Current.Name.Contains($name2)) { throw 'Named swatch disappeared after restart.' }
+    Invoke-Control 'palette.swatch.654321'
+    $value = (Find-Control 'color.hex').GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value
+    if ($value -ne '#654321') { throw 'Reloaded named color does not apply to drawing.' }
+    $results.Add('PASS native restart retains the custom name and color and can use it again')
     [NativeUi]::SetWindowPos($p.MainWindowHandle, [IntPtr]::Zero, 0, 0, 960, 640, 6) | Out-Null
     Start-Sleep -Milliseconds 400
     $eye = Find-Control 'tool.core.eyedropper'
     if ($eye.Current.IsOffscreen) { throw 'Named eyedropper is clipped in the compact window.' }
     $results.Add('PASS compact native window')
+    Invoke-Control 'palette.rename'
     $screen = [System.Windows.Forms.SystemInformation]::VirtualScreen
     $bitmap = New-Object System.Drawing.Bitmap($screen.Width, $screen.Height)
     $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
@@ -141,4 +171,6 @@ try {
     throw
 } finally {
     if (!$p.HasExited) { Stop-Process -Id $p.Id -Force }
+    if ($hadPalette) { Copy-Item $paletteBackup $paletteFile -Force }
+    elseif (Test-Path $paletteFile) { Remove-Item $paletteFile -Force }
 }

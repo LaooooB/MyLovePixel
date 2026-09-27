@@ -9,7 +9,6 @@ public sealed partial class MainWindow
 {
     private bool? _compactHeight;
     private bool _restoreTimeline = true;
-    private bool _restorePreview;
 
     private T DocumentControl<T>(T control) where T : Control
     {
@@ -36,20 +35,17 @@ public sealed partial class MainWindow
             if (compactHeight)
             {
                 _restoreTimeline = _timelineExpander.IsExpanded;
-                _restorePreview = _previewExpander.IsExpanded;
                 _timelineExpander.IsExpanded = false;
-                _previewExpander.IsExpanded = false;
             }
             else if (_compactHeight.HasValue)
             {
                 _timelineExpander.IsExpanded = _restoreTimeline;
-                _previewExpander.IsExpanded = _restorePreview;
             }
             _compactHeight = compactHeight;
         }
         // An explicitly reopened timeline remains scrollable on small screens.
         if (_timelineContent is not null) _timelineContent.MaxHeight = Math.Clamp(height * .26, 96, 230);
-        _quickPreview.Height = compactHeight ? 80 : 132;
+        _quickPreview.Height = height < 500 ? 44 : compactHeight ? 64 : 112;
     }
 
     private void ShowViewMenu()

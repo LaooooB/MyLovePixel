@@ -99,13 +99,18 @@ internal static partial class Program
             var button = Find<Button>(w, "project.save"); ToolTip.SetShowDelay(button, 20);
             MoveWithoutSettling(w, new Point(w.Bounds.Width / 2, 15)); PumpFor(30);
             MoveWithoutSettling(w, button.TranslatePoint(new Point(15, 15), w)!.Value);
-            PumpFor(70);
-            var tip = w.GetVisualDescendants().OfType<ToolTip>().FirstOrDefault(t => t.IsEffectivelyVisible);
-            Check(tip is not null, "The tooltip did not open in the window overlay.");
-            Check(tip!.Opacity > 0 && tip!.Opacity < 1, "Tooltip fade-in did not produce an intermediate opacity.");
+            ToolTip? tip = null;
+            // Observe actual rendered frames: a loaded Windows worker may spend
+            // the old fixed 70 ms creating the popup, before its animation starts.
+            Check(ObserveAnimation(() =>
+            {
+                tip = w.GetVisualDescendants().OfType<ToolTip>().FirstOrDefault(t => t.IsEffectivelyVisible);
+                return tip is { Opacity: > 0 and < 1 };
+            }), "Tooltip fade-in did not produce an intermediate opacity.");
             PumpFor(210); Check(tip!.Opacity > .99, "Tooltip never reached full opacity.");
-            MoveWithoutSettling(w, new Point(w.Bounds.Width / 2, 15)); PumpFor(55);
-            Check(tip!.IsAttachedToVisualTree() && tip!.Opacity > 0 && tip!.Opacity < 1, "Tooltip vanished before fade-out completed.");
+            MoveWithoutSettling(w, new Point(w.Bounds.Width / 2, 15));
+            Check(ObserveAnimation(() => tip!.IsAttachedToVisualTree() && tip!.Opacity > 0 && tip!.Opacity < 1),
+                "Tooltip vanished before fade-out completed.");
             PumpFor(200); Check(!tip!.IsAttachedToVisualTree(), "Faded tooltip remained attached.");
         });
         Run("Tooltip fade reverses on reentry and Escape dismisses it", w =>
@@ -139,6 +144,23 @@ internal static partial class Program
         impl.GetType().GetInterfaces().Single(t => t.Name == "IHeadlessWindow").GetMethod("MouseMove")!.Invoke(impl, new object[] { position, RawInputModifiers.None });
     }
     private static Color BrushColor(IBrush? brush) => (brush as ISolidColorBrush)?.Color ?? Colors.Transparent;
+    private static bool ObserveAnimation(Func<bool> condition)
+    {
+        var observed = false;
+        var frame = new Avalonia.Threading.DispatcherFrame();
+        var render = new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(8) };
+        render.Tick += (_, _) =>
+        {
+            AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+            if (condition()) { observed = true; frame.Continue = false; }
+        };
+        using var end = Avalonia.Threading.DispatcherTimer.RunOnce(() => frame.Continue = false, TimeSpan.FromSeconds(2));
+        render.Start();
+        try { Avalonia.Threading.Dispatcher.UIThread.PushFrame(frame); }
+        finally { render.Stop(); }
+        return observed;
+    }
+
     private static void PumpFor(int milliseconds)
     {
         var frame = new Avalonia.Threading.DispatcherFrame();

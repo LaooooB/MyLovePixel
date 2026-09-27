@@ -17,7 +17,7 @@ public sealed partial class MainWindow
     private readonly NumericUpDown _studioR = ChannelInput();
     private readonly NumericUpDown _studioG = ChannelInput();
     private readonly NumericUpDown _studioB = ChannelInput();
-    private readonly TextBox _studioHex = new() { Text = "#000000", MinWidth = 112 };
+    private readonly TextBox _studioHex = new() { Text = "#000000", PlaceholderText = "#654321", MinWidth = 84, MaxLength = 32 };
     private readonly Border _studioColorPreview = Swatch();
     private bool _convenienceInstalled;
     private bool _syncingStudioColor;
@@ -52,20 +52,7 @@ public sealed partial class MainWindow
 
 
 
-    private static bool TryParseHex(string? text, out Rgba32 color)
-    {
-        color = default;
-        var value = (text ?? string.Empty).Trim();
-        if (value.StartsWith('#')) value = value[1..];
-        if (value.Length is not (6 or 8)) return false;
-        if (!byte.TryParse(value.AsSpan(0, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var r) ||
-            !byte.TryParse(value.AsSpan(2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var g) ||
-            !byte.TryParse(value.AsSpan(4, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var b)) return false;
-        var a = (byte)255;
-        if (value.Length == 8 && !byte.TryParse(value.AsSpan(6, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out a)) return false;
-        color = new Rgba32(r, g, b, a);
-        return true;
-    }
+    private static bool TryParseHex(string? text, out Rgba32 color) => HexColor.TryParse(text, out color);
 
     private static IReadOnlyList<Rgba32> BuildStudioPaletteColors()
     {

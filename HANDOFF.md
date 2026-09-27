@@ -1,3 +1,7 @@
+# Current delivery: named palette on the complete UX build
+
+Use `ux-release-20260926` for subsequent development. This feature is based on `f4985b1`, not the older `main` UI. Read `docs/NAMED_PALETTE.md` for names, HEX, schema-1 migration, storage and UI details. Preserve `EditorMotion`, `HoverToolTips`, `MainWindow.SecondaryErase` and all desktop regression tests. No workflow or project format changes are required.
+
 # MyLovePixel — Handoff
 
 ## UX P0/P1 release continuation — 2026-09-26

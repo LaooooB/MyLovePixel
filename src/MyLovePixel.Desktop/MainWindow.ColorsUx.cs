@@ -46,7 +46,7 @@ public sealed partial class MainWindow
         }
         body.Children.Add(channels);
 
-        var hex = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), ColumnSpacing = 6 };
+        var hex = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto"), ColumnSpacing = 4 };
         hex.Children.Add(new TextBlock { Text = "HEX", VerticalAlignment = VerticalAlignment.Center, Foreground = EditorThemeTokens.TextSecondary });
         Named(_studioHex, "color.hex", "HEX color, RRGGBB or RRGGBBAA");
         _studioHex.KeyDown += (_, e) =>
@@ -57,6 +57,7 @@ public sealed partial class MainWindow
         _studioHex.LostFocus += (_, _) => ApplyStudioHex();
         hex.Children.Add(Place(_studioHex, 1));
         hex.Children.Add(Place(TextIconButton("⇄", "Swap", "Swap foreground / background · X", SwapColors), 2));
+        hex.Children.Add(Place(Named(TextIconButton("", "Save…", "Name and save this color in My palette", OpenPersonalPalette), "palette.open", "Save color to My palette"), 3));
         body.Children.Add(hex);
         body.Children.Add(Named(_colorValidation, "color.validation", "Color validation"));
         body.Children.Add(_sampleInfo);
@@ -180,6 +181,7 @@ public sealed partial class MainWindow
             foreach (var pair in _colorButtons) SetSelected(pair.Button, pair.Color == color);
         }
         finally { _syncingStudioColor = false; }
+        SyncPersonalColor(color);
     }
 
     private static string Hex(Rgba32 color) => color.A == 255 ? $"#{color.R:X2}{color.G:X2}{color.B:X2}" : $"#{color.R:X2}{color.G:X2}{color.B:X2}{color.A:X2}";

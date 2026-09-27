@@ -17,7 +17,7 @@ public sealed partial class MainWindow
     private readonly Border _noticeHost = new() { IsVisible = false };
     private readonly ProgressBar _busyProgress = new() { IsIndeterminate = true, Width = 52, Height = 4, IsVisible = false };
     private readonly TabControl _sideTabs = new();
-    private readonly Expander _previewExpander = new() { Header = "Preview", IsExpanded = false };
+    private readonly Expander _previewExpander = new() { Header = "Preview", IsExpanded = true };
     private readonly Expander _timelineExpander = new() { Header = "Timeline", IsExpanded = true };
     private readonly Button _playButton = new();
     private readonly Button _previousPage = new();
@@ -182,7 +182,7 @@ public sealed partial class MainWindow
         advanced.SelectionChanged += (_, _) => QueueRefreshAll();
         _sideTabs.ItemsSource = new object[]
         {
-            TextTab("Edit", InspectorScroll(_toolOptionsPanel, BuildStudioPaletteEditor())),
+            TextTab("Edit", InspectorScroll(_toolOptionsPanel, BuildStudioPaletteEditor(), BuildUserPaletteEditor())),
             TextTab("Layers", InspectorScroll(_layersPanel)),
             TextTab("Photo", BuildPhotoPixelPanel()),
             TextTab("More", advanced),

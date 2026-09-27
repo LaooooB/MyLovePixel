@@ -399,7 +399,15 @@ internal static partial class Program
             Check(session.Commands.UndoCount == before && !session.IsDirty, "Repeated undo did not return to the initial document.");
             Check(Find<Button>(window, "tool.core.eyedropper").IsEffectivelyEnabled, "Repeated editing left controls disabled.");
         });
+        Run("Named personal palette is present below Color library", w =>
+        {
+            var hex = Find<TextBox>(w, "palette.hex");
+            var name = Find<TextBox>(w, "palette.name");
+            Check(hex.IsEffectivelyVisible && name.IsEffectivelyVisible, "Palette input is hidden.");
+            Check(Find<Button>(w, "palette.save").IsEffectivelyVisible, "Save color is hidden.");
+        });
         RunInteractionPolishTests();
+        RunNamedPaletteTests();
         Console.WriteLine($"Desktop UX tests: {_tests - _failures}/{_tests} passed.");
         return _failures == 0 ? 0 : 1;
     }
@@ -409,7 +417,8 @@ internal static partial class Program
         var filter = Environment.GetEnvironmentVariable("MLPX_TEST_FILTER");
         if (!string.IsNullOrEmpty(filter) && !name.Contains(filter, StringComparison.OrdinalIgnoreCase)) return;
         Console.WriteLine("RUN " + name);
-        var window = new MainWindow();
+        var palettePath = Path.Combine(Path.GetTempPath(), "MyLovePixel-ui-palette", Guid.NewGuid().ToString("N"), "user-palette.json");
+        var window = new MainWindow(new UserPaletteStore(palettePath));
         _tests++;
         try
         {

@@ -81,8 +81,11 @@ public sealed partial class MainWindow : Window
     private (int X, int Y)? _selectedTileCell;
     private EffectInstanceId? _selectedEffect;
 
-    public MainWindow()
+    public MainWindow() : this(new UserPaletteStore()) { }
+
+    public MainWindow(UserPaletteStore userPaletteStore)
     {
+        _userPaletteStore = userPaletteStore ?? throw new ArgumentNullException(nameof(userPaletteStore));
         Width = 1280;
         Height = 820;
         MinWidth = 640;
