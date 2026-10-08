@@ -1,0 +1,23 @@
+name: Color Library Validation
+on:
+  workflow_dispatch:
+  push:
+    branches: [color-library-upgrade-20261008]
+permissions:
+  contents: read
+concurrency:
+  group: color-library-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  source-snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Archive exact source revision
+        run: git archive --format=zip --output=MyLovePixel-source.zip HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MyLovePixel-source
+          path: MyLovePixel-source.zip
+          retention-days: 7
+          if-no-files-found: error
