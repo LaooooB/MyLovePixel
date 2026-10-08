@@ -24,11 +24,12 @@ jobs:
   bootstrap-tools:
     if: contains(github.event.head_commit.message, '[bootstrap]')
     runs-on: ubuntu-latest
-    env:
-      DOTNET_INSTALL_DIR: ${{ runner.temp }}/color-library-dotnet
-      NUGET_PACKAGES: ${{ runner.temp }}/color-library-nuget
     steps:
       - uses: actions/checkout@v4
+      - name: Set isolated dependency paths
+        run: |
+          echo "DOTNET_INSTALL_DIR=$RUNNER_TEMP/color-library-dotnet" >> "$GITHUB_ENV"
+          echo "NUGET_PACKAGES=$RUNNER_TEMP/color-library-nuget" >> "$GITHUB_ENV"
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.400'
