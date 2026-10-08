@@ -100,6 +100,7 @@ internal static class Program
             var presenter = button.GetVisualDescendants().OfType<ContentPresenter>().First(p => p.Name == "PART_ContentPresenter");
             Check(presenter.Transitions?.OfType<BrushTransition>().Any(t => t.Property == ContentPresenter.BackgroundProperty) == true,
                 "Hover animates the actual template background, not only its parent button");
+            NavigationChecks.Run(_window, Check, output);
         }
         catch (Exception error)
         {
