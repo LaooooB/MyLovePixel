@@ -64,7 +64,7 @@ internal static class NavigationChecks
         window.MouseWheel(anchor, new Vector(0, 0.5)); Pump(230);
         var afterPosition = (anchor - Origin()) / canvas.Zoom;
         check(Math.Abs(canvas.Zoom - beforeZoom * Math.Sqrt(1.2)) < 0.00001, "Fractional wheel deltas produce the exact zoom target");
-        check((afterPosition - beforePosition).Length * canvas.Zoom < 1.5, "Animated zoom keeps the pixel under the cursor anchored");
+        check((Math.Abs(afterPosition.X - beforePosition.X) + Math.Abs(afterPosition.Y - beforePosition.Y)) * canvas.Zoom < 1.5, "Animated zoom keeps the pixel under the cursor anchored");
         check(canvas.DisplayFullUploadCount == uploads, "Animated wheel zoom never reuploads the full bitmap");
         Call("SetZoom", 0.5d); Flush();
         for (var i = 0; i < 3; i++) window.MouseWheel(anchor, new Vector(0, 1));
