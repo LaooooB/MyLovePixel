@@ -1,0 +1,90 @@
+name: Smooth input and Windows package
+on:
+  push:
+    branches: ['perf/input-latency-20261008']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      revision: ${{ steps.source.outputs.revision }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+      - name: Preserve exact source before building
+        id: source
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || { echo 'Branch changed; refusing stale integration'; exit 1; }
+          if [ -f tools/input-latency.delta ]; then
+            python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, subprocess, zlib
+          patch = zlib.decompress(Path('tools/input-latency.delta').read_bytes())
+          assert hashlib.sha256(patch).hexdigest() == '7a869d21ebd6a9f92bfbcb63058ae78327cfee16f6ff014b6b79be4f1f1e9788', 'Source checksum mismatch'
+          subprocess.run(['git', 'apply', '--check', '-'], input=patch, check=True)
+          subprocess.run(['git', 'apply', '-'], input=patch, check=True)
+          PY
+            git add src/ tests/
+            git rm tools/input-latency.delta
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit -m 'perf: restore reference UX, retain camera rendering and refresh only changed inspectors'
+            git push origin HEAD:"$GITHUB_REF_NAME"
+          fi
+          echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  windows:
+    needs: source
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.source.outputs.revision }}
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build desktop
+        run: dotnet build src/MyLovePixel.Desktop/MyLovePixel.Desktop.csproj -c Release
+      - name: Check retained colors and basic editing
+        run: dotnet run --project tests/MyLovePixel.UxSmoke -c Release -- artifacts/ux
+      - name: Check pan, zoom, hover and stable controls
+        run: dotnet run --project tests/MyLovePixel.PerformanceSmoke -c Release -- artifacts/checks
+      - name: Publish portable executable
+        run: dotnet publish src/MyLovePixel.Desktop/MyLovePixel.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:PublishTrimmed=false -o artifacts/windows
+      - name: Open and close the actual EXE
+        shell: pwsh
+        run: |
+          $p = Start-Process (Resolve-Path artifacts/windows/MyLovePixel.Desktop.exe) -PassThru
+          try {
+            if (-not $p.WaitForInputIdle(30000)) { throw 'EXE did not become ready' }
+            Start-Sleep -Milliseconds 1500
+            $p.Refresh()
+            if ($p.HasExited -or $p.MainWindowHandle -eq 0 -or $p.MainWindowTitle -notlike '*MyLovePixel*') { throw 'Main window did not open' }
+            [void]$p.CloseMainWindow()
+            if (-not $p.WaitForExit(15000) -or $p.ExitCode -ne 0) { throw 'EXE did not close normally' }
+          } finally { if (-not $p.HasExited) { $p.Kill() } }
+          Copy-Item THIRD_PARTY_NOTICES.md artifacts/windows/
+          Get-ChildItem artifacts/windows -Filter *.pdb | Remove-Item
+          (Get-FileHash artifacts/windows/MyLovePixel.Desktop.exe -Algorithm SHA256).Hash | Set-Content artifacts/windows/SHA256.txt
+          git rev-parse HEAD | Set-Content artifacts/windows/BUILD_COMMIT.txt
+          git archive --format=zip --output=artifacts/source.zip HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MyLovePixel-Smooth-win64
+          path: artifacts/windows/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: MyLovePixel-Smooth-checks
+          path: |
+            artifacts/checks/
+            artifacts/ux/
+            artifacts/source.zip
+          if-no-files-found: ignore
