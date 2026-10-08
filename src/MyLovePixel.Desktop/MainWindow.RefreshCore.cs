@@ -35,8 +35,8 @@ public sealed partial class MainWindow
             RefreshActions();
             RefreshCanvas();
             RefreshTools();
-            if (_toolOptionsPanel.IsEffectivelyVisible && !_toolOptionsPanel.IsKeyboardFocusWithin) RefreshToolOptions();
-            if (_layersPanel.IsEffectivelyVisible && !_layersPanel.IsKeyboardFocusWithin) RefreshLayers();
+            if (_toolOptionsPanel.IsEffectivelyVisible && !DeferInspectorWhileEditing(_toolOptionsPanel)) RefreshToolOptions();
+            if (_layersPanel.IsEffectivelyVisible && !DeferInspectorWhileEditing(_layersPanel)) RefreshLayers();
             RefreshPalette();
             RefreshConvenienceUi();
             var stamp = InspectorStamp();

@@ -13,15 +13,33 @@ public sealed partial class MainWindow
     private string? _timelineUiSignature;
     private bool _recoveryUiLoaded;
     private readonly Dictionary<Control, string> _inspectorStamps = [];
+    private readonly HashSet<Control> _focusTrackedInspectors = [];
+    private readonly HashSet<Control> _deferredInspectors = [];
 
     // Mirrors the reference release's lazy inspector refresh. Hidden inspectors
     // cannot steal an input frame to rebuild controls or discover files on disk.
     private void RefreshVisibleInspector(Control panel, string stamp, Action refresh)
     {
-        if (TopLevel.GetTopLevel(panel) is null || !panel.IsEffectivelyVisible || panel.IsKeyboardFocusWithin) return;
+        if (TopLevel.GetTopLevel(panel) is null || !panel.IsEffectivelyVisible || DeferInspectorWhileEditing(panel)) return;
         if (_inspectorStamps.TryGetValue(panel, out var previous) && previous == stamp) return;
         refresh();
         _inspectorStamps[panel] = stamp;
+    }
+
+    private bool DeferInspectorWhileEditing(Control panel)
+    {
+        if (_focusTrackedInspectors.Add(panel))
+            panel.LostFocus += (_, _) =>
+            {
+                if (_deferredInspectors.Remove(panel)) QueueRefreshAll();
+            };
+        // Only protect active value editors. A focused button must still update
+        // its resulting layer/effect state immediately after a click.
+        var editing = panel.GetVisualDescendants().OfType<Control>().Any(c =>
+            c is TextBox or NumericUpDown or ComboBox && c.IsKeyboardFocusWithin);
+        if (editing) _deferredInspectors.Add(panel);
+        else _deferredInspectors.Remove(panel);
+        return editing;
     }
 
     private string InspectorStamp()
