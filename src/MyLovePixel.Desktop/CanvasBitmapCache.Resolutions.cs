@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Media;
 using Avalonia.Media.Imaging;
 
 namespace MyLovePixel.Desktop;
@@ -10,8 +11,6 @@ internal sealed partial class CanvasBitmapCache
 
     private Bitmap SelectResolution(Rect destination, double renderScaling)
     {
-        // Retain the original for 1:1 and magnification. Reduced levels are
-        // immutable display caches and never replace the document pixels.
         Bitmap image = _bitmap!;
         var targetWidth = destination.Width * Math.Max(1d, renderScaling);
         var targetHeight = destination.Height * Math.Max(1d, renderScaling);
@@ -21,14 +20,33 @@ internal sealed partial class CanvasBitmapCache
         {
             if (level == _resolutions.Count)
             {
-                _resolutions.Add(image.CreateScaledBitmap(
-                    new PixelSize(Math.Max(1, (image.PixelSize.Width + 1) / 2), Math.Max(1, (image.PixelSize.Height + 1) / 2)),
-                    BitmapInterpolationMode.HighQuality));
+                var size = new PixelSize(Math.Max(1, (image.PixelSize.Width + 1) / 2), Math.Max(1, (image.PixelSize.Height + 1) / 2));
+                _resolutions.Add(ReduceImage(image, size));
                 ResampleCount++;
             }
             image = _resolutions[level++];
         }
         return image;
+    }
+
+    private static Bitmap ReduceImage(Bitmap source, PixelSize size)
+    {
+        // Skia's CreateScaledBitmap accepts only immutable bitmap implementations.
+        // Draw into a new target instead; this supports the writable source and
+        // premultiplied-alpha filtering without touching original RGBA.
+        var result = new RenderTargetBitmap(size, new Vector(96, 96));
+        try
+        {
+            using (var context = result.CreateDrawingContext())
+            using (context.PushRenderOptions(new RenderOptions { BitmapInterpolationMode = BitmapInterpolationMode.HighQuality }))
+                context.DrawImage(source, new Rect(source.Size), new Rect(size.Width, size.Height));
+            return result;
+        }
+        catch
+        {
+            result.Dispose();
+            throw;
+        }
     }
 
     private void InvalidateResolutions()
