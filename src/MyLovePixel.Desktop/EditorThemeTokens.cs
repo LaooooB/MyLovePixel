@@ -26,10 +26,10 @@ public static class EditorThemeTokens
     public static IBrush Warning { get; } = Rgb(215, 183, 104);
 
     public static IBrush CanvasWorkspace { get; } = Rgb(67, 72, 68);
-    public static IBrush CanvasFrame { get; } = Rgb(222, 226, 221);
-    public static IBrush PreviewBackground { get; } = Rgb(255, 255, 255);
-    public static IBrush CheckerLight { get; } = Rgb(242, 244, 241);
-    public static IBrush CheckerDark { get; } = Rgb(211, 216, 212);
+    public static IBrush CanvasFrame { get; } = Rgb(214, 214, 214);
+    public static IBrush PreviewBackground { get; } = Rgb(214, 214, 214);
+    public static IBrush CheckerLight { get; } = Rgb(220, 220, 220);
+    public static IBrush CheckerDark { get; } = Rgb(208, 208, 208);
     public static IBrush GridLine { get; } = Rgba(82, 91, 85, 70);
     public static IBrush HoverCell { get; } = Rgba(91, 218, 176, 58);
     public static IBrush HoverCellOutline { get; } = Accent;
@@ -44,9 +44,9 @@ public static class EditorThemeTokens
     public const double ControlSpacing = 6d;
     public const double PanelSpacing = 10d;
     public const double ShellPadding = 10d;
-    public const double ToolRailWidth = 64d;
+    public const double ToolRailWidth = 112d;
     public const double RightPanelWidth = 380d;
-    public const double TimelineHeight = 148d;
+    public const double TimelineHeight = 160d;
 
     private static IBrush Rgb(byte r, byte g, byte b) => new SolidColorBrush(Color.FromRgb(r, g, b));
     private static IBrush Rgba(byte r, byte g, byte b, byte a) => new SolidColorBrush(Color.FromArgb(a, r, g, b));

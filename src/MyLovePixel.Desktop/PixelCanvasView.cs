@@ -39,13 +39,12 @@ public readonly record struct SelectionTransformPreview(
     double Height,
     double RotationDegrees);
 
-public sealed class PixelCanvasView : Control
+public sealed partial class PixelCanvasView : Control
 {
     private const double TransformHandleRadius = 7d;
     private const double RotateHandleRadius = 8d;
     private const double RotateHandleOffset = 24d;
 
-    private readonly Dictionary<uint, IBrush> _brushes = [];
     private CanvasPresentation? _presentation;
     private SelectionOverlayPresentation? _selection;
     private IntPoint? _hoveredPixel;
@@ -100,6 +99,7 @@ public sealed class PixelCanvasView : Control
         _presentation = presentation;
         _selection = selection;
         _zoom = zoom;
+        UpdateDisplayBitmap();
         Width = presentation is null ? 1d : presentation.Size.Width * zoom;
         Height = presentation is null ? 1d : presentation.Size.Height * zoom;
         InvalidateVisual();
@@ -124,7 +124,7 @@ public sealed class PixelCanvasView : Control
     {
         if (_invert == invert) return;
         _invert = invert;
-        _brushes.Clear();
+        UpdateDisplayBitmap();
         InvalidateVisual();
     }
 
@@ -141,16 +141,7 @@ public sealed class PixelCanvasView : Control
         var presentation = _presentation;
         if (presentation is null) return;
 
-        var bytes = presentation.Rgba.Span;
-        for (var y = 0; y < presentation.Size.Height; y++)
-        for (var x = 0; x < presentation.Size.Width; x++)
-        {
-            var offset = ((y * presentation.Size.Width) + x) * 4;
-            DrawPixel(context, x, y, bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]);
-        }
-
-        foreach (var preview in presentation.PreviewPixels)
-            DrawPixel(context, preview.Point.X, preview.Point.Y, preview.Color.R, preview.Color.G, preview.Color.B, preview.Color.A);
+        DrawDisplayBitmap(context, presentation);
 
         if (_grid && _zoom >= 8d)
         {
@@ -174,7 +165,7 @@ public sealed class PixelCanvasView : Control
             }
         }
 
-        if (_hoveredPixel is { } hover &&
+        if (_zoom >= 4d && _hoveredPixel is { } hover &&
             (uint)hover.X < (uint)presentation.Size.Width &&
             (uint)hover.Y < (uint)presentation.Size.Height)
         {
@@ -193,6 +184,13 @@ public sealed class PixelCanvasView : Control
         Focus();
         UpdateHover(e);
         var point = e.GetCurrentPoint(this);
+        if (point.Properties.IsLeftButtonPressed && _hoveredPixel is { } picked &&
+            (IsColorPickActive?.Invoke() == true || (e.KeyModifiers & KeyModifiers.Alt) != 0))
+        {
+            PickColorRequested?.Invoke(picked.X, picked.Y);
+            e.Handled = true;
+            return;
+        }
         if (point.Properties.IsRightButtonPressed && _hoveredPixel is { } hover)
         {
             SecondaryPickRequested?.Invoke(hover.X, hover.Y);
@@ -507,32 +505,6 @@ public sealed class PixelCanvasView : Control
         _releasingCapture = true;
         try { pointer.Capture(null); }
         finally { _releasingCapture = false; }
-    }
-
-    private void DrawPixel(DrawingContext context, int x, int y, byte r, byte g, byte b, byte a)
-    {
-        var rect = new Rect(x * _zoom, y * _zoom, _zoom, _zoom);
-        if (a == 0)
-        {
-            context.FillRectangle(((x + y) & 1) == 0 ? EditorThemeTokens.CheckerLight : EditorThemeTokens.CheckerDark, rect);
-            return;
-        }
-        if (_invert)
-        {
-            r = (byte)(255 - r);
-            g = (byte)(255 - g);
-            b = (byte)(255 - b);
-        }
-        context.FillRectangle(GetBrush(r, g, b, a), rect);
-    }
-
-    private IBrush GetBrush(byte r, byte g, byte b, byte a)
-    {
-        var key = ((uint)a << 24) | ((uint)r << 16) | ((uint)g << 8) | b;
-        if (_brushes.TryGetValue(key, out var brush)) return brush;
-        brush = new SolidColorBrush(Color.FromArgb(a, r, g, b));
-        _brushes.Add(key, brush);
-        return brush;
     }
 
     private static double Distance(Point a, Point b)

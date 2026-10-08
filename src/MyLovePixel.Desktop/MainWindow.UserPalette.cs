@@ -275,7 +275,7 @@ public sealed partial class MainWindow
     private Control BuildLibrarySwatch(string hex, string name, bool selected, Action action, string automationId)
     {
         var content = new StackPanel { Spacing = 2 };
-        content.Children.Add(new Border { Height = 20, Background = Brush(ColorLibraryStore.ParseColor(hex)), BorderBrush = EditorThemeTokens.PanelBorder, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(2) });
+        content.Children.Add(new Border { Height = 20, Background = CanvasBackdrop.Create(new CanvasDisplaySettings()), Child = new Border { Background = Brush(ColorLibraryStore.ParseColor(hex)) }, BorderBrush = EditorThemeTokens.PanelBorder, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(2) });
         content.Children.Add(new TextBlock { Text = hex, FontSize = 10, HorizontalAlignment = HorizontalAlignment.Center });
         if (!string.IsNullOrEmpty(name)) content.Children.Add(new TextBlock { Text = name, FontSize = 10, TextTrimming = TextTrimming.CharacterEllipsis, HorizontalAlignment = HorizontalAlignment.Center });
         var button = new Button { Width = 72, Height = 60, MinWidth = 0, MinHeight = 0, Padding = new Thickness(3), Content = content, HorizontalContentAlignment = HorizontalAlignment.Stretch };

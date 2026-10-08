@@ -246,10 +246,12 @@ public sealed partial class MainWindow
 
     private async void OnKeyDown(object? sender, KeyEventArgs e)
     {
+        if (e.Handled) return;
         if (e.KeyModifiers == KeyModifiers.Control && e.Key == Key.N) { e.Handled = true; await NewProjectAsync(); return; }
         if (e.KeyModifiers == KeyModifiers.Control && e.Key == Key.E) { e.Handled = true; await ExportAsync(); return; }
         if (e.Key == Key.Escape)
         {
+            if (_eyedropperMode) { _eyedropperMode = false; RefreshTools(); RefreshToolOptions(); }
             if (Current() is { } session) { _selection.Clear(session); _plugins.CancelTool(session); }
             _selectionStart = null; e.Handled = true; RefreshCanvas(); return;
         }

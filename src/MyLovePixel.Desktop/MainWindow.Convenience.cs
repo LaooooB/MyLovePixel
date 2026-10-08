@@ -6,6 +6,7 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using MyLovePixel.Application;
 using MyLovePixel.Core.Pixel;
 
@@ -14,12 +15,12 @@ namespace MyLovePixel.Desktop;
 public sealed partial class MainWindow
 {
     private readonly PixelPreviewView _quickPreview = new();
-    private readonly WrapPanel _studioPaletteSwatches = new() { ItemWidth = 20, ItemHeight = 20 };
     private readonly NumericUpDown _studioR = ChannelInput();
     private readonly NumericUpDown _studioG = ChannelInput();
     private readonly NumericUpDown _studioB = ChannelInput();
     private readonly TextBox _studioHex = new() { Text = "#000000", PlaceholderText = "#654321", MinWidth = 112, MaxLength = 32 };
     private readonly Border _studioColorPreview = Swatch();
+    private DocumentSession? _studioBoundSession;
     private bool _convenienceInstalled;
     private bool _syncingStudioColor;
     private bool _studioSecondaryTarget;
@@ -34,6 +35,7 @@ public sealed partial class MainWindow
         _canvas.PointerWheelChanged += OnConvenienceCanvasWheel;
         KeyDown += OnConvenienceKeyDown;
         RefreshConvenienceUi();
+        ApplyCanvasDisplaySettings();
         Dispatcher.UIThread.Post(FitCanvas, DispatcherPriority.Background);
     }
 
@@ -50,13 +52,13 @@ public sealed partial class MainWindow
         _quickPreview.HorizontalAlignment = HorizontalAlignment.Stretch;
         _quickPreview.ClipToBounds = true;
 
-        return new Border
+        return _comfortPreviewFrame = new Border
         {
             Height = 218,
             Margin = new Thickness(10, 10, 10, 8),
             CornerRadius = new CornerRadius(6),
             ClipToBounds = true,
-            Background = EditorThemeTokens.PreviewBackground,
+            Background = CanvasBackdrop.Solid(_displaySettings.Frame),
             Child = _quickPreview,
         };
     }
@@ -96,103 +98,54 @@ public sealed partial class MainWindow
 
     private Control BuildStudioPaletteEditor()
     {
-        if (_studioPaletteSwatches.Children.Count == 0)
-        {
-            foreach (var color in BuildStudioPaletteColors())
-            {
-                var captured = color;
-                var button = new Button
-                {
-                    Width = 18,
-                    Height = 18,
-                    MinHeight = 18,
-                    Padding = new Thickness(1),
-                    CornerRadius = new CornerRadius(3),
-                    BorderBrush = EditorThemeTokens.PanelBorder,
-                    BorderThickness = new Thickness(1),
-                    Content = new Border
-                    {
-                        Background = Brush(captured),
-                        CornerRadius = new CornerRadius(2),
-                    },
-                };
-                ToolTip.SetTip(button, $"Apply #{captured.R:X2}{captured.G:X2}{captured.B:X2} to the active color");
-                button.Click += (_, _) => ApplyStudioColor(captured);
-                _studioPaletteSwatches.Children.Add(button);
-            }
-        }
-
-        _studioColorPreview.Width = 28;
-        _studioColorPreview.Height = 28;
+        _studioColorPreview.Width = 24;
+        _studioColorPreview.Height = 24;
+        _studioHex.MinWidth = 100;
         AutomationProperties.SetAutomationId(_studioHex, "studio-hex-input");
-        AutomationProperties.SetName(_studioHex, "HEX color, RRGGBB or RRGGBBAA");
+        AutomationProperties.SetName(_studioHex, "Active drawing HEX color, RRGGBB or RRGGBBAA");
         _studioR.ValueChanged += (_, _) => ApplyStudioRgb();
         _studioG.ValueChanged += (_, _) => ApplyStudioRgb();
         _studioB.ValueChanged += (_, _) => ApplyStudioRgb();
         _studioHex.TextChanged += (_, _) => RefreshStudioHexFeedback();
         _studioHex.KeyDown += (_, e) =>
         {
-            if (e.Key == Key.Enter)
-            {
-                ApplyStudioHex();
-                e.Handled = true;
-            }
-            else if (e.Key == Key.Escape)
-            {
-                SyncStudioColor(_studioColor);
-                e.Handled = true;
-            }
+            if (e.Key == Key.Enter) { ApplyStudioHex(); e.Handled = true; }
+            else if (e.Key == Key.Escape) { SyncStudioColor(_studioColor); e.Handled = true; }
         };
-        _studioHex.LostFocus += (_, _) => ApplyStudioHex();
-        _studioApplyHex = new Button { Content = "Apply", Padding = new Thickness(8, 5) };
-        _studioApplyHex.Classes.Add("text-action");
-        AutomationProperties.SetAutomationId(_studioApplyHex, "studio-hex-apply");
-        _studioApplyHex.Click += (_, _) => ApplyStudioHex();
-
+        _studioApplyHex = LibraryButton("Apply", ApplyStudioHex, "studio-hex-apply");
+        var hex = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), ColumnSpacing = 5 };
+        hex.Children.Add(_studioHex);
+        hex.Children.Add(Place(_studioApplyHex, 1));
+        hex.Children.Add(Place(BuildColorPickerButton(), 2));
         var rgb = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,*,Auto,*"), ColumnSpacing = 5 };
-        rgb.Children.Add(ChannelLabel("R"));
-        rgb.Children.Add(Place(_studioR, 1));
-        rgb.Children.Add(Place(ChannelLabel("G"), 2));
-        rgb.Children.Add(Place(_studioG, 3));
-        rgb.Children.Add(Place(ChannelLabel("B"), 4));
-        rgb.Children.Add(Place(_studioB, 5));
-
-        var hex = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto"), ColumnSpacing = 6 };
-        hex.Children.Add(ChannelLabel("HEX"));
-        hex.Children.Add(Place(_studioHex, 1));
-        hex.Children.Add(Place(_studioApplyHex, 2));
-        hex.Children.Add(Place(_studioColorPreview, 3));
-
-        // Keep direct entry visible even when the 512-color grid is collapsed.
-        var body = new StackPanel { Spacing = 8 };
+        rgb.Children.Add(ChannelLabel("R")); rgb.Children.Add(Place(_studioR, 1));
+        rgb.Children.Add(Place(ChannelLabel("G"), 2)); rgb.Children.Add(Place(_studioG, 3));
+        rgb.Children.Add(Place(ChannelLabel("B"), 4)); rgb.Children.Add(Place(_studioB, 5));
+        var body = new StackPanel { Spacing = 6 };
+        body.Children.Add(_palettePanel);
         body.Children.Add(hex);
         body.Children.Add(_studioHexHint);
-        body.Children.Add(rgb);
-        body.Children.Add(new Expander
-        {
-            Header = "Palette · 512 colors",
-            IsExpanded = true,
-            Content = new ScrollViewer
-            {
-                MaxHeight = 160,
-                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                Content = _studioPaletteSwatches,
-            },
-        });
-
-        var result = new StackPanel { Spacing = 10 };
+        _saveActiveLibraryButton = LibraryButton("Save current", SaveActiveLibraryColor, "color-library-save-current");
+        _pinTemporaryButton = LibraryButton("Add temp", PinTemporaryColor, "color-library-pin-temporary");
+        ToolTip.SetTip(_pinTemporaryButton, "Keep this color in Temporary. Pick another pixel and add it too. Your slots survive restarting.");
+        var rgbButton = LibraryButton("RGB", () => { }, "color-rgb-channels");
+        var rgbBody = new StackPanel { Spacing = 8, Width = 280 };
+        rgbBody.Children.Add(rgb);
+        rgbBody.Children.Add(BuildTransparentColorButton());
+        var rgbFlyout = new Flyout { Content = rgbBody, Placement = PlacementMode.Bottom };
+        rgbButton.Click += (_, _) => rgbFlyout.ShowAt(rgbButton);
+        ToolTip.SetTip(rgbButton, "Edit red, green and blue channels.");
+        body.Children.Add(LibraryRow(_saveActiveLibraryButton, _pinTemporaryButton,
+            LibraryButton("Eyedropper", SelectEyedropper, "color-eyedropper"), rgbButton));
+        var result = new Grid { RowDefinitions = new RowDefinitions("Auto,*"), RowSpacing = 8, Margin = new Thickness(10) };
         result.Children.Add(new Border
         {
-            Padding = new Thickness(10, 7),
-            CornerRadius = EditorThemeTokens.CardRadius,
-            Background = EditorThemeTokens.SurfaceRaised,
-            BorderBrush = EditorThemeTokens.PanelBorder,
-            BorderThickness = new Thickness(1),
-            Child = body,
+            Padding = new Thickness(8), CornerRadius = EditorThemeTokens.CardRadius,
+            Background = EditorThemeTokens.SurfaceRaised, BorderBrush = EditorThemeTokens.PanelBorder,
+            BorderThickness = new Thickness(1), Child = body,
         });
-        // Personal swatches live directly below the existing studio palette.
-        result.Children.Add(BuildUserPaletteEditor());
+        var library = BuildUserPaletteEditor();
+        Grid.SetRow(library, 1); result.Children.Add(library);
         RefreshStudioHexFeedback();
         return result;
     }
@@ -219,12 +172,14 @@ public sealed partial class MainWindow
         var session = Current();
         if (session is null) return;
 
-        if (_studioHex.IsKeyboardFocusWithin || _studioR.IsKeyboardFocusWithin || _studioG.IsKeyboardFocusWithin || _studioB.IsKeyboardFocusWithin)
+        var contextChanged = !ReferenceEquals(_studioBoundSession, session);
+        _studioBoundSession = session;
+        if (!contextChanged && (_studioHex.IsKeyboardFocusWithin || _studioR.IsKeyboardFocusWithin || _studioG.IsKeyboardFocusWithin || _studioB.IsKeyboardFocusWithin))
             return;
 
         var colors = session.GetToolColors();
         var active = _studioSecondaryTarget ? colors.Secondary : colors.Primary;
-        if (active != _studioColor) SyncStudioColor(active);
+        if (contextChanged || active != _studioColor) SyncStudioColor(active);
     }
 
     private void SetStudioColorTarget(bool secondary)
@@ -353,6 +308,13 @@ public sealed partial class MainWindow
         if (e.Handled || e.KeyModifiers != KeyModifiers.None || IsEditingText(e.Source)) return;
         switch (e.Key)
         {
+            case Key.I:
+                SelectEyedropper();
+                e.Handled = true;
+                break;
+            case Key.Escape:
+                if (_eyedropperMode) { _eyedropperMode = false; RefreshTools(); RefreshToolOptions(); e.Handled = true; }
+                break;
             case Key.B:
                 SelectQuickTool("core.pencil");
                 e.Handled = true;
@@ -381,7 +343,8 @@ public sealed partial class MainWindow
         }
     }
 
-    private static bool IsEditingText(object? source) => source is TextBox or NumericUpDown or ComboBox;
+    private static bool IsEditingText(object? source) => source is Visual visual &&
+        visual.GetSelfAndVisualAncestors().Any(v => v is TextBox or NumericUpDown or ComboBox or Slider);
 
     private void SelectQuickTool(string id)
     {
@@ -389,6 +352,7 @@ public sealed partial class MainWindow
         if (session is null) return;
         Safe(() =>
         {
+            _eyedropperMode = false;
             _selectionMode = false;
             session.EnsureEditableCel();
             _plugins.SelectTool(session, id);
@@ -411,116 +375,3 @@ public sealed partial class MainWindow
     }
 }
 
-internal sealed class PixelPreviewView : Control
-{
-    private readonly Dictionary<uint, IBrush> _brushes = [];
-    private CanvasPresentation? _presentation;
-
-    public void SetPresentation(CanvasPresentation? presentation)
-    {
-        if (ReferenceEquals(_presentation, presentation)) return;
-        _presentation = presentation;
-        InvalidateVisual();
-    }
-
-    public override void Render(DrawingContext context)
-    {
-        base.Render(context);
-        var bounds = Bounds;
-        if (bounds.Width <= 1d || bounds.Height <= 1d) return;
-
-        context.FillRectangle(EditorThemeTokens.PreviewBackground, bounds);
-        var presentation = _presentation;
-        if (presentation is null || presentation.Size.Width <= 0 || presentation.Size.Height <= 0) return;
-
-        var padding = 4d;
-        var usableWidth = Math.Max(1d, bounds.Width - padding * 2d);
-        var usableHeight = Math.Max(1d, bounds.Height - padding * 2d);
-        var scale = Math.Min(usableWidth / presentation.Size.Width, usableHeight / presentation.Size.Height);
-        var drawWidth = presentation.Size.Width * scale;
-        var drawHeight = presentation.Size.Height * scale;
-        var originX = (bounds.Width - drawWidth) / 2d;
-        var originY = (bounds.Height - drawHeight) / 2d;
-
-        var bytes = presentation.Rgba.Span;
-        for (var y = 0; y < presentation.Size.Height; y++)
-        for (var x = 0; x < presentation.Size.Width; x++)
-        {
-            var offset = ((y * presentation.Size.Width) + x) * 4;
-            DrawPreviewPixel(
-                context,
-                originX,
-                originY,
-                scale,
-                x,
-                y,
-                bytes[offset],
-                bytes[offset + 1],
-                bytes[offset + 2],
-                bytes[offset + 3]);
-        }
-
-        foreach (var preview in presentation.PreviewPixels)
-        {
-            DrawPreviewPixel(
-                context,
-                originX,
-                originY,
-                scale,
-                preview.Point.X,
-                preview.Point.Y,
-                preview.Color.R,
-                preview.Color.G,
-                preview.Color.B,
-                preview.Color.A);
-        }
-    }
-
-    private void DrawPreviewPixel(
-        DrawingContext context,
-        double originX,
-        double originY,
-        double scale,
-        int x,
-        int y,
-        byte r,
-        byte g,
-        byte b,
-        byte a)
-    {
-        if (a == 0) return;
-
-        // Snap the scaled source cell outward to device-independent pixel bounds.
-        // This keeps source pixels contiguous even when the fitted scale is fractional.
-        var left = Math.Floor(originX + x * scale);
-        var top = Math.Floor(originY + y * scale);
-        var right = Math.Ceiling(originX + (x + 1) * scale);
-        var bottom = Math.Ceiling(originY + (y + 1) * scale);
-        if (right <= left || bottom <= top) return;
-
-        context.FillRectangle(
-            GetCompositeBrush(r, g, b, a),
-            new Rect(left, top, right - left, bottom - top));
-    }
-
-    private IBrush GetCompositeBrush(byte r, byte g, byte b, byte a)
-    {
-        const byte backgroundR = 255;
-        const byte backgroundG = 255;
-        const byte backgroundB = 255;
-
-        if (a < 255)
-        {
-            var inverse = 255 - a;
-            r = (byte)((r * a + backgroundR * inverse + 127) / 255);
-            g = (byte)((g * a + backgroundG * inverse + 127) / 255);
-            b = (byte)((b * a + backgroundB * inverse + 127) / 255);
-        }
-
-        var key = ((uint)r << 16) | ((uint)g << 8) | b;
-        if (_brushes.TryGetValue(key, out var brush)) return brush;
-        brush = new SolidColorBrush(Color.FromRgb(r, g, b));
-        _brushes[key] = brush;
-        return brush;
-    }
-}

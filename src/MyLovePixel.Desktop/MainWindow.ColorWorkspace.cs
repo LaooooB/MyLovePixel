@@ -58,7 +58,7 @@ public sealed partial class MainWindow
             {
                 swatch.Width = 22; swatch.Height = 22;
                 var body = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-                body.Children.Add(swatch);
+                body.Children.Add(new Border { Background = CanvasBackdrop.Create(new CanvasDisplaySettings()), Child = swatch });
                 body.Children.Add(new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center });
                 var button = new Button { Content = body, HorizontalAlignment = HorizontalAlignment.Stretch, Padding = new Thickness(5), MinWidth = 0 };
                 button.Click += (_, _) => SetStudioColorTarget(secondary);

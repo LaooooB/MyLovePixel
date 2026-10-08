@@ -13,7 +13,7 @@ internal static class EditorUxStyles
     public static void Apply(Avalonia.Application app)
     {
         // A full dwell is required for every control. No instant follow-on popups.
-        app.Styles.Add(new Style(x => x.OfType<Control>())
+        app.Styles.Add(new Style(x => x.Is<Control>())
         {
             Setters =
             {

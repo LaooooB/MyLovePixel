@@ -37,6 +37,7 @@ public sealed partial class MainWindow
             RefreshToolOptions();
             RefreshLayers();
             RefreshPalette();
+            RefreshConvenienceUi();
             RefreshEffects();
             RefreshTiles();
             RefreshAnimation();
@@ -80,10 +81,11 @@ public sealed partial class MainWindow
         _toolsPanel.Children.Clear();
         var session = Current();
         if (session is null) return;
-        _toolsPanel.Margin = new Thickness(14, 6, 14, 8);
+        _toolsPanel.Margin = new Thickness(6, 6, 6, 8);
 
-        var select = IconButton("▧", "Selection", () =>
+        var select = NamedToolButton("▧", "Selection", () =>
         {
+            _eyedropperMode = false;
             _selectionMode = true;
             _plugins.CancelTool(session);
             RefreshTools();
@@ -92,6 +94,10 @@ public sealed partial class MainWindow
         });
         if (_selectionMode) select.Classes.Add("selected");
         _toolsPanel.Children.Add(select);
+        var eyedropper = NamedToolButton("", "Eyedropper", SelectEyedropper);
+        ToolTip.SetTip(eyedropper, "Eyedropper · I · Alt-click temporarily picks a pixel");
+        SetSelectedClass(eyedropper, _eyedropperMode);
+        _toolsPanel.Children.Add(eyedropper);
         _toolsPanel.Children.Add(SeparatorH());
 
         var tools = _plugins.GetTools(session);
@@ -108,8 +114,9 @@ public sealed partial class MainWindow
             var tip = shortcut is null
                 ? tool.DisplayName
                 : $"{tool.DisplayName} · {shortcut}";
-            var button = IconButton(ToolGlyph(id), tool.DisplayName, () =>
+            var button = NamedToolButton(ToolGlyph(id), tool.DisplayName, () =>
             {
+                _eyedropperMode = false;
                 CancelSelectionTransformGesture();
                 _selectionMode = false;
                 session.EnsureEditableCel();
@@ -118,7 +125,7 @@ public sealed partial class MainWindow
             });
             ToolTip.SetTip(button, tip);
             button.IsEnabled = session.HasEditableCel || session.CaptureSnapshot().Layers.ContainsKey(session.CurrentLayerId);
-            if (!_selectionMode && tool.IsActive) button.Classes.Add("selected");
+            if (!_selectionMode && !_eyedropperMode && tool.IsActive) button.Classes.Add("selected");
             _toolsPanel.Children.Add(button);
         }
     }
@@ -128,6 +135,11 @@ public sealed partial class MainWindow
         _toolOptionsPanel.Children.Clear();
         var session = Current();
         if (session is null) return;
+        if (_eyedropperMode)
+        {
+            _toolOptionsPanel.Children.Add(new TextBlock { Text = "Click a canvas pixel to pick its original color. In Colors, choose Add temp to keep each sample. B returns to Pencil; Esc exits. Alt-click picks temporarily from any drawing tool.", TextWrapping = TextWrapping.Wrap });
+            return;
+        }
 
         if (_selectionMode)
         {
@@ -249,20 +261,7 @@ public sealed partial class MainWindow
         }
     }
 
-    private void RefreshPalette()
-    {
-        _palettePanel.Children.Clear();
-        var session = Current();
-        if (session is null) return;
-
-        var colors = session.GetToolColors();
-        _primarySwatch.Background = Brush(colors.Primary);
-        _secondarySwatch.Background = Brush(colors.Secondary);
-
-        _palettePanel.Children.Add(Labeled("Primary", SwatchButton(_primarySwatch, "Primary color", true)));
-        _palettePanel.Children.Add(Labeled("Secondary", SwatchButton(_secondarySwatch, "Secondary color", false)));
-        _palettePanel.Children.Add(TextIconButton("⇄", "Swap Colors", "Swap primary and secondary colors", SwapColors));
-    }
+    private void RefreshPalette() => RefreshComfortPalette();
 
     private static void AddPanelLabel(Panel panel, string text)
     {

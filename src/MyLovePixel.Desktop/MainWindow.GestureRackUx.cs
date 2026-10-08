@@ -28,7 +28,7 @@ public sealed partial class MainWindow
     {
         base.OnKeyDown(e);
         if (e.Handled || e.KeyModifiers != KeyModifiers.None ||
-            e.Source is TextBox or NumericUpDown or ComboBox or Slider)
+            IsEditingText(e.Source))
             return;
 
         var toolIndex = e.Key switch

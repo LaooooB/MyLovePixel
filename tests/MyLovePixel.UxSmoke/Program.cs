@@ -56,8 +56,8 @@ internal static class Program
             var window = _window;
             var tabs = Find<TabControl>(window, "inspector-tabs");
             tabs.SelectedIndex = 1; Flush();
-            Check(((TabItem)tabs.Items[1]!).Header?.ToString() == "Colors", "Colors has its own inspector tab");
-            Check(tabs.Items.OfType<TabItem>().All(t => t.Header?.ToString() != "Photo"), "Redundant Photo tab is removed");
+            Check(HeaderText(((TabItem)tabs.Items[1]!).Header) == "Colors", "Colors has its own inspector tab");
+            Check(tabs.Items.OfType<TabItem>().All(t => HeaderText(t.Header) != "Photo"), "Redundant Photo tab is removed");
             var store = Field<ColorLibraryStore>("_userPaletteStore");
             Check(store.Colors.Count == 48 && File.ReadAllBytes(legacy.FilePath).SequenceEqual(legacyBytes), "All legacy colors migrate without changing the old file");
             var picker = Find<Button>(window, "studio-color-picker");
@@ -117,6 +117,7 @@ internal static class Program
             Check((Rgba32)Call("ActiveLibraryColor")! == activeBeforePicker && !flyout.IsOpen, "Cancel restores the original color and closes the picker");
             var workspace = Field<EditorWorkspace>("_workspace");
             workspace.NewDocument(1024, 1024); Flush();
+            Check(hex.Text == HexColor.Format((Rgba32)Call("ActiveLibraryColor")!), "New document synchronizes the active HEX with its drawing color");
             var session = (DocumentSession)Call("Current")!;
             var pixels = new byte[1024 * 1024 * 4];
             for (var y = 256; y < 768; y++)
@@ -145,6 +146,14 @@ internal static class Program
             Check(Find<Slider>(_window, "canvas-backdrop-brightness").Value == 37, "Restart restores the brightness slider");
             Check(Field<ColorLibraryStore>("_userPaletteStore").TemporaryColors.Count == 2, "Restart retains temporary colors");
             Check(File.ReadAllBytes(legacy.FilePath).SequenceEqual(legacyBytes), "Legacy palette remains byte-identical after all UI operations");
+            var frameBrush = (Avalonia.Media.ISolidColorBrush)Field<Border>("_comfortPreviewFrame").Background!;
+            Check(frameBrush.Color.R == new CanvasDisplaySettings(37).Frame.R, "Restart also restores the preview frame brightness");
+            Call("SelectEyedropper");
+            Field<PixelCanvasView>("_canvas").Focus();
+            _window.KeyPressQwerty(PhysicalKey.Escape, RawInputModifiers.None);
+            _window.KeyReleaseQwerty(PhysicalKey.Escape, RawInputModifiers.None);
+            Flush();
+            Check(!Field<bool>("_eyedropperMode"), "Escape exits eyedropper without switching inspector tabs");
             File.WriteAllText(Path.Combine(_output, "checks.json"), JsonSerializer.Serialize(new { passed = Checks.Count, checks = Checks }, new JsonSerializerOptions { WriteIndented = true }));
             Console.WriteLine($"UX SMOKE PASSED: {Checks.Count} checks");
             return 0;
@@ -159,6 +168,7 @@ internal static class Program
         finally { _window?.Close(); }
     }
 
+    private static string? HeaderText(object? header) => header is TextBlock text ? text.Text : header?.ToString();
     private static T Field<T>(string name) => (T)(typeof(MainWindow).GetField(name, Flags)!.GetValue(_window) ?? throw new InvalidOperationException(name + " is null"));
     private static object? Call(string name, params object?[] args) => typeof(MainWindow).GetMethod(name, Flags)!.Invoke(_window, args);
     private static T Find<T>(Control root, string id) where T : Control => root.GetVisualDescendants().OfType<T>().Single(c => AutomationProperties.GetAutomationId(c) == id);
@@ -178,11 +188,11 @@ internal static class Program
     {
         Flush();
         using var frame = _window!.CaptureRenderedFrame() ?? throw new InvalidOperationException("No screenshot");
-        frame.Save(Path.Combine(_output, name + ".png"));
+        frame.Save(Path.Combine(_output, name + ".png"), new PngBitmapEncoderOptions());
     }
     private static void CaptureControl(Control control, string name)
     {
         using var bitmap = new RenderTargetBitmap(new PixelSize((int)Math.Ceiling(control.Bounds.Width), (int)Math.Ceiling(control.Bounds.Height)), new Vector(96, 96));
-        bitmap.Render(control); bitmap.Save(Path.Combine(_output, name + ".png"));
+        bitmap.Render(control); bitmap.Save(Path.Combine(_output, name + ".png"), new PngBitmapEncoderOptions());
     }
 }

@@ -14,11 +14,14 @@ namespace MyLovePixel.Desktop;
 
 public sealed partial class MainWindow
 {
+    private Flyout? _colorPickerFlyout;
+
     private Button BuildColorPickerButton()
     {
         var button = new Button { Content = "Picker", MinWidth = 0, Padding = new Thickness(7, 5) };
         button.Classes.Add("text-action");
         AutomationProperties.SetAutomationId(button, "studio-color-picker");
+        ToolTip.SetTip(button, "Drag the circle to choose a color. Done keeps it; Escape cancels.");
         AutomationProperties.SetName(button, "Open color picker for the active drawing color");
         var spectrum = new HsvSpectrumControl();
         var hue = new Slider { Minimum = 0, Maximum = 359.999, Value = 0 };
@@ -30,7 +33,7 @@ public sealed partial class MainWindow
         var preview = new Border { Width = 30, Height = 22, BorderBrush = EditorThemeTokens.PanelBorder, BorderThickness = new Thickness(1) };
         var value = new TextBlock { VerticalAlignment = VerticalAlignment.Center };
         var body = new StackPanel { Spacing = 7, Width = 260 };
-        var flyout = new Flyout { Content = body, Placement = PlacementMode.Bottom };
+        var flyout = _colorPickerFlyout = new Flyout { Content = body, Placement = PlacementMode.Bottom };
         var original = new Rgba32(0, 0, 0);
         var syncing = false;
         var hueBrush = new LinearGradientBrush
@@ -45,16 +48,16 @@ public sealed partial class MainWindow
         }
         body.Children.Add(new TextBlock { Text = "Color picker", FontWeight = FontWeight.SemiBold });
         body.Children.Add(spectrum);
-        body.Children.Add(new TextBlock { Text = "Live preview · Done / outside keeps · Esc cancels", FontSize = 11 });
+        body.Children.Add(new TextBlock { Text = "Live preview · Done / outside keeps · Esc cancels", FontSize = 11, TextWrapping = TextWrapping.Wrap });
         body.Children.Add(new TextBlock { Text = "Hue" });
         body.Children.Add(new Border { Height = 9, Background = hueBrush, CornerRadius = new CornerRadius(3) });
         body.Children.Add(hue);
         body.Children.Add(new TextBlock { Text = "Opacity" });
         body.Children.Add(alpha);
-        body.Children.Add(LibraryRow(preview, value));
+        body.Children.Add(LibraryRow(new Border { Background = CanvasBackdrop.Create(new CanvasDisplaySettings()), Child = preview }, value));
         body.Children.Add(LibraryRow(
-            LibraryButton("Cancel", () => { ApplyStudioColor(original); flyout.Hide(); }),
-            LibraryButton("Done", () => flyout.Hide())));
+            LibraryButton("Cancel", () => { ApplyStudioColor(original); flyout.Hide(); button.Focus(); }),
+            LibraryButton("Done", () => { flyout.Hide(); button.Focus(); })));
         spectrum.ColorChanged += color =>
         {
             preview.Background = Brush(color);
@@ -65,9 +68,9 @@ public sealed partial class MainWindow
         alpha.ValueChanged += (_, _) => { if (!syncing) spectrum.SetAlpha((byte)Math.Round(alpha.Value)); };
         body.AddHandler(KeyDownEvent, (_, e) =>
         {
-            if (e.Key == Key.Escape) { ApplyStudioColor(original); flyout.Hide(); e.Handled = true; }
+            if (e.Key == Key.Escape) { ApplyStudioColor(original); flyout.Hide(); button.Focus(); e.Handled = true; }
         }, RoutingStrategies.Tunnel);
-        flyout.Closed += (_, _) => button.Focus();
+        Closed += (_, _) => _colorPickerFlyout?.Hide();
         button.Click += (_, _) =>
         {
             if (!HexColor.TryParse(_studioHex.Text, out var entered)) { ApplyStudioHex(); _studioHex.Focus(); return; }

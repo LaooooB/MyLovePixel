@@ -204,6 +204,7 @@ public static class EditorStyles
         {
             Setters = { new Setter(TabItem.ForegroundProperty, EditorThemeTokens.Accent) },
         });
+        EditorUxStyles.Apply(app);
     }
 
     private static void AddInputStyle<T>(Avalonia.Application app, AvaloniaProperty background, AvaloniaProperty foreground, AvaloniaProperty borderBrush, AvaloniaProperty borderThickness)

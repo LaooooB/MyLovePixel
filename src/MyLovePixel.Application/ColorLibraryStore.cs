@@ -104,7 +104,7 @@ public sealed class ColorLibraryStore
         var existing = data.Colors!.FirstOrDefault(item => ParseColor(item.Hex) == color);
         // Saving an existing color must not silently rename it or move folders.
         if (existing is not null) return existing.Id;
-        if (data.Colors.Count >= MaxColors)
+        if (data.Colors!.Count >= MaxColors)
             throw new InvalidOperationException($"The library has reached {MaxColors} colors. No color was removed.");
         var id = Guid.NewGuid();
         data.Colors.Add(new ColorLibraryColor(id, hex, name, folderId));
@@ -127,7 +127,7 @@ public sealed class ColorLibraryStore
         name = CleanName(name, false, 80);
         if (data.Folders!.Any(folder => folder.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
             throw new InvalidOperationException("A folder with that name already exists.");
-        if (data.Folders.Count >= MaxFolders)
+        if (data.Folders!.Count >= MaxFolders)
             throw new InvalidOperationException($"The library has reached {MaxFolders} folders.");
         var id = Guid.NewGuid();
         data.Folders.Add(new ColorLibraryFolder(id, name));
@@ -157,7 +157,7 @@ public sealed class ColorLibraryStore
     public bool AddTemporary(Rgba32 color) => Change(data =>
     {
         if (data.TemporaryColors!.Any(hex => ParseColor(hex) == color)) return false;
-        if (data.TemporaryColors.Count >= MaxTemporaryColors)
+        if (data.TemporaryColors!.Count >= MaxTemporaryColors)
             throw new InvalidOperationException($"The temporary tray has {MaxTemporaryColors} colors. Remove a slot first; nothing was evicted.");
         data.TemporaryColors.Add(HexColor.Format(color));
         return true;
