@@ -8,6 +8,18 @@ for field in ('Colors', 'Folders', 'TemporaryColors'):
 p.write_text(s, encoding='utf-8', newline='\n')
 p = root / 'tests/MyLovePixel.UxSmoke/Program.cs'
 s = p.read_text().replace('Save(Path.Combine(_output, name + ".png"));', 'Save(Path.Combine(_output, name + ".png"), new PngBitmapEncoderOptions());')
+s = s.replace('((TabItem)tabs.Items[1]!).Header?.ToString()', 'HeaderText(((TabItem)tabs.Items[1]!).Header)').replace('t.Header?.ToString()', 'HeaderText(t.Header)')
+if 'private static string? HeaderText' not in s:
+    s = s.replace('    private static T Field<T>', '    private static string? HeaderText(object? header) => header is TextBlock text ? text.Text : header?.ToString();\n    private static T Field<T>')
+if 'Escape exits eyedropper' not in s:
+    needle = '            File.WriteAllText(Path.Combine(_output, "checks.json")'
+    s = s.replace(needle, '''            Call("SelectEyedropper");
+            Field<PixelCanvasView>("_canvas").Focus();
+            _window.KeyPressQwerty(PhysicalKey.Escape, RawInputModifiers.None);
+            _window.KeyReleaseQwerty(PhysicalKey.Escape, RawInputModifiers.None);
+            Flush();
+            Check(!Field<bool>("_eyedropperMode"), "Escape exits eyedropper without switching inspector tabs");
+''' + needle)
 p.write_text(s, encoding='utf-8', newline='\n')
 p = root / 'src/MyLovePixel.Desktop/MainWindow.Convenience.cs'
 s = p.read_text().replace('var rgbFlyout = new Flyout { Content = rgb, Placement = PlacementMode.Bottom };',
