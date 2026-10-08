@@ -9,6 +9,7 @@
     <PackageReference Include="Avalonia.Desktop" />
     <PackageReference Include="Avalonia.Themes.Fluent" />
     <PackageReference Include="SkiaSharp" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../MyLovePixel.Application/MyLovePixel.Application.csproj" />
