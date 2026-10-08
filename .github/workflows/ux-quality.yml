@@ -1,0 +1,111 @@
+name: UX quality and Windows package
+
+on:
+  push:
+    branches: ['ux/color-library-comfort']
+    paths: ['src/**', 'tests/**', 'tools/**', '.github/workflows/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Integrate pinned source
+        run: |
+          if [ -f tools/ux-upgrade/apply.py ]; then python3 tools/ux-upgrade/apply.py; fi
+      - run: dotnet build MyLovePixel.slnx -c Release
+      - run: dotnet test MyLovePixel.slnx -c Release --no-build
+      - name: Headless desktop UX checks
+        run: |
+          if [ -f tests/MyLovePixel.UxSmoke/MyLovePixel.UxSmoke.csproj ]; then dotnet run --project tests/MyLovePixel.UxSmoke -c Release -- /tmp/ux-evidence; fi
+      - name: Archive exact source
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import pathlib, zipfile
+          root = pathlib.Path('.')
+          with zipfile.ZipFile('/tmp/MyLovePixel-source.zip', 'w', zipfile.ZIP_DEFLATED) as z:
+              for p in root.rglob('*'):
+                  if p.is_file() and not any(x in p.parts for x in ['.git','bin','obj','.vs','TestResults']):
+                      z.write(p, p.as_posix())
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: MyLovePixel-source-and-UX-evidence
+          path: |
+            /tmp/MyLovePixel-source.zip
+            /tmp/ux-evidence/
+          if-no-files-found: error
+  windows:
+    needs: quality
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Integrate pinned source
+        shell: pwsh
+        run: |
+          if (Test-Path tools/ux-upgrade/apply.py) { python tools/ux-upgrade/apply.py; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
+      - run: dotnet build MyLovePixel.slnx -c Release
+      - run: dotnet test MyLovePixel.slnx -c Release --no-build
+      - name: Windows UX checks
+        shell: pwsh
+        run: |
+          if (Test-Path tests/MyLovePixel.UxSmoke/MyLovePixel.UxSmoke.csproj) { dotnet run --project tests/MyLovePixel.UxSmoke -c Release -- "$env:RUNNER_TEMP/ux-evidence"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
+      - name: Publish portable EXE
+        run: dotnet publish src/MyLovePixel.Desktop/MyLovePixel.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:PublishTrimmed=false -o artifacts/windows
+      - name: Native executable startup and shutdown
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path artifacts/windows/MyLovePixel.Desktop.exe).Path
+          $p = Start-Process $exe -PassThru
+          try {
+            if (-not $p.WaitForInputIdle(30000)) { throw 'EXE did not become ready' }
+            Start-Sleep -Seconds 3
+            $p.Refresh()
+            if ($p.HasExited -or $p.MainWindowHandle -eq 0 -or $p.MainWindowTitle -notlike '*MyLovePixel*') { throw 'Main window was not created' }
+            Write-Output "EXE startup passed: $($p.MainWindowTitle)"
+            [void]$p.CloseMainWindow()
+            if (-not $p.WaitForExit(15000)) { throw 'EXE failed to shut down normally' }
+            if ($p.ExitCode -ne 0) { throw "EXE exit code: $($p.ExitCode)" }
+          } finally { if (-not $p.HasExited) { $p.Kill() } }
+      - name: Package notes and checksums
+        shell: pwsh
+        run: |
+          Copy-Item THIRD_PARTY_NOTICES.md artifacts/windows/
+          Get-ChildItem artifacts/windows -Filter *.pdb | Remove-Item
+          @'
+          MyLovePixel UX comfort build - Windows x64
+          Extract the complete archive and run MyLovePixel.Desktop.exe.
+          Existing colors are imported from %LOCALAPPDATA%\MyLovePixel\user-palette.json without modifying it.
+          Saved colors and temporary colors are stored in color-library.json; view preferences are in display-settings.json.
+          Keep the original application-data folder when updating. Do not run old and new versions simultaneously while changing palettes.
+          Backdrop brightness changes the neutral light-gray display only; artwork, eyedropper RGBA and exports are unchanged.
+          This executable is unsigned. Automated checks are recorded in the GitHub Actions run.
+          '@ | Set-Content artifacts/windows/README.txt
+          (Get-FileHash artifacts/windows/MyLovePixel.Desktop.exe -Algorithm SHA256).Hash | Set-Content artifacts/windows/SHA256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MyLovePixel-Windows-x64
+          path: artifacts/windows/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: MyLovePixel-Windows-UX-evidence
+          path: ${{ runner.temp }}/ux-evidence/
+          if-no-files-found: ignore
