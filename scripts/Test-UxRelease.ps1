@@ -49,8 +49,17 @@ function Find-Control([string]$Id) {
 }
 function Invoke-Control([string]$Id) {
     $element = Find-Control $Id
-    $pattern = $element.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
-    $pattern.Invoke()
+    Write-Output ("Native action: " + $Id)
+    $pattern = $null
+    if ($element.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$pattern)) {
+        $pattern.Invoke()
+    } else {
+        # Menu items expose selection/expand patterns on some native backends;
+        # exercise the actual visible click instead of requiring InvokePattern.
+        if ($element.Current.IsOffscreen -or !$element.Current.IsEnabled) { throw "Cannot click hidden/disabled control: $Id" }
+        $point = $element.GetClickablePoint()
+        Click-Point $point.X $point.Y
+    }
     Start-Sleep -Milliseconds 200
 }
 function Click-Point([double]$X, [double]$Y) {

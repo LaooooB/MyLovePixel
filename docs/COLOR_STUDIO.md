@@ -8,7 +8,7 @@ The right inspector has Colors, Layers, Tools, Effects, Tiles, Preview and More 
 
 Colors has the current foreground/background and upper HEX input. Pick opens a draggable HSV field with a hue strip, opacity and exact HEX. Use color confirms; Cancel preserves the starting drawing color. RGBA opens the compact channel controls. Keep adds the current drawing/eyedropper color to Quick colors; clicking a slot reuses it. Quick Save names it in My palette, without removing the slot.
 
-Search matches custom names, HEX and folder names, ignoring case. Space-separated words are combined. All colors and Unfiled are built-in filters. Folders creates or renames folders. Move assigns the selected saved color. Removing a folder moves its colors to Unfiled and never deletes them. New / Save opens the naming form; successful Save returns to the list. Rows keep names and HEX visible, wrapping long names. The results list is virtualized and a changed search/folder resets the result scroll position.
+Search matches custom names, HEX and folder names, ignoring case. Space-separated words are combined. All colors and Unfiled are built-in filters. Folders creates or renames folders. Move assigns the selected saved color. Removing a folder moves its colors to Unfiled and never deletes them. New / Save opens the naming form; successful Save returns to the list. Rows keep names and HEX visible, wrapping long names. The results list is virtualized and a changed search/folder resets the result scroll position. The inspector spans the full workspace height beside the timeline, so colors retain a useful results area without hiding animation controls.
 
 ## Existing user data
 

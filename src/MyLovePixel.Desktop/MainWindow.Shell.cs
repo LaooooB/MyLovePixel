@@ -66,8 +66,6 @@ public sealed partial class MainWindow
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
         };
         _timelineExpander.HorizontalContentAlignment = HorizontalAlignment.Stretch;
-        DockPanel.SetDock(_timelineExpander, Dock.Bottom);
-        root.Children.Add(_timelineExpander);
 
         _editorBody = BuildWorkspace();
         root.Children.Add(_editorBody);
@@ -93,7 +91,11 @@ public sealed partial class MainWindow
 
     private Control BuildWorkspace()
     {
-        var grid = _workspaceGrid = new Grid { ColumnDefinitions = new ColumnDefinitions($"{EditorThemeTokens.ToolRailWidth},*,{EditorThemeTokens.RightPanelWidth}") };
+        var grid = _workspaceGrid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions($"{EditorThemeTokens.ToolRailWidth},*,{EditorThemeTokens.RightPanelWidth}"),
+            RowDefinitions = new RowDefinitions("*,Auto"),
+        };
         _toolsPanel.Margin = new Thickness(7, 8);
         var rail = new Border
         {
@@ -149,7 +151,14 @@ public sealed partial class MainWindow
         _canvasScroll.SizeChanged += (_, _) => ResizeNavigationSpace();
         canvasArea.Children.Add(_canvasScroll);
         grid.Children.Add(Place(canvasArea, 1));
-        grid.Children.Add(Place(BuildInspector(), 2));
+        // Keep the full-height inspector beside the timeline, so saved colors
+        // gain room without hiding animation controls or shrinking the canvas.
+        var inspector = BuildInspector();
+        Grid.SetRowSpan(inspector, 2);
+        grid.Children.Add(Place(inspector, 2));
+        Grid.SetRow(_timelineExpander, 1);
+        Grid.SetColumnSpan(_timelineExpander, 2);
+        grid.Children.Add(_timelineExpander);
         return grid;
     }
 

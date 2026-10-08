@@ -22,6 +22,21 @@ internal static partial class Program
             Check(!w.GetVisualDescendants().OfType<Expander>().Any(e => e.Header?.ToString() == "Color library"), "Huge swatch wall still occupies the sidebar.");
             Check(Find<Button>(w, "color.picker").IsEffectivelyVisible, "Picker is not next to the main HEX input.");
         });
+        Run("Color studio keeps a useful palette viewport alongside the timeline", w =>
+        {
+            w.Width = 1280; w.Height = 820; Pump();
+            var store = Field<UserPaletteStore>(w, "_userPaletteStore");
+            for (var i = 0; i < 12; i++) store.Add(new Rgba32((byte)(30 + i), 90, 150), "Saved color " + i);
+            Session(w).SetToolColors(new Rgba32(120, 70, 40), Rgba32.Transparent); Pump();
+            Click(Find<Button>(w, "color.keep"));
+            Call(w, "RefreshPersonalRows"); Pump();
+            var list = Find<ListBox>(w, "palette.results");
+            Check(list.Bounds.Height >= 240, $"The palette is squeezed by the timeline: {list.Bounds.Height:0} pixels.");
+            Check(Field<Expander>(w, "_timelineExpander").IsExpanded, "Making room for colors hid the timeline.");
+            Check(Find<Button>(w, "preview.enlarge").IsEffectivelyVisible, "The fixed Preview shortcut is missing.");
+            using var frame = w.CaptureRenderedFrame();
+            frame!.Save("release/ui/color-studio-layout.png", Avalonia.Media.Imaging.PngBitmapEncoderOptions.Default);
+        });
         Run("Color studio keeps temporary eyedrop colors without editing artwork", w =>
         {
             var s = Session(w); var revision = s.DocumentVersion; var history = s.Commands.UndoCount;
