@@ -5,7 +5,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
-using Avalonia.Threading;
+using Avalonia.Media;
 using Avalonia.VisualTree;
 using MyLovePixel.Application;
 
@@ -16,49 +16,82 @@ public sealed partial class MainWindow
     private ScrollViewer? _canvasScroll;
     private IPointer? _panPointer;
     private Point _panStart;
+    private Point _panCanvasOrigin;
     private Vector _panOffset;
+    private Vector _panCurrentOffset;
     private Cursor? _panPreviousCursor;
+    private bool _panWithSpace;
+    private bool _navigationSpaceHeld;
+    private bool _cameraCommitPending;
+    private readonly MatrixTransform _cameraTransform = new();
+    private static readonly Cursor PanCursor = new(StandardCursorType.Hand);
     private bool _zoomAnimating;
     private bool _zoomFramePending;
     private bool _navigationClosed;
     private bool _pointerStatusQueued;
     private double _zoomFrom;
     private double _zoomTarget;
+    private double _zoomBaseZoom;
     private long _zoomStarted;
     private Point _zoomAnchor;
     private Point _zoomSourceAnchor;
+    private Point _zoomBaseFrameOrigin;
+    private Point _zoomBaseCanvasLocal;
     private DocumentSession? _zoomSession;
 
     private void InitializeCanvasNavigation(ScrollViewer host)
     {
-        // Tunnel navigation before PixelCanvasView dispatches to drawing tools.
+        if (_comfortCanvasFrame is { } frame)
+            frame.RenderTransformOrigin = new RelativePoint(0, 0, RelativeUnit.Relative);
+        // Consume navigation before any tool can create a stroke.
         host.AddHandler(PointerPressedEvent, (_, e) =>
         {
             var properties = e.GetCurrentPoint(host).Properties;
-            if (properties.IsLeftButtonPressed && !properties.IsMiddleButtonPressed) { StopCanvasZoom(); return; }
-            if (!properties.IsMiddleButtonPressed || IsScrollbarSource(e.Source)) return;
-            StopCanvasZoom();
+            var pan = properties.IsMiddleButtonPressed || (properties.IsLeftButtonPressed && _navigationSpaceHeld);
+            if (!pan)
+            {
+                if (properties.IsLeftButtonPressed) { StopCanvasZoom(); FinishCameraLayout(); }
+                return;
+            }
+            if (IsScrollbarSource(e.Source) || _panPointer is not null) return;
+            StopCanvasZoom(); FinishCameraLayout();
             if (_canvasPointerActive || _selectionStart is not null) CancelCanvasInteraction();
             _panStart = e.GetPosition(host);
-            _panOffset = host.Offset;
+            _panCanvasOrigin = _canvas.TranslatePoint(default, host) ?? default;
+            _panCurrentOffset = _panOffset = host.Offset;
+            _panWithSpace = !properties.IsMiddleButtonPressed;
             _panPreviousCursor = host.Cursor;
             _panPointer = e.Pointer;
-            host.Cursor = new Cursor(StandardCursorType.SizeAll);
+            _cameraTransform.Matrix = Matrix.Identity;
+            if (_comfortCanvasFrame is { } content) content.RenderTransform = _cameraTransform;
+            host.Cursor = PanCursor;
             e.Pointer.Capture(host);
-            host.Focus();
             e.Handled = true;
         }, RoutingStrategies.Tunnel);
         host.AddHandler(PointerMovedEvent, (_, e) =>
         {
             if (_panPointer != e.Pointer) return;
-            if (!e.GetCurrentPoint(host).Properties.IsMiddleButtonPressed) { EndCanvasPan(); return; }
-            host.Offset = _panOffset - (e.GetPosition(host) - _panStart);
+            var properties = e.GetCurrentPoint(host).Properties;
+            if (!(_panWithSpace ? properties.IsLeftButtonPressed : properties.IsMiddleButtonPressed))
+            { EndCanvasPan(); return; }
+            var requested = _panOffset - (e.GetPosition(host) - _panStart);
+            _panCurrentOffset = new Vector(
+                Math.Clamp(requested.X, 0, Math.Max(0, host.Extent.Width - host.Viewport.Width)),
+                Math.Clamp(requested.Y, 0, Math.Max(0, host.Extent.Height - host.Viewport.Height)));
+            var delta = _panOffset - _panCurrentOffset;
+            // A compositor translation follows the pointer immediately. The scroll
+            // layout and its scrollbars are committed only when the gesture ends.
+            _cameraTransform.Matrix = Matrix.CreateTranslation(delta.X, delta.Y);
+            _canvas.SetNavigationViewport(new Rect(-_panCanvasOrigin.X - delta.X, -_panCanvasOrigin.Y - delta.Y,
+                host.Viewport.Width, host.Viewport.Height));
             e.Handled = true;
         }, RoutingStrategies.Tunnel);
         host.AddHandler(PointerReleasedEvent, (_, e) =>
         {
             if (_panPointer != e.Pointer) return;
-            EndCanvasPan();
+            var properties = e.GetCurrentPoint(host).Properties;
+            if (_panWithSpace ? !properties.IsLeftButtonPressed : !properties.IsMiddleButtonPressed)
+                EndCanvasPan();
             e.Handled = true;
         }, RoutingStrategies.Tunnel);
         host.PointerCaptureLost += (_, _) => EndCanvasPan();
@@ -71,9 +104,12 @@ public sealed partial class MainWindow
         }, RoutingStrategies.Tunnel);
         AddHandler(KeyDownEvent, (_, e) =>
         {
+            if (e.Key == Key.Space && e.KeyModifiers == KeyModifiers.None && !IsTextEntry(e.Source))
+            { _navigationSpaceHeld = true; e.Handled = true; return; }
             if (e.Key != Key.Escape || _panPointer is null) return;
             EndCanvasPan(); e.Handled = true;
         }, RoutingStrategies.Tunnel);
+        AddHandler(KeyUpEvent, (_, e) => { if (e.Key == Key.Space) _navigationSpaceHeld = false; }, RoutingStrategies.Tunnel);
         host.SizeChanged += (_, _) =>
         {
             if (_comfortCanvasFrame is not null)
@@ -82,19 +118,34 @@ public sealed partial class MainWindow
                 _comfortCanvasFrame.Margin = new Thickness(Math.Max(38, host.Bounds.Width * 0.5), Math.Max(38, host.Bounds.Height * 0.5));
             }
         };
-        Deactivated += (_, _) => { EndCanvasPan(); StopCanvasZoom(); };
+        Deactivated += (_, _) => { _navigationSpaceHeld = false; EndCanvasPan(); StopCanvasZoom(); };
         Closed += (_, _) => { _navigationClosed = true; EndCanvasPan(); StopCanvasZoom(); };
     }
 
     private static bool IsScrollbarSource(object? source) => source is Control control &&
         (control is ScrollBar || control.GetVisualAncestors().OfType<ScrollBar>().Any());
+    private static bool IsTextEntry(object? source) => source is Control control &&
+        (control is TextBox or NumericUpDown or ComboBox || control.GetVisualAncestors().Any(x => x is TextBox or NumericUpDown or ComboBox));
 
     private void EndCanvasPan()
     {
         if (_panPointer is not { } pointer) return;
         _panPointer = null;
-        if (_canvasScroll is { } host) host.Cursor = _panPreviousCursor;
+        if (_comfortCanvasFrame is { } frame) frame.RenderTransform = null;
+        if (_canvasScroll is { } host)
+        {
+            host.Cursor = _panPreviousCursor;
+            host.Offset = _panCurrentOffset;
+            _cameraCommitPending = true;
+        }
         if (ReferenceEquals(pointer.Captured, _canvasScroll)) pointer.Capture(null);
+    }
+
+    private void FinishCameraLayout()
+    {
+        if (!_cameraCommitPending || _navigationClosed) return;
+        _cameraCommitPending = false;
+        _canvasScroll?.UpdateLayout();
     }
 
     private Point CanvasViewportCenter() => _canvasScroll is { } host
@@ -105,37 +156,53 @@ public sealed partial class MainWindow
         if (Current() is not { } session) return;
         zoom = Math.Clamp(zoom, DocumentSession.MinimumZoom, DocumentSession.MaximumZoom);
         if (_canvasScroll is not { } host || _canvas.Presentation is null)
+        { session.SetZoom(zoom); return; }
+        if (_zoomAnimating && ReferenceEquals(_zoomSession, session) && _comfortCanvasFrame is { } frame)
         {
             session.SetZoom(zoom);
+            var scale = zoom / _zoomBaseZoom;
+            _cameraTransform.Matrix = new Matrix(scale, 0, 0, scale,
+                anchor.X - _zoomSourceAnchor.X * zoom - _zoomBaseFrameOrigin.X - _zoomBaseCanvasLocal.X * scale,
+                anchor.Y - _zoomSourceAnchor.Y * zoom - _zoomBaseFrameOrigin.Y - _zoomBaseCanvasLocal.Y * scale);
+            frame.RenderTransform = _cameraTransform;
+            _canvas.SetNavigationViewport(new Rect((_zoomSourceAnchor.X * zoom - anchor.X) / scale,
+                (_zoomSourceAnchor.Y * zoom - anchor.Y) / scale, host.Viewport.Width / scale, host.Viewport.Height / scale));
             return;
         }
         var origin = _canvas.TranslatePoint(default, host) ?? default;
-        // Hold the source coordinate for the complete animation. Recomputing it
-        // every frame accumulates layout/scroll rounding and drifts under the cursor.
-        var canvasPoint = _zoomAnimating && ReferenceEquals(_zoomSession, session)
-            ? _zoomSourceAnchor : (anchor - origin) / _canvas.Zoom;
+        var canvasPoint = (anchor - origin) / _canvas.Zoom;
         session.SetZoom(zoom);
         host.UpdateLayout();
         var newOrigin = _canvas.TranslatePoint(default, host) ?? default;
         host.Offset += newOrigin + canvasPoint * _canvas.Zoom - anchor;
+        _cameraCommitPending = true;
     }
 
     private void CenterCanvasViewport()
     {
         if (_canvasScroll is not { } host) return;
+        StopCanvasZoom();
         host.UpdateLayout();
         host.Offset = new Vector(Math.Max(0, (host.Extent.Width - host.Viewport.Width) * 0.5),
             Math.Max(0, (host.Extent.Height - host.Viewport.Height) * 0.5));
+        _cameraCommitPending = true;
     }
 
     private void AnimateCanvasZoom(double factor, Point anchor)
     {
-        if (!double.IsFinite(factor) || factor <= 0 || Current() is not { } session || _canvasScroll is not { } host) return;
+        if (!double.IsFinite(factor) || factor <= 0 || Current() is not { } session || _canvasScroll is not { } host || _comfortCanvasFrame is not { } frame) return;
+        if (!_zoomAnimating)
+        {
+            FinishCameraLayout();
+            _zoomBaseZoom = _canvas.Zoom;
+            _zoomBaseFrameOrigin = frame.TranslatePoint(default, host) ?? default;
+            _zoomBaseCanvasLocal = _canvas.TranslatePoint(default, frame) ?? default;
+        }
         _zoomTarget = Math.Clamp((_zoomAnimating && ReferenceEquals(_zoomSession, session) ? _zoomTarget : session.Zoom) * factor,
             DocumentSession.MinimumZoom, DocumentSession.MaximumZoom);
         _zoomFrom = session.Zoom;
         _zoomAnchor = anchor;
-        _zoomSourceAnchor = (anchor - (_canvas.TranslatePoint(default, host) ?? default)) / _canvas.Zoom;
+        _zoomSourceAnchor = (anchor - (_canvas.TranslatePoint(default, host) ?? default)) / session.Zoom;
         _zoomSession = session;
         _zoomStarted = Stopwatch.GetTimestamp();
         _zoomAnimating = true;
@@ -150,16 +217,31 @@ public sealed partial class MainWindow
         {
             _zoomFramePending = false;
             if (!_zoomAnimating || _navigationClosed || !ReferenceEquals(Current(), _zoomSession)) return;
-            var progress = Math.Clamp(Stopwatch.GetElapsedTime(_zoomStarted).TotalMilliseconds / 110d, 0, 1);
+            var progress = Math.Clamp(Stopwatch.GetElapsedTime(_zoomStarted).TotalMilliseconds / 75d, 0, 1);
             var eased = 1 - Math.Pow(1 - progress, 3);
             var zoom = Math.Exp(Math.Log(_zoomFrom) + (Math.Log(_zoomTarget) - Math.Log(_zoomFrom)) * eased);
             ApplyCanvasZoom(progress >= 1 ? _zoomTarget : zoom, _zoomAnchor);
-            if (progress >= 1) _zoomAnimating = false;
+            if (progress >= 1) StopCanvasZoom();
             else RequestCanvasZoomFrame();
         });
     }
 
-    private void StopCanvasZoom() { _zoomAnimating = false; _zoomSession = null; }
+    private void StopCanvasZoom()
+    {
+        if (!_zoomAnimating) return;
+        var session = _zoomSession;
+        _zoomAnimating = false;
+        _zoomSession = null;
+        if (_comfortCanvasFrame is { } frame) frame.RenderTransform = null;
+        if (_navigationClosed || session is null || !ReferenceEquals(session, Current()) || _canvasScroll is not { } host) return;
+        _canvas.SetViewZoom(session.Zoom);
+        // One final layout establishes exact pixel coordinates before drawing.
+        // There is no forced layout in the animation-frame path above.
+        host.UpdateLayout();
+        var origin = _canvas.TranslatePoint(default, host) ?? default;
+        host.Offset += origin + _zoomSourceAnchor * session.Zoom - _zoomAnchor;
+        _cameraCommitPending = true;
+    }
 
     private void QueuePointerStatus()
     {

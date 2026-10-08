@@ -122,6 +122,7 @@ public sealed partial class MainWindow : Window
         _workspace.NewDocument(64, 64);
         _autosaveTimer.Start();
         _playbackTimer.Start();
+        Opened += (_, _) => QueueRefreshAll();
         RefreshAll();
     }
 
@@ -332,10 +333,16 @@ public sealed partial class MainWindow : Window
         root.Children.Add(preview);
         // Give the color library the full inspector height when Colors is selected.
         preview.IsVisible = tabs.SelectedIndex != 1;
-        tabs.SelectionChanged += (_, _) =>
+        tabs.SelectionChanged += (_, e) =>
         {
+            if (!ReferenceEquals(e.Source, tabs)) return;
             preview.IsVisible = tabs.SelectedIndex != 1;
             if (preview.IsVisible) _quickPreview.SetPresentation(_canvas.Presentation);
+            QueueRefreshAll();
+        };
+        advancedTabs.SelectionChanged += (_, e) =>
+        {
+            if (ReferenceEquals(e.Source, advancedTabs)) QueueRefreshAll();
         };
 
         root.Children.Add(tabs);

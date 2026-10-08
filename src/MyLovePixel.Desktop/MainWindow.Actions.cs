@@ -213,8 +213,8 @@ public sealed partial class MainWindow
             switch (state.Kind)
             {
                 case SessionStateChangeKind.Viewport:
-                    _canvas.SetViewZoom(Current()!.Zoom);
-                    RefreshStatus();
+                    if (!_zoomAnimating) _canvas.SetViewZoom(Current()!.Zoom);
+                    QueuePointerStatus();
                     return;
                 case SessionStateChangeKind.Colors:
                     RefreshPalette();
@@ -238,12 +238,13 @@ public sealed partial class MainWindow
     {
         if (_canvasRefreshQueued) return;
         _canvasRefreshQueued = true;
-        Dispatcher.UIThread.Post(() =>
+        RequestAnimationFrame(_ =>
         {
             _canvasRefreshQueued = false;
+            if (_navigationClosed) return;
             RefreshCanvas(updatePreview: !_canvasPointerActive);
             RefreshStatus();
-        }, DispatcherPriority.Background);
+        });
     }
 
     private void QueueRefreshAll()
@@ -253,7 +254,7 @@ public sealed partial class MainWindow
         Dispatcher.UIThread.Post(() =>
         {
             _refreshQueued = false;
-            RefreshAll();
+            if (!_navigationClosed) RefreshAll();
         }, DispatcherPriority.Background);
     }
 
@@ -295,9 +296,12 @@ public sealed partial class MainWindow
 
     private void OnAutosaveTick(object? sender, EventArgs e)
     {
+        // Never start a synchronous checkpoint in the middle of direct manipulation.
+        if (_panPointer is not null || _zoomAnimating || _canvasPointerActive || _selectionStart is not null) return;
         var attempts = _recovery.Tick(DateTimeOffset.UtcNow);
         if (attempts.Any(v => !v.WroteCheckpoint)) SetError(attempts.First(v => !v.WroteCheckpoint).Error ?? "Autosave failed");
-        RefreshRecovery();
+        _recoveryUiLoaded = false;
+        if (_recoveryPanel.IsEffectivelyVisible) RefreshRecovery();
     }
 
     private void RecoverCandidate(string id) { Safe(() => _recovery.Recover(id)); RefreshAll(); }

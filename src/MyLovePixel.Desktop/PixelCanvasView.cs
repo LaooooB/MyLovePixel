@@ -60,7 +60,7 @@ public sealed partial class PixelCanvasView : Control
     {
         ClipToBounds = true;
         UseLayoutRounding = false;
-        EffectiveViewportChanged += (_, e) => { _visibleCanvasRect = e.EffectiveViewport; InvalidateVisual(); };
+        EffectiveViewportChanged += (_, e) => UpdateVisibleViewport(e.EffectiveViewport);
         Focusable = true;
         PointerCaptureLost += (_, _) =>
         {
@@ -145,6 +145,7 @@ public sealed partial class PixelCanvasView : Control
 
         var visible = GetVisibleCanvasRect();
         if (visible.Width <= 0 || visible.Height <= 0) return;
+        _recordedViewport = visible;
         using var clip = context.PushClip(visible);
         DrawDisplayBitmap(context, presentation);
 
@@ -278,8 +279,12 @@ public sealed partial class PixelCanvasView : Control
 
         if (_zoom >= 2d && selection.Pixels.Count <= 100_000)
         {
+            var visible = GetVisibleCanvasRect();
             foreach (var point in selection.Pixels)
-                context.FillRectangle(EditorThemeTokens.SelectionFill, new Rect(point.X * _zoom, point.Y * _zoom, _zoom, _zoom));
+            {
+                var rect = new Rect(point.X * _zoom, point.Y * _zoom, _zoom, _zoom);
+                if (rect.Intersects(visible)) context.FillRectangle(EditorThemeTokens.SelectionFill, rect);
+            }
         }
 
         var b = selection.Bounds;

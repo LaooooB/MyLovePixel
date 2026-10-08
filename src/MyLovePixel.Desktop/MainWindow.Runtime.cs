@@ -54,6 +54,7 @@ public sealed partial class MainWindow
 
     private void RefreshRecovery()
     {
+        _recoveryUiLoaded = true;
         _recoveryPanel.Children.Clear();
         IReadOnlyList<RecoveryCandidatePresentation> candidates;
         try { candidates = _recovery.Discover(); }
@@ -86,8 +87,13 @@ public sealed partial class MainWindow
 
     private void RefreshTimeline()
     {
-        _timelineFrames.Children.Clear();
         var session = Current();
+        var snapshot = session?.CaptureSnapshot();
+        var signature = $"{session?.GetHashCode()}:{session?.CurrentFrameId}:{_timelineStart}:" +
+            (snapshot is null ? string.Empty : string.Join("|", snapshot.FrameOrder.Select(id => $"{id}:{snapshot.Frames[id].DurationTicks}")));
+        if (_timelineUiSignature == signature) return;
+        _timelineUiSignature = signature;
+        _timelineFrames.Children.Clear();
         if (session is null)
         {
             _timelineStatus.Text = string.Empty;

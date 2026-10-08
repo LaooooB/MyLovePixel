@@ -14,11 +14,12 @@ internal static class EditorUxStyles
 {
     private static BrushTransition Fade(AvaloniaProperty property) => new()
     {
-        Property = property, Duration = TimeSpan.FromMilliseconds(160), Easing = new CubicEaseOut(),
+        Property = property, Duration = EditorMotion.FadeDuration, Easing = new CubicEaseOut(),
     };
 
     public static void Apply(Avalonia.Application app)
     {
+        EditorMotion.Install();
         app.Styles.Add(new Style(x => x.Is<Control>())
         {
             Setters =

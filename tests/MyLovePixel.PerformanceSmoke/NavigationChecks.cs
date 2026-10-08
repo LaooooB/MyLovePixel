@@ -98,6 +98,13 @@ internal static class NavigationChecks
         for (var i = 0; i < 12; i++) { Pump(16); Sample(); }
         check(values.Count >= 3, "Hover fade-out renders intermediate colors rather than jumping");
         check(button.Bounds == beforeBounds, "Hover and leave do not move or resize the click target");
+        var originalTool = Field<StackPanel>("_toolsPanel").Children[0];
+        var originalTimeline = Field<StackPanel>("_timelineFrames").Children.FirstOrDefault();
+        Call("RefreshAll"); Flush();
+        check(ReferenceEquals(originalTool, Field<StackPanel>("_toolsPanel").Children[0]), "Routine refresh retains tool controls and their interaction states");
+        check(ReferenceEquals(originalTimeline, Field<StackPanel>("_timelineFrames").Children.FirstOrDefault()), "Routine refresh retains unchanged timeline controls");
+        check(Field<StackPanel>("_effectsPanel").Children.Count == 0 && Field<StackPanel>("_recoveryPanel").Children.Count == 0,
+            "Unopened advanced panels do not rebuild controls or discover recovery files");
         using (var image = window.CaptureRenderedFrame()) image?.Save(Path.Combine(output, "navigation-verified.png"), new PngBitmapEncoderOptions());
     }
     private static void Flush() { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); Dispatcher.UIThread.RunJobs(); }

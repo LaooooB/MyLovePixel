@@ -7,6 +7,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using MyLovePixel.Application;
 using MyLovePixel.Core.Document;
 using MyLovePixel.Core.Effects;
@@ -34,15 +35,16 @@ public sealed partial class MainWindow
             RefreshActions();
             RefreshCanvas();
             RefreshTools();
-            RefreshToolOptions();
-            RefreshLayers();
+            if (_toolOptionsPanel.IsEffectivelyVisible && !_toolOptionsPanel.IsKeyboardFocusWithin) RefreshToolOptions();
+            if (_layersPanel.IsEffectivelyVisible && !_layersPanel.IsKeyboardFocusWithin) RefreshLayers();
             RefreshPalette();
             RefreshConvenienceUi();
-            RefreshEffects();
-            RefreshTiles();
-            RefreshAnimation();
-            RefreshPlugins();
-            RefreshRecovery();
+            var stamp = InspectorStamp();
+            RefreshVisibleInspector(_effectsPanel, stamp + ":" + _selectedEffect, RefreshEffects);
+            RefreshVisibleInspector(_tilesPanel, stamp + ":" + _selectedTilemap + ":" + _selectedTile, RefreshTiles);
+            RefreshVisibleInspector(_animationPanel, stamp, RefreshAnimation);
+            RefreshVisibleInspector(_pluginsPanel, stamp, RefreshPlugins);
+            if (!_recoveryUiLoaded && _recoveryPanel.GetVisualRoot() is not null && _recoveryPanel.IsEffectivelyVisible) RefreshRecovery();
             RefreshTimeline();
             RefreshStatus();
         }
@@ -54,6 +56,7 @@ public sealed partial class MainWindow
 
     private void RefreshCanvas(bool updatePreview = true)
     {
+        if (_zoomAnimating) StopCanvasZoom();
         var session = Current();
         var presentation = session is null
             ? null
@@ -78,9 +81,18 @@ public sealed partial class MainWindow
 
     private void RefreshTools()
     {
-        _toolsPanel.Children.Clear();
         var session = Current();
-        if (session is null) return;
+        if (session is null) { _toolsPanel.Children.Clear(); _stableToolsSession = null; return; }
+        var tools = _plugins.GetTools(session);
+        var ids = string.Join("|", tools.Select(t => t.Id + ":" + t.DisplayName));
+        if (ReferenceEquals(_stableToolsSession, session) && _stableToolIds == ids)
+        {
+            SyncStableToolButtons(session, tools);
+            return;
+        }
+        _stableToolsSession = session;
+        _stableToolIds = ids;
+        _toolsPanel.Children.Clear();
         _toolsPanel.Margin = new Thickness(6, 6, 6, 8);
 
         var select = NamedToolButton("▧", "Selection", () =>
@@ -92,15 +104,16 @@ public sealed partial class MainWindow
             RefreshToolOptions();
             RefreshCanvas(updatePreview: false);
         });
+        select.Tag = "selection";
         if (_selectionMode) select.Classes.Add("selected");
         _toolsPanel.Children.Add(select);
         var eyedropper = NamedToolButton("", "Eyedropper", SelectEyedropper);
+        eyedropper.Tag = "eyedropper";
         ToolTip.SetTip(eyedropper, "Eyedropper · I · Alt-click temporarily picks a pixel");
         SetSelectedClass(eyedropper, _eyedropperMode);
         _toolsPanel.Children.Add(eyedropper);
         _toolsPanel.Children.Add(SeparatorH());
 
-        var tools = _plugins.GetTools(session);
         for (var index = 0; index < tools.Count; index++)
         {
             var tool = tools[index];
@@ -123,6 +136,7 @@ public sealed partial class MainWindow
                 _plugins.SelectTool(session, id);
                 RefreshAll();
             });
+            button.Tag = id;
             ToolTip.SetTip(button, tip);
             button.IsEnabled = session.HasEditableCel || session.CaptureSnapshot().Layers.ContainsKey(session.CurrentLayerId);
             if (!_selectionMode && !_eyedropperMode && tool.IsActive) button.Classes.Add("selected");
@@ -132,8 +146,13 @@ public sealed partial class MainWindow
 
     private void RefreshToolOptions()
     {
-        _toolOptionsPanel.Children.Clear();
         var session = Current();
+        var options = session?.GetToolOptions() ?? Array.Empty<ToolOptionPresentation>();
+        var signature = $"{session?.GetHashCode()}:{session?.ActiveToolId}:{session?.HasEditableCel}:{_eyedropperMode}:{_selectionMode}:{_selectionGesture}:" +
+            string.Join("|", options.Select(o => o.Id + "=" + o.Value));
+        if (_optionsUiSignature == signature) return;
+        _optionsUiSignature = signature;
+        _toolOptionsPanel.Children.Clear();
         if (session is null) return;
         if (_eyedropperMode)
         {
@@ -175,7 +194,7 @@ public sealed partial class MainWindow
             _toolOptionsPanel.Children.Add(current);
         }
 
-        foreach (var option in session.GetToolOptions())
+        foreach (var option in options)
         {
             switch (option.Kind)
             {
@@ -229,8 +248,12 @@ public sealed partial class MainWindow
 
     private void RefreshLayers()
     {
-        _layersPanel.Children.Clear();
         var session = Current();
+        var layers = session?.GetLayers() ?? Array.Empty<LayerListItem>();
+        var signature = $"{session?.GetHashCode()}:" + string.Join("|", layers.Select(l => $"{l.Id}:{l.Name}:{l.Visible}:{l.Locked}:{l.Opacity}:{l.IsCurrent}"));
+        if (_layersUiSignature == signature) return;
+        _layersUiSignature = signature;
+        _layersPanel.Children.Clear();
         if (session is null) return;
         _layersPanel.Children.Add(Icons(
             TextIconButton("＋", "Add Layer", "Add layer", () => session.AddLayer()),
@@ -238,7 +261,7 @@ public sealed partial class MainWindow
             IconButton("↓", "Move layer down", () => session.MoveCurrentLayer(1)),
             IconButton("×", "Delete layer", () => session.RemoveCurrentLayer())));
 
-        foreach (var layer in session.GetLayers())
+        foreach (var layer in layers)
         {
             var row = new Grid { ColumnDefinitions = new ColumnDefinitions("30,30,*,62"), ColumnSpacing = 5 };
             var eye = SmallIcon(layer.Visible ? "●" : "○", layer.Visible ? "Hide" : "Show", () => session.SetLayerVisibility(layer.Id, !layer.Visible));

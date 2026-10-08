@@ -7,6 +7,21 @@ namespace MyLovePixel.Desktop;
 public sealed partial class PixelCanvasView
 {
     private Rect? _visibleCanvasRect;
+    private Rect _recordedViewport;
+
+    internal void SetNavigationViewport(Rect visible) => UpdateVisibleViewport(visible);
+
+    private void UpdateVisibleViewport(Rect visible)
+    {
+        _visibleCanvasRect = visible;
+        var needed = new Rect(Bounds.Size).Intersect(visible);
+        // Keep a screen-sized guard band in the retained drawing. Small pan
+        // movements reuse commands rather than recording the scene every event.
+        if (needed.Width > 0 && needed.Height > 0 &&
+            (needed.Left < _recordedViewport.Left || needed.Top < _recordedViewport.Top ||
+             needed.Right > _recordedViewport.Right || needed.Bottom > _recordedViewport.Bottom))
+            InvalidateVisual();
+    }
     public long DisplayResampleCount => _displayBitmap.ResampleCount;
     public long DisplayFullUploadCount => _displayBitmap.FullUploadCount;
 
@@ -25,6 +40,6 @@ public sealed partial class PixelCanvasView
     private Rect GetVisibleCanvasRect()
     {
         var bounds = new Rect(Bounds.Size);
-        return _visibleCanvasRect is { } visible ? bounds.Intersect(visible) : bounds;
+        return _visibleCanvasRect is { } visible ? bounds.Intersect(visible.Inflate(256)) : bounds;
     }
 }
