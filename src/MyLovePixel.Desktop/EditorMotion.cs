@@ -45,10 +45,7 @@ internal static class EditorMotion
     private static void AddBrushes(Control control, params AvaloniaProperty[] properties)
     {
         // Never share mutable transition collections between controls.
-        // Button/tab templates already have their own pressed-state transitions.
-        // Other templates receive a fresh collection, never a shared mutable one.
-        if (control.Transitions is not null) return;
-        var transitions = control.Transitions = new Transitions();
+        var transitions = control.Transitions ??= new Transitions();
         foreach (var property in properties)
             if (!transitions.OfType<BrushTransition>().Any(t => t.Property == property))
                 transitions.Add(new BrushTransition { Property = property, Duration = FadeDuration, Easing = new CubicEaseOut() });

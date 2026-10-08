@@ -21,7 +21,7 @@ public sealed partial class MainWindow : Window
 {
     private enum SelectionGestureMode { Rectangle, Ellipse, Lasso, ByColor }
 
-    private const int TimelinePageSize = 24;
+    private const int TimelinePageSize = 12;
 
     private readonly EditorWorkspace _workspace = new();
     private readonly ActionRegistry _actions = ActionRegistry.CreateDefault();
@@ -81,12 +81,15 @@ public sealed partial class MainWindow : Window
     private (int X, int Y)? _selectedTileCell;
     private EffectInstanceId? _selectedEffect;
 
-    public MainWindow()
+    public MainWindow() : this(new UserPaletteStore()) { }
+
+    public MainWindow(UserPaletteStore userPaletteStore)
     {
-        Width = 1480;
-        Height = 920;
-        MinWidth = 1080;
-        MinHeight = 700;
+        _userPaletteStore = userPaletteStore ?? throw new ArgumentNullException(nameof(userPaletteStore));
+        Width = 1280;
+        Height = 820;
+        MinWidth = 640;
+        MinHeight = 400;
         Title = "MyLovePixel";
         Background = EditorThemeTokens.AppBackground;
         TransparencyBackgroundFallback = EditorThemeTokens.AppBackground;
@@ -101,19 +104,20 @@ public sealed partial class MainWindow : Window
         _playbackTimer.Tick += OnPlaybackTick;
         _playbackTimestamp = Stopwatch.GetTimestamp();
 
-        _canvas.IsColorPickActive = () => _eyedropperMode;
-        _canvas.PickColorRequested = PickCanvasColor;
         _canvas.PointerInput = DispatchCanvasPointer;
         _canvas.CancelPointerInput = CancelCanvasInteraction;
-        _canvas.HoverPixelChanged = value => { _hover = value; QueuePointerStatus(); };
-        _canvas.SecondaryPickRequested = ErasePixelFromCanvas;
+        _canvas.HoverPixelChanged = value => { _hover = value; RefreshStatus(); };
         _canvas.ZoomFactorRequested = ChangeZoom;
 
         Content = BuildShell();
+        InstallUxInput();
         _workspace.Changed += OnWorkspaceChanged;
         KeyDown += OnKeyDown;
         Closed += (_, _) =>
         {
+            _closed = true;
+            _previewWindow?.Close();
+            FinishParameterEdit();
             _autosaveTimer.Stop();
             _playbackTimer.Stop();
             _plugins.Dispose();
@@ -122,303 +126,7 @@ public sealed partial class MainWindow : Window
         _workspace.NewDocument(64, 64);
         _autosaveTimer.Start();
         _playbackTimer.Start();
-        Opened += (_, _) => QueueRefreshAll();
         RefreshAll();
     }
 
-    private Control BuildShell()
-    {
-        var root = new DockPanel { Background = EditorThemeTokens.AppBackground };
-
-        var top = BuildTopBar();
-        DockPanel.SetDock(top, Dock.Top);
-        root.Children.Add(top);
-
-        var status = new Border
-        {
-            Background = EditorThemeTokens.Surface,
-            BorderBrush = EditorThemeTokens.PanelBorder,
-            BorderThickness = new Thickness(0, 1, 0, 0),
-            Padding = new Thickness(10, 4),
-            Child = _status,
-        };
-        DockPanel.SetDock(status, Dock.Bottom);
-        root.Children.Add(status);
-
-        root.Children.Add(BuildWorkspace());
-        return root;
-    }
-
-    private Control BuildTopBar()
-    {
-        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*,Auto"), ColumnSpacing = 10 };
-
-        var project = ToolbarGroup("Project",
-            TextIconButton("＋", "New", "New project · Ctrl+N", async () => await NewProjectAsync()),
-            ActionTextButton(BuiltinActionIds.OpenProject, "⌂", "Open", "Open project · Ctrl+O"),
-            BuildColorUpgradeImportButton(),
-            ActionTextButton(BuiltinActionIds.SaveProject, "▣", "Save", "Save project · Ctrl+S", primary: true),
-            TextIconButton("⇧", "Save As", "Save As · Ctrl+Shift+S", async () => await InvokeActionAsync(BuiltinActionIds.SaveProjectAs)),
-            TextIconButton("⇩", "Export", "Export · Ctrl+E", ExportAsync));
-        row.Children.Add(project);
-
-        var history = ToolbarGroup("History",
-            ActionIcon(BuiltinActionIds.Undo, "↶", "Undo · Ctrl+Z"),
-            ActionIcon(BuiltinActionIds.Redo, "↷", "Redo · Ctrl+Y"),
-            IconButton("×", "Clear canvas · Ctrl+Z to undo", ClearCanvas));
-        Grid.SetColumn(history, 1);
-        row.Children.Add(history);
-
-        var view = ToolbarGroup("View",
-            IconButton("−", "Zoom out", () => ChangeZoom(0.8)),
-            TextIconButton("", "100%", "Reset zoom to 100%", () => SetZoom(1d)),
-            IconButton("＋", "Zoom in", () => ChangeZoom(1.25)),
-            BuildGridToggleButton(),
-            ToggleIcon("◐", "Invert black / white", () => _invertView, v => { _invertView = v; _canvas.SetInvert(v); }));
-        Grid.SetColumn(view, 3);
-        row.Children.Add(view);
-
-        return new Border
-        {
-            Background = EditorThemeTokens.Surface,
-            BorderBrush = EditorThemeTokens.PanelBorder,
-            BorderThickness = new Thickness(0, 0, 0, 1),
-            Padding = new Thickness(10, 6),
-            Child = row,
-        };
-    }
-
-    private static Control ToolbarGroup(string title, params Control[] controls)
-    {
-        var root = new StackPanel { Spacing = 3 };
-        var label = new TextBlock { Text = title };
-        label.Classes.Add("toolbar-label");
-        root.Children.Add(label);
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
-        foreach (var control in controls) row.Children.Add(control);
-        root.Children.Add(row);
-        return root;
-    }
-
-    private Control BuildWorkspace()
-    {
-        var grid = new Grid
-        {
-            RowDefinitions = new RowDefinitions($"*,{EditorThemeTokens.TimelineHeight}"),
-            ColumnDefinitions = new ColumnDefinitions($"{EditorThemeTokens.ToolRailWidth},*,{EditorThemeTokens.RightPanelWidth}")
-        };
-
-        var toolsRoot = new DockPanel();
-        var toolsTitle = new TextBlock
-        {
-            Text = "TOOLS",
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Margin = new Thickness(0, 10, 0, 5),
-        };
-        toolsTitle.Classes.Add("toolbar-label");
-        DockPanel.SetDock(toolsTitle, Dock.Top);
-        toolsRoot.Children.Add(toolsTitle);
-        toolsRoot.Children.Add(new ScrollViewer
-        {
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            Content = _toolsPanel,
-        });
-
-        var rail = new Border
-        {
-            Background = EditorThemeTokens.Surface,
-            BorderBrush = EditorThemeTokens.PanelBorder,
-            BorderThickness = new Thickness(0, 0, 1, 0),
-            Child = toolsRoot,
-        };
-        Grid.SetColumn(rail, 0);
-        grid.Children.Add(rail);
-
-        var canvasHost = _canvasScroll = new ScrollViewer
-        {
-            Background = EditorThemeTokens.CanvasWorkspace,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            Content = _comfortCanvasFrame = new Border
-            {
-                Background = EditorThemeTokens.CanvasFrame,
-                BorderBrush = EditorThemeTokens.StrongBorder,
-                BorderThickness = new Thickness(1),
-                Padding = new Thickness(18),
-                Margin = new Thickness(38),
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-                Child = _canvas,
-            },
-        };
-        InitializeCanvasNavigation(canvasHost);
-        var canvasColumn = new DockPanel();
-        var comfort = BuildCanvasComfortBar();
-        DockPanel.SetDock(comfort, Dock.Top);
-        canvasColumn.Children.Add(comfort);
-        canvasColumn.Children.Add(canvasHost);
-        Grid.SetColumn(canvasColumn, 1);
-        grid.Children.Add(canvasColumn);
-
-        var inspector = BuildInspector();
-        Grid.SetColumn(inspector, 2);
-        Grid.SetRowSpan(inspector, 2);
-        grid.Children.Add(inspector);
-        var timeline = BuildTimeline();
-        Grid.SetRow(timeline, 1);
-        Grid.SetColumnSpan(timeline, 2);
-        grid.Children.Add(timeline);
-        return grid;
-    }
-
-    private Control BuildInspector()
-    {
-        var editorPage = InspectorScroll(
-            SectionCard("Tool options", "Changes apply to the active drawing or selection tool.", _toolOptionsPanel));
-        var colorsPage = BuildStudioPaletteEditor();
-
-        var layersPage = InspectorScroll(
-            SectionCard("Layers", "Select, rename, reorder, hide, lock and change opacity.", _layersPanel));
-
-        var extensions = new StackPanel { Spacing = 10 };
-        extensions.Children.Add(SectionCard("Plugins", "Load extensions and use plugin-provided commands or panels.", _pluginsPanel));
-        extensions.Children.Add(SectionCard("Recovery", "Recover autosaved work after an interrupted session.", _recoveryPanel));
-        extensions.Children.Add(SectionCard("Diagnostics", "Rendering and undo-memory diagnostics for troubleshooting.", _diagnostics));
-
-        var advancedTabs = new TabControl
-        {
-            ItemsSource = new object[]
-            {
-                TextTab("Effects", InspectorScroll(SectionCard("Effects", "Non-destructive effect stack and parameter keyframes.", _effectsPanel))),
-                TextTab("Tilemap", InspectorScroll(SectionCard("Tilemap", "Tilesets, maps, flags, AutoTile and tile-pixel editing.", _tilesPanel))),
-                TextTab("Animation", InspectorScroll(SectionCard("Animation", "Animation metadata, onion skin, clips, tags and collision data.", _animationPanel), BuildSpriteSheetImportCard())),
-                TextTab("Extensions", new ScrollViewer
-                {
-                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                    Content = new Border { Padding = new Thickness(10), Child = extensions },
-                }),
-            },
-        };
-
-        var tabs = new TabControl
-        {
-            Background = EditorThemeTokens.Surface,
-            BorderBrush = EditorThemeTokens.PanelBorder,
-            BorderThickness = new Thickness(1, 0, 0, 0),
-            ItemsSource = new object[]
-            {
-                TextTab("Edit", editorPage),
-                TextTab("Colors", colorsPage),
-                TextTab("Layers", layersPage),
-                TextTab("Advanced", advancedTabs),
-            },
-        };
-
-        Avalonia.Automation.AutomationProperties.SetAutomationId(tabs, "inspector-tabs");
-        var root = new DockPanel { Background = EditorThemeTokens.Surface };
-        var title = new Border
-        {
-            Padding = new Thickness(12, 10, 12, 7),
-            BorderBrush = EditorThemeTokens.PanelBorder,
-            BorderThickness = new Thickness(1, 0, 0, 1),
-            Child = new TextBlock { Text = "Inspector", FontSize = 14, FontWeight = FontWeight.SemiBold },
-        };
-        DockPanel.SetDock(title, Dock.Top);
-        root.Children.Add(title);
-
-        var preview = BuildInspectorPreviewBox();
-        DockPanel.SetDock(preview, Dock.Top);
-        root.Children.Add(preview);
-        // Give the color library the full inspector height when Colors is selected.
-        preview.IsVisible = tabs.SelectedIndex != 1;
-        tabs.SelectionChanged += (_, e) =>
-        {
-            if (!ReferenceEquals(e.Source, tabs)) return;
-            preview.IsVisible = tabs.SelectedIndex != 1;
-            if (preview.IsVisible) _quickPreview.SetPresentation(_canvas.Presentation);
-            QueueRefreshAll();
-        };
-        advancedTabs.SelectionChanged += (_, e) =>
-        {
-            if (ReferenceEquals(e.Source, advancedTabs)) QueueRefreshAll();
-        };
-
-        root.Children.Add(tabs);
-        return root;
-    }
-
-    private static ScrollViewer InspectorScroll(params Control[] controls)
-    {
-        var stack = new StackPanel { Spacing = 10 };
-        foreach (var control in controls) stack.Children.Add(control);
-        return new ScrollViewer
-        {
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            Content = new Border { Padding = new Thickness(10), Child = stack },
-        };
-    }
-
-    private Control BuildTimeline()
-    {
-        var outer = new DockPanel { LastChildFill = true, Background = EditorThemeTokens.Surface };
-
-        var header = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto"), RowSpacing = 4, ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), Margin = new Thickness(10, 6, 10, 5) };
-        var title = new TextBlock { Text = "Timeline", FontSize = 13, FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center };
-        header.Children.Add(title);
-
-        var controls = new WrapPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Stretch };
-        controls.Children.Add(IconButton("▶", "Play / Pause animation", TogglePlayback));
-        var playbackMode = new ComboBox
-        {
-            ItemsSource = new[] { "Loop", "PingPong" },
-            SelectedItem = _playback.LoopMode == AnimationLoopMode.PingPong ? "PingPong" : "Loop",
-            MinWidth = 104,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        ToolTip.SetTip(playbackMode, "Timeline playback mode");
-        playbackMode.SelectionChanged += (_, _) =>
-        {
-            var mode = string.Equals(playbackMode.SelectedItem as string, "PingPong", StringComparison.Ordinal)
-                ? AnimationLoopMode.PingPong
-                : AnimationLoopMode.Loop;
-            _playback.SetLoopMode(mode, Current());
-            _playbackTimestamp = Stopwatch.GetTimestamp();
-        };
-        controls.Children.Add(playbackMode);
-        controls.Children.Add(ToggleTextButton("◌", "Onion Skin", "Onion skin", () => _onionSkin, value => { _onionSkin = value; RefreshCanvas(); RefreshAnimation(); }));
-        controls.Children.Add(IconButton("⧉", "Duplicate frame", () => Current()?.DuplicateCurrentFrame(false)));
-        controls.Children.Add(TextIconButton("⛓", "Linked Copy", "Linked frame copy", () => Current()?.DuplicateCurrentFrame(true)));
-        controls.Children.Add(IconButton("×", "Delete frame", () => Current()?.RemoveCurrentFrame()));
-        controls.Children.Add(IconButton("←", "Move frame left", () => Current()?.MoveCurrentFrame(-1)));
-        controls.Children.Add(IconButton("→", "Move frame right", () => Current()?.MoveCurrentFrame(1)));
-        foreach (var control in controls.Children) control.Margin = new Thickness(0, 0, 4, 4);
-        Grid.SetRow(controls, 1);
-        Grid.SetColumnSpan(controls, 3);
-        header.Children.Add(controls);
-
-        _timelineStatus.VerticalAlignment = VerticalAlignment.Center;
-        _timelineStatus.Classes.Add("muted");
-        Grid.SetColumn(_timelineStatus, 2);
-        header.Children.Add(_timelineStatus);
-
-        DockPanel.SetDock(header, Dock.Top);
-        outer.Children.Add(header);
-        outer.Children.Add(new ScrollViewer
-        {
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            Content = new Border { Padding = new Thickness(10, 0, 10, 8), Child = _timelineFrames },
-        });
-
-        return new Border
-        {
-            Height = EditorThemeTokens.TimelineHeight,
-            BorderBrush = EditorThemeTokens.PanelBorder,
-            BorderThickness = new Thickness(0, 1, 0, 0),
-            Child = outer,
-        };
-    }
 }

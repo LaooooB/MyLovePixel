@@ -45,6 +45,7 @@ public sealed partial class PixelCanvasView : Control
     private const double RotateHandleRadius = 8d;
     private const double RotateHandleOffset = 24d;
 
+    private readonly Dictionary<uint, IBrush> _brushes = [];
     private CanvasPresentation? _presentation;
     private SelectionOverlayPresentation? _selection;
     private IntPoint? _hoveredPixel;
@@ -56,41 +57,11 @@ public sealed partial class PixelCanvasView : Control
     private SelectionTransformPreview? _selectionTransformPreview;
     private bool _releasingCapture;
 
-    public PixelCanvasView()
-    {
-        ClipToBounds = true;
-        UseLayoutRounding = false;
-        EffectiveViewportChanged += (_, e) => UpdateVisibleViewport(e.EffectiveViewport);
-        Focusable = true;
-        PointerCaptureLost += (_, _) =>
-        {
-            if (_releasingCapture) return;
-            if (_activeSelectionTransform is { } operation)
-            {
-                _activeSelectionTransform = null;
-                SelectionTransformInput?.Invoke(new SelectionTransformPointerEvent(
-                    operation,
-                    SelectionTransformPhase.Canceled,
-                    0d,
-                    0d,
-                    KeyModifiers.None));
-                return;
-            }
-            CancelPointerInput?.Invoke();
-        };
-        PointerExited += (_, _) =>
-        {
-            _hoveredPixel = null;
-            HoverPixelChanged?.Invoke(null);
-            InvalidateVisual();
-        };
-    }
 
     public Action<EditorPointerEvent>? PointerInput { get; set; }
     public Action<SelectionTransformPointerEvent>? SelectionTransformInput { get; set; }
     public Action? CancelPointerInput { get; set; }
     public Action<(int X, int Y)?>? HoverPixelChanged { get; set; }
-    public Action<int, int>? SecondaryPickRequested { get; set; }
     public Action<double>? ZoomFactorRequested { get; set; }
     public CanvasPresentation? Presentation => _presentation;
     public double Zoom => _zoom;
@@ -101,7 +72,6 @@ public sealed partial class PixelCanvasView : Control
         _presentation = presentation;
         _selection = selection;
         _zoom = zoom;
-        UpdateDisplayBitmap();
         Width = presentation is null ? 1d : presentation.Size.Width * zoom;
         Height = presentation is null ? 1d : presentation.Size.Height * zoom;
         InvalidateVisual();
@@ -126,7 +96,7 @@ public sealed partial class PixelCanvasView : Control
     {
         if (_invert == invert) return;
         _invert = invert;
-        UpdateDisplayBitmap();
+        _brushes.Clear();
         InvalidateVisual();
     }
 
@@ -137,136 +107,10 @@ public sealed partial class PixelCanvasView : Control
         InvalidateVisual();
     }
 
-    public override void Render(DrawingContext context)
-    {
-        base.Render(context);
-        var presentation = _presentation;
-        if (presentation is null) return;
 
-        var visible = GetVisibleCanvasRect();
-        if (visible.Width <= 0 || visible.Height <= 0) return;
-        _recordedViewport = visible;
-        using var clip = context.PushClip(visible);
-        DrawDisplayBitmap(context, presentation);
 
-        if (_grid && _zoom >= 8d)
-        {
-            var pen = new Pen(EditorThemeTokens.GridLine, 1d);
-            var left = Math.Max(1, (int)Math.Ceiling(visible.Left / _zoom));
-            var right = Math.Min(presentation.Size.Width - 1, (int)Math.Floor(visible.Right / _zoom));
-            var top = Math.Max(1, (int)Math.Ceiling(visible.Top / _zoom));
-            var bottom = Math.Min(presentation.Size.Height - 1, (int)Math.Floor(visible.Bottom / _zoom));
-            for (var x = left; x <= right; x++)
-                context.DrawLine(pen, new Point(x * _zoom, visible.Top), new Point(x * _zoom, visible.Bottom));
-            for (var y = top; y <= bottom; y++)
-                context.DrawLine(pen, new Point(visible.Left, y * _zoom), new Point(visible.Right, y * _zoom));
-        }
 
-        if (_selection is { } selection)
-            DrawSelection(context, selection);
 
-        if (presentation.DirtyRegions.Count != 0)
-        {
-            var pen = new Pen(EditorThemeTokens.DirtyRegionOutline, 1d);
-            foreach (var region in presentation.DirtyRegions)
-            {
-                var rect = new Rect(region.X * _zoom, region.Y * _zoom, region.Width * _zoom, region.Height * _zoom);
-                context.DrawRectangle(null, pen, rect);
-            }
-        }
-
-        if (_zoom >= 4d && _hoveredPixel is { } hover &&
-            (uint)hover.X < (uint)presentation.Size.Width &&
-            (uint)hover.Y < (uint)presentation.Size.Height)
-        {
-            var rect = new Rect(hover.X * _zoom, hover.Y * _zoom, _zoom, _zoom);
-            context.FillRectangle(EditorThemeTokens.HoverCell, rect);
-            context.DrawRectangle(null, new Pen(EditorThemeTokens.HoverCellOutline, Math.Min(2d, Math.Max(1d, _zoom / 8d))), rect);
-        }
-
-        context.DrawRectangle(null, new Pen(EditorThemeTokens.StrongBorder, 1d), new Rect(0, 0, presentation.Size.Width * _zoom, presentation.Size.Height * _zoom));
-    }
-
-    protected override void OnPointerPressed(PointerPressedEventArgs e)
-    {
-        base.OnPointerPressed(e);
-        if (_presentation is null) return;
-        Focus();
-        UpdateHover(e);
-        var point = e.GetCurrentPoint(this);
-        if (point.Properties.IsMiddleButtonPressed) { e.Handled = true; return; }
-        if (point.Properties.IsLeftButtonPressed && _hoveredPixel is { } picked &&
-            (IsColorPickActive?.Invoke() == true || (e.KeyModifiers & KeyModifiers.Alt) != 0))
-        {
-            PickColorRequested?.Invoke(picked.X, picked.Y);
-            e.Handled = true;
-            return;
-        }
-        if (point.Properties.IsRightButtonPressed && _hoveredPixel is { } hover)
-        {
-            SecondaryPickRequested?.Invoke(hover.X, hover.Y);
-            e.Handled = true;
-            return;
-        }
-
-        if (point.Properties.IsLeftButtonPressed && TryBeginSelectionTransform(e))
-        {
-            e.Pointer.Capture(this);
-            e.Handled = true;
-            return;
-        }
-
-        e.Pointer.Capture(this);
-        DispatchPointer(e, EditorPointerKind.Pressed);
-        e.Handled = true;
-    }
-
-    protected override void OnPointerMoved(PointerEventArgs e)
-    {
-        base.OnPointerMoved(e);
-        if (_presentation is null) return;
-        UpdateHover(e);
-        if (!ReferenceEquals(e.Pointer.Captured, this)) return;
-
-        if (_activeSelectionTransform is { } operation)
-        {
-            DispatchSelectionTransform(e, operation, SelectionTransformPhase.Moved);
-            e.Handled = true;
-            return;
-        }
-
-        DispatchPointer(e, EditorPointerKind.Moved);
-        e.Handled = true;
-    }
-
-    protected override void OnPointerReleased(PointerReleasedEventArgs e)
-    {
-        base.OnPointerReleased(e);
-        if (_presentation is null) return;
-        UpdateHover(e);
-        if (!ReferenceEquals(e.Pointer.Captured, this)) return;
-
-        if (_activeSelectionTransform is { } operation)
-        {
-            DispatchSelectionTransform(e, operation, SelectionTransformPhase.Released);
-            _activeSelectionTransform = null;
-            ReleaseCapture(e.Pointer);
-            e.Handled = true;
-            return;
-        }
-
-        DispatchPointer(e, EditorPointerKind.Released);
-        ReleaseCapture(e.Pointer);
-        e.Handled = true;
-    }
-
-    protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
-    {
-        base.OnPointerWheelChanged(e);
-        if ((e.KeyModifiers & KeyModifiers.Control) == 0) return;
-        ZoomFactorRequested?.Invoke(e.Delta.Y > 0 ? 1.25d : 0.8d);
-        e.Handled = true;
-    }
 
     private void DrawSelection(DrawingContext context, SelectionOverlayPresentation selection)
     {
@@ -279,12 +123,8 @@ public sealed partial class PixelCanvasView : Control
 
         if (_zoom >= 2d && selection.Pixels.Count <= 100_000)
         {
-            var visible = GetVisibleCanvasRect();
             foreach (var point in selection.Pixels)
-            {
-                var rect = new Rect(point.X * _zoom, point.Y * _zoom, _zoom, _zoom);
-                if (rect.Intersects(visible)) context.FillRectangle(EditorThemeTokens.SelectionFill, rect);
-            }
+                context.FillRectangle(EditorThemeTokens.SelectionFill, new Rect(point.X * _zoom, point.Y * _zoom, _zoom, _zoom));
         }
 
         var b = selection.Bounds;
@@ -337,8 +177,9 @@ public sealed partial class PixelCanvasView : Control
             context.DrawLine(pen, corners[index], corners[(index + 1) % corners.Length]);
 
         if (!drawHandles) return;
-        foreach (var corner in corners)
+        foreach (var rawCorner in corners)
         {
+            var corner = HandlePoint(rawCorner);
             context.FillRectangle(
                 EditorThemeTokens.SurfaceRaised,
                 new Rect(
@@ -381,13 +222,13 @@ public sealed partial class PixelCanvasView : Control
 
         if (Distance(pointer, rotateHandle) <= RotateHandleRadius + 4d)
             operation = SelectionTransformOperation.Rotate;
-        else if (Distance(pointer, corners[0]) <= TransformHandleRadius + 4d)
+        else if (Distance(pointer, HandlePoint(corners[0])) <= TransformHandleRadius + 4d)
             operation = SelectionTransformOperation.ScaleTopLeft;
-        else if (Distance(pointer, corners[1]) <= TransformHandleRadius + 4d)
+        else if (Distance(pointer, HandlePoint(corners[1])) <= TransformHandleRadius + 4d)
             operation = SelectionTransformOperation.ScaleTopRight;
-        else if (Distance(pointer, corners[2]) <= TransformHandleRadius + 4d)
+        else if (Distance(pointer, HandlePoint(corners[2])) <= TransformHandleRadius + 4d)
             operation = SelectionTransformOperation.ScaleBottomRight;
-        else if (Distance(pointer, corners[3]) <= TransformHandleRadius + 4d)
+        else if (Distance(pointer, HandlePoint(corners[3])) <= TransformHandleRadius + 4d)
             operation = SelectionTransformOperation.ScaleBottomLeft;
         else
         {
@@ -438,13 +279,24 @@ public sealed partial class PixelCanvasView : Control
         ];
     }
 
+    private Point HandlePoint(Point point)
+    {
+        // Keep hit testing and the visible handle on the same point without
+        // changing the selection's artwork coordinates.
+        const double inset = RotateHandleRadius + 1d;
+        var xInset = Math.Min(inset, Bounds.Width / 2d);
+        var yInset = Math.Min(inset, Bounds.Height / 2d);
+        return new Point(Math.Clamp(point.X, xInset, Math.Max(xInset, Bounds.Width - xInset)),
+            Math.Clamp(point.Y, yInset, Math.Max(yInset, Bounds.Height - yInset)));
+    }
+
     private Point GetRotateHandle(IReadOnlyList<Point> corners)
     {
         var topMiddle = Midpoint(corners[0], corners[1]);
         var edgeX = corners[1].X - corners[0].X;
         var edgeY = corners[1].Y - corners[0].Y;
         var length = Math.Sqrt(edgeX * edgeX + edgeY * edgeY);
-        if (length < 0.000001d) return topMiddle;
+        if (length < 0.000001d) return HandlePoint(topMiddle);
         var normalX = edgeY / length;
         var normalY = -edgeX / length;
         var candidate = new Point(
@@ -458,7 +310,7 @@ public sealed partial class PixelCanvasView : Control
                 topMiddle.X - normalX * RotateHandleOffset,
                 topMiddle.Y - normalY * RotateHandleOffset);
         }
-        return candidate;
+        return HandlePoint(candidate);
     }
 
     private void UpdateHover(PointerEventArgs e)
@@ -473,6 +325,7 @@ public sealed partial class PixelCanvasView : Control
             : null;
         if (_hoveredPixel == next) return;
         _hoveredPixel = next;
+        UpdateHoverAppearance(next);
         HoverPixelChanged?.Invoke(next is { } value ? (value.X, value.Y) : null);
         InvalidateVisual();
     }
@@ -482,8 +335,14 @@ public sealed partial class PixelCanvasView : Control
         var presentation = _presentation;
         if (presentation is null) return;
         var point = e.GetCurrentPoint(this);
-        var x = Math.Clamp((int)Math.Floor(point.Position.X / _zoom), 0, presentation.Size.Width - 1);
-        var y = Math.Clamp((int)Math.Floor(point.Position.Y / _zoom), 0, presentation.Size.Height - 1);
+        var x = (int)Math.Floor(point.Position.X / _zoom);
+        var y = (int)Math.Floor(point.Position.Y / _zoom);
+        // Erase uses raw coordinates to break the path while outside the canvas.
+        if (!_secondaryErasing)
+        {
+            x = Math.Clamp(x, 0, presentation.Size.Width - 1);
+            y = Math.Clamp(y, 0, presentation.Size.Height - 1);
+        }
         var properties = point.Properties;
         var buttons = EditorPointerButtons.None;
         if (properties.IsLeftButtonPressed) buttons |= EditorPointerButtons.Primary;
@@ -520,6 +379,32 @@ public sealed partial class PixelCanvasView : Control
         _releasingCapture = true;
         try { pointer.Capture(null); }
         finally { _releasingCapture = false; }
+    }
+
+    private void DrawPixel(DrawingContext context, int x, int y, byte r, byte g, byte b, byte a)
+    {
+        var rect = new Rect(x * _zoom, y * _zoom, _zoom, _zoom);
+        if (a == 0)
+        {
+            context.FillRectangle(((x + y) & 1) == 0 ? EditorThemeTokens.CheckerLight : EditorThemeTokens.CheckerDark, rect);
+            return;
+        }
+        if (_invert)
+        {
+            r = (byte)(255 - r);
+            g = (byte)(255 - g);
+            b = (byte)(255 - b);
+        }
+        context.FillRectangle(GetBrush(r, g, b, a), rect);
+    }
+
+    private IBrush GetBrush(byte r, byte g, byte b, byte a)
+    {
+        var key = ((uint)a << 24) | ((uint)r << 16) | ((uint)g << 8) | b;
+        if (_brushes.TryGetValue(key, out var brush)) return brush;
+        brush = new SolidColorBrush(Color.FromArgb(a, r, g, b));
+        _brushes.Add(key, brush);
+        return brush;
     }
 
     private static double Distance(Point a, Point b)

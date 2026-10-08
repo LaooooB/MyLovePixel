@@ -1,0 +1,86 @@
+name: Color Studio Windows
+on:
+  push:
+    branches: [color-studio-5572f97-20261008]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: color-studio-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - run: git archive --format=zip --output=MyLovePixel-source.zip HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: color-studio-source
+          path: MyLovePixel-source.zip
+  windows:
+    if: contains(github.event.head_commit.message, '[package]') || github.event_name == 'workflow_dispatch'
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply tested local edits
+        shell: pwsh
+        run: |
+          if (Test-Path scripts/color-studio-patch.py) {
+            python scripts/color-studio-patch.py
+            if ($LASTEXITCODE -ne 0) { throw 'Source update failed' }
+            Remove-Item scripts/color-studio-patch.py
+          }
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.400'
+      - name: Verify application
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release | Out-Null
+          dotnet build MyLovePixel.slnx -c Release 2>&1 | Tee-Object release/build.log
+          if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
+          dotnet test MyLovePixel.slnx -c Release --no-build 2>&1 | Tee-Object release/tests.log
+          if ($LASTEXITCODE -ne 0) { throw 'Tests failed' }
+          dotnet run --project tests/MyLovePixel.Desktop.UxTests -c Release 2>&1 | Tee-Object release/ui-tests.log
+          if ($LASTEXITCODE -ne 0) { throw 'UI tests failed' }
+      - name: Record tested source
+        shell: pwsh
+        run: |
+          git config user.name 'MyLovePixel Build'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src tests docs scripts HANDOFF.md
+          git diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) {
+            git commit -m 'Record verified Color Studio source'
+            git push origin HEAD:color-studio-5572f97-20261008
+            if ($LASTEXITCODE -ne 0) { throw 'Source push failed' }
+          }
+          "SOURCE_SHA=$(git rev-parse HEAD)" >> $env:GITHUB_ENV
+          git archive --format=zip --output=release/MyLovePixel-source.zip HEAD
+      - name: Publish and test Windows EXE
+        shell: pwsh
+        run: |
+          dotnet publish src/MyLovePixel.Desktop/MyLovePixel.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=None -p:DebugSymbols=false -o release/windows
+          if ($LASTEXITCODE -ne 0) { throw 'Publish failed' }
+          Copy-Item release/windows/MyLovePixel.Desktop.exe release/MyLovePixel.exe
+          & scripts/Test-UxRelease.ps1 -Executable (Resolve-Path release/MyLovePixel.exe) -OutputDirectory (Join-Path $PWD release/smoke)
+          "$((Get-FileHash release/MyLovePixel.exe -Algorithm SHA256).Hash.ToLowerInvariant())  MyLovePixel.exe" | Set-Content release/SHA256SUMS.txt
+          "Source: $env:SOURCE_SHA`nBase: 5572f9735a71dd663d292a914be040aa8638d864`nRuntime: Windows x64 self-contained .NET 10`nSignature: unsigned" | Set-Content release/BUILD.txt
+          Compress-Archive -Path release/MyLovePixel.exe,release/BUILD.txt,release/SHA256SUMS.txt -DestinationPath release/MyLovePixel-Windows-x64.zip -Force
+          Remove-Item -Recurse release/windows
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Color-Studio-Windows
+          path: release/
+          retention-days: 30

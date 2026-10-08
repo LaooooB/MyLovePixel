@@ -54,7 +54,6 @@ public sealed partial class MainWindow
 
     private void RefreshRecovery()
     {
-        _recoveryUiLoaded = true;
         _recoveryPanel.Children.Clear();
         IReadOnlyList<RecoveryCandidatePresentation> candidates;
         try { candidates = _recovery.Discover(); }
@@ -85,76 +84,7 @@ public sealed partial class MainWindow
         }
     }
 
-    private void RefreshTimeline()
-    {
-        var session = Current();
-        var snapshot = session?.CaptureSnapshot();
-        var signature = $"{session?.GetHashCode()}:{session?.CurrentFrameId}:{_timelineStart}:" +
-            (snapshot is null ? string.Empty : string.Join("|", snapshot.FrameOrder.Select(id => $"{id}:{snapshot.Frames[id].DurationTicks}")));
-        if (_timelineUiSignature == signature) return;
-        _timelineUiSignature = signature;
-        _timelineFrames.Children.Clear();
-        if (session is null)
-        {
-            _timelineStatus.Text = string.Empty;
-            return;
-        }
 
-        var total = session.CaptureSnapshot().FrameOrder.Count;
-        _timelineStart = Math.Clamp(_timelineStart, 0, Math.Max(0, total - 1));
-        var window = session.GetTimelineWindow(_timelineStart, TimelinePageSize);
-        _timelineStatus.Text = $"Frames {window.StartIndex + 1}–{Math.Min(window.TotalCount, window.StartIndex + window.Items.Count)} of {window.TotalCount}";
-        foreach (var frame in window.Items)
-        {
-            var ms = frame.DurationTicks / 1000d;
-            var b = new Button { Content = $"{frame.Index + 1}\n{ms:0}ms", MinWidth = 58, Padding = new Thickness(5, 3) };
-            ToolTip.SetTip(b, $"Frame {frame.Index + 1} · {ms:0} ms");
-            if (frame.IsCurrent) b.Classes.Add("selected");
-            b.Click += (_, _) =>
-            {
-                _playback.Stop(session);
-                session.SelectFrame(frame.Id);
-            };
-            _timelineFrames.Children.Add(b);
-        }
-
-        var current = window.Items.FirstOrDefault(v => v.IsCurrent);
-        if (current is not null)
-        {
-            var duration = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, VerticalAlignment = VerticalAlignment.Center };
-            var label = new TextBlock { Text = "Duration", VerticalAlignment = VerticalAlignment.Center };
-            label.Classes.Add("muted");
-            duration.Children.Add(label);
-            var ms = new NumericUpDown { Value = current.DurationTicks / 1000m, Minimum = 1, Maximum = 60_000, Increment = 1, FormatString = "0", Width = 82 };
-            ToolTip.SetTip(ms, "Current frame duration in milliseconds");
-            ms.ValueChanged += (_, _) =>
-            {
-                if (ms.Value is { } v) Safe(() => session.SetCurrentFrameDuration((long)(v * 1000m)));
-            };
-            duration.Children.Add(ms);
-            duration.Children.Add(new TextBlock { Text = "ms", VerticalAlignment = VerticalAlignment.Center });
-            _timelineFrames.Children.Add(duration);
-        }
-    }
-
-    private void RefreshStatus()
-    {
-        _status.Foreground = EditorThemeTokens.TextSecondary;
-        var session = Current();
-        if (session is null)
-        {
-            Title = "MyLovePixel";
-            _status.Text = string.Empty;
-            return;
-        }
-
-        var name = session.FilePath is null ? "Untitled" : Path.GetFileName(session.FilePath);
-        Title = $"MyLovePixel — {name}{(session.IsDirty ? " *" : "")}";
-        var pos = _hover is { } h ? $"Pixel {h.X}, {h.Y}" : "Pixel —";
-        var canvas = _canvas.Presentation?.Size;
-        var canvasText = canvas is { } size ? $"{size.Width}×{size.Height}" : "—";
-        _status.Text = $"{pos}   ·   Canvas {canvasText}   ·   Zoom {session.Zoom * 100:0}%{(session.IsDirty ? "   ·   Unsaved changes" : string.Empty)}";
-    }
 
     private void DispatchCanvasPointer(EditorPointerEvent e)
     {
@@ -162,11 +92,24 @@ public sealed partial class MainWindow
         if (session is null) return;
         try
         {
+            if (_busy) return;
+            if (_secondaryEraseGesture is not null || (e.Buttons & EditorPointerButtons.Secondary) != 0)
+            {
+                HandleSecondaryErase(session, e);
+                return;
+            }
             if (!_selectionMode && e.Kind == EditorPointerKind.Pressed)
                 _canvasPointerActive = true;
-
             if (e.Kind == EditorPointerKind.Pressed)
-                session.EnsureEditableCel();
+            {
+                FinishParameterEdit();
+                _playback.Stop(session);
+                if (!_selectionMode)
+                {
+                    if (session.DrawingBlockedReason is { } blocked) throw new InvalidOperationException(blocked);
+                    session.EnsureEditableCel();
+                }
+            }
 
             if (_selectionMode)
             {
@@ -220,6 +163,7 @@ public sealed partial class MainWindow
         }
         catch (Exception ex)
         {
+            FinishSecondaryErase(false);
             _canvasPointerActive = false;
             CrashLog.Write("CanvasPointer", ex);
             try { _plugins.CancelTool(session); }
@@ -230,6 +174,7 @@ public sealed partial class MainWindow
 
     private void CancelCanvasInteraction()
     {
+        FinishSecondaryErase(false);
         _canvasPointerActive = false;
         if (Current() is { } session)
         {
@@ -242,14 +187,6 @@ public sealed partial class MainWindow
         }
         _selectionStart = null;
         _selectionVertices.Clear();
-        QueueRefreshAll();
-    }
-
-    private void ErasePixelFromCanvas(int x, int y)
-    {
-        var session = Current();
-        if (session is null) return;
-        Safe(() => session.EraseCanvasPixel(x, y));
         QueueRefreshAll();
     }
 

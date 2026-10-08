@@ -28,7 +28,6 @@ public sealed class NewProjectDialog : Window
         var root = new StackPanel { Margin = new Thickness(16), Spacing = 10 };
         var heading = new TextBlock { Text = "Canvas size", FontSize = 15, FontWeight = FontWeight.SemiBold };
         root.Children.Add(heading);
-        root.Children.Add(DialogChrome.Help("Choose a preset or enter a custom pixel size."));
 
         var presets = new WrapPanel { ItemHeight = 32 };
         foreach (var size in new[] { 16, 32, 64, 128, 256 })
@@ -45,7 +44,7 @@ public sealed class NewProjectDialog : Window
             () => Close(null),
             () => Close(new CanvasSizeChoice((int)(_width.Value ?? 64), (int)(_height.Value ?? 64))),
             "Create"));
-        Content = root;
+        DialogChrome.SetContent(this, root);
     }
 
     private static NumericUpDown Number(decimal value, decimal min, decimal max) => new()
@@ -89,7 +88,7 @@ public sealed class ColorDialog : Window
         root.Children.Add(DialogChrome.Labeled("Blue", _b));
         root.Children.Add(DialogChrome.Labeled("Alpha", _a));
         root.Children.Add(DialogChrome.ConfirmCancel(() => Close(null), () => Close(Current()), "Apply"));
-        Content = root;
+        DialogChrome.SetContent(this, root);
         RefreshPreview();
     }
 
@@ -119,30 +118,41 @@ public sealed class ExportDialog : Window
 {
     private readonly ComboBox _layout = new() { ItemsSource = Enum.GetValues<ExportLayout>(), SelectedItem = ExportLayout.SpriteSheet };
     private readonly TextBox _fileName = new() { Text = "sprite", PlaceholderText = "sprite" };
-    private readonly CheckBox _trim = new() { IsChecked = false, Content = "Trim transparent edges (metadata-aware pipelines only)" };
+    private readonly CheckBox _trim = new() { IsChecked = false, Content = "Trim transparent edges" };
     private readonly NumericUpDown _scale = Number(1, 1, 64);
     private readonly NumericUpDown _padding = Number(0, 0, 4096);
     private readonly NumericUpDown _extrude = Number(0, 0, 4096);
     private readonly NumericUpDown _columns = Number(0, 0, 4096);
-    private readonly CheckBox _pot = new() { Content = "Power-of-two atlas (streaming / mipmap compatibility)" };
+    private readonly CheckBox _pot = new() { Content = "Power-of-two atlas" };
     private readonly TextBlock _layoutNote = new() { TextWrapping = TextWrapping.Wrap };
 
-    public ExportDialog()
+    private readonly ExportPreset _initial;
+    private readonly TextBlock _validation = new() { IsVisible = false, TextWrapping = TextWrapping.Wrap, Foreground = EditorThemeTokens.Danger };
+
+    public ExportDialog() : this(null) { }
+
+    public ExportDialog(ExportPreset? initial)
     {
-        Title = "Export Game Assets";
-        Width = 470;
-        Height = 610;
+        _initial = initial ?? new ExportPreset { Name = "Game Assets" };
+        _layout.SelectedItem = _initial.Layout;
+        _fileName.Text = _initial.ImageBaseName;
+        _trim.IsChecked = _initial.Trim;
+        _scale.Value = _initial.Scale;
+        _padding.Value = _initial.Padding;
+        _extrude.Value = _initial.Extrude;
+        _columns.Value = _initial.SpriteSheetColumns;
+        _pot.IsChecked = _initial.PowerOfTwoAtlas;
+        Title = "Export";
+        Width = 430;
+        Height = 520;
         CanResize = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Background = EditorThemeTokens.AppBackground;
 
         var root = new StackPanel { Margin = new Thickness(16), Spacing = 9 };
-        root.Children.Add(new TextBlock { Text = "Game-ready export", FontSize = 15, FontWeight = FontWeight.SemiBold });
-        root.Children.Add(DialogChrome.Help(
-            "PNG output is lossless RGBA8 + sRGB + straight alpha. Fully transparent texels are forced to RGBA(0,0,0,0); checkerboards and preview backgrounds are never baked into assets."));
-        root.Children.Add(DialogChrome.Help(
-            "Every export also includes sprite metadata plus a .game-import.json file with Unity, Godot and Unreal import guidance."));
         root.Children.Add(DialogChrome.Labeled("File name", _fileName));
+        root.Children.Add(_validation);
+        Avalonia.Automation.AutomationProperties.SetAutomationId(_validation, "export.validation");
         root.Children.Add(DialogChrome.Labeled("Layout", _layout));
         _layoutNote.Classes.Add("muted");
         root.Children.Add(_layoutNote);
@@ -152,8 +162,8 @@ public sealed class ExportDialog : Window
         root.Children.Add(DialogChrome.Labeled("Extrude", _extrude));
         root.Children.Add(DialogChrome.Labeled("Sheet columns", _columns));
         root.Children.Add(_pot);
-        root.Children.Add(DialogChrome.ConfirmCancel(() => Close(null), () => Close(Build()), "Export"));
-        Content = root;
+        root.Children.Add(DialogChrome.ConfirmCancel(() => Close(null), Accept, "Export"));
+        DialogChrome.SetContent(this, root);
 
         _layout.SelectionChanged += (_, _) => RefreshLayoutGuidance();
         RefreshLayoutGuidance();
@@ -165,11 +175,11 @@ public sealed class ExportDialog : Window
         _layoutNote.Text = layout switch
         {
             ExportLayout.SeparateFrames =>
-                "Safest drag-and-drop format. Each frame is an independent transparent PNG; sprite.json keeps animation/gameplay metadata.",
+                "One transparent PNG per frame.",
             ExportLayout.SpriteSheet =>
-                "Engine-safe grid by default: Trim is off so frame alignment stays stable for native Unity/Godot sprite slicing. Keep Trim off unless your importer consumes sprite.json sourceRect/sourceSize.",
+                "Keep Trim off for regular grid slicing.",
             ExportLayout.Atlas =>
-                "Packed runtime atlas. Trim is useful here because sprite.json carries exact source rects, pivots, hitboxes, sockets and events. Use Padding/Extrude when filtered atlas sampling needs edge guards.",
+                "Packed atlas. Use the exported JSON to preserve trimmed frame positions.",
             _ => string.Empty,
         };
         _pot.IsEnabled = layout == ExportLayout.Atlas;
@@ -179,9 +189,8 @@ public sealed class ExportDialog : Window
     private ExportPreset Build()
     {
         var baseName = NormalizeBaseName(_fileName.Text);
-        return new ExportPreset
+        var preset = _initial with
         {
-            Name = "Game Assets",
             Layout = _layout.SelectedItem is ExportLayout layout ? layout : ExportLayout.SpriteSheet,
             Trim = _trim.IsChecked == true,
             Scale = (int)(_scale.Value ?? 1),
@@ -190,20 +199,43 @@ public sealed class ExportDialog : Window
             SpriteSheetColumns = (int)(_columns.Value ?? 0),
             PowerOfTwoAtlas = _pot.IsChecked == true,
             ImageBaseName = baseName,
-            MetadataFileName = $"{baseName}.json",
+            MetadataFileName = baseName == _initial.ImageBaseName ? _initial.MetadataFileName : $"{baseName}.json",
         };
+        preset.Validate();
+        return preset;
     }
 
     private static string NormalizeBaseName(string? text)
     {
-        var value = (text ?? string.Empty).Trim();
+        var value = text ?? string.Empty;
         if (value.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
             value.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
-            value = Path.GetFileNameWithoutExtension(value);
+            value = value[..value.LastIndexOf('.')];
+        if (string.IsNullOrWhiteSpace(value) || value.EndsWith('.') || value.EndsWith(' ') ||
+            value.Any(ch => ch < 32 || "<>:\"/\\|?*".Contains(ch)))
+            throw new ArgumentException("Enter a file name without folders or special characters.");
+        var root = value.Split('.')[0].ToUpperInvariant();
+        if (root is "CON" or "PRN" or "AUX" or "NUL" ||
+            (root.Length == 4 && (root.StartsWith("COM") || root.StartsWith("LPT")) && root[3] is >= '1' and <= '9'))
+            throw new ArgumentException("This name is reserved by Windows. Choose another name.");
+        return value;
+    }
 
-        var invalid = Path.GetInvalidFileNameChars().ToHashSet();
-        var normalized = new string(value.Select(ch => invalid.Contains(ch) ? '_' : ch).ToArray()).Trim().Trim('.');
-        return string.IsNullOrWhiteSpace(normalized) ? "sprite" : normalized;
+    private void Accept()
+    {
+        try
+        {
+            var preset = Build();
+            DataValidationErrors.ClearErrors(_fileName);
+            Close(preset);
+        }
+        catch (ArgumentException ex)
+        {
+            _validation.Text = ex.Message;
+            _validation.IsVisible = true;
+            DataValidationErrors.SetErrors(_fileName, new[] { ex.Message });
+            _fileName.Focus();
+        }
     }
 
     private static NumericUpDown Number(decimal value, decimal min, decimal max) => new()
@@ -281,7 +313,7 @@ public sealed class AnimationRangeDialog : Window
                     loop));
             },
             "Apply"));
-        Content = root;
+        DialogChrome.SetContent(this, root);
     }
 
     private static NumericUpDown Number(decimal value, decimal min, decimal max) => new()
@@ -372,7 +404,7 @@ public sealed class SpriteSliceDialog : Window
                     insets));
             },
             "Apply"));
-        Content = root;
+        DialogChrome.SetContent(this, root);
     }
 
     private static NumericUpDown Number(decimal value, decimal min, decimal max) => new()

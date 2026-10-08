@@ -32,7 +32,7 @@ internal sealed class GestureRackParameterSlider : Border
         _changed = changed;
 
         Height = 34;
-        MinWidth = 180;
+        MinWidth = 100;
         Padding = new Thickness(8, 2, 7, 2);
         CornerRadius = new CornerRadius(6);
         BorderThickness = new Thickness(1);
@@ -48,7 +48,7 @@ internal sealed class GestureRackParameterSlider : Border
             IsSnapToTickEnabled = true,
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Stretch,
-            MinWidth = 120,
+            MinWidth = 58,
         };
         _slider.Classes.Add("gesture-rack-slider");
 

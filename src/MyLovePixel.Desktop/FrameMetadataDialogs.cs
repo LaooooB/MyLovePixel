@@ -33,7 +33,7 @@ public sealed class AnimationBoxesDialog : Window
         body.Children.Add(_rows);
         body.Children.Add(DialogChrome.TextButton("Add Box", () => AddRow(new AnimationBoxPresentation($"box{_rows.Children.Count + 1}", 0, 0, 1, 1))));
         root.Children.Add(new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = body });
-        Content = root;
+        DialogChrome.SetContent(this, root);
     }
 
     private void AddRow(AnimationBoxPresentation value)
@@ -114,7 +114,7 @@ public sealed class AnimationSocketsDialog : Window
         body.Children.Add(_rows);
         body.Children.Add(DialogChrome.TextButton("Add Socket", () => AddRow(new AnimationSocketPresentation($"socket{_rows.Children.Count + 1}", 0, 0))));
         root.Children.Add(new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = body });
-        Content = root;
+        DialogChrome.SetContent(this, root);
     }
 
     private void AddRow(AnimationSocketPresentation value)
@@ -178,7 +178,7 @@ public sealed class AnimationEventsDialog : Window
         body.Children.Add(_rows);
         body.Children.Add(DialogChrome.TextButton("Add Event", () => AddRow(new AnimationEventPresentation("event", string.Empty))));
         root.Children.Add(new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = body });
-        Content = root;
+        DialogChrome.SetContent(this, root);
     }
 
     private void AddRow(AnimationEventPresentation value)
@@ -244,7 +244,7 @@ public sealed class AnimationCyclesDialog : Window
         add.IsEnabled = _palettes.Count > 0;
         body.Children.Add(add);
         root.Children.Add(new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = body });
-        Content = root;
+        DialogChrome.SetContent(this, root);
     }
 
     private void AddDefault()

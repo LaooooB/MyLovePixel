@@ -5,7 +5,7 @@ using MyLovePixel.Core.Primitives;
 
 namespace MyLovePixel.Persistence;
 
-public static class PixelProjectFile
+public static partial class PixelProjectFile
 {
     private static readonly DateTimeOffset DeterministicZipTime = new(1980, 1, 1, 0, 0, 0, TimeSpan.Zero);
 

@@ -11,6 +11,39 @@ public static class EditorStyles
     public static void Apply(Avalonia.Application app)
     {
         ArgumentNullException.ThrowIfNull(app);
+        EditorMotion.Install();
+
+        app.Resources["ExpanderMinHeight"] = 34d;
+        app.Resources["ExpanderHeaderPadding"] = new Thickness(9, 0, 0, 0);
+        app.Resources["ExpanderContentPadding"] = new Thickness(0);
+        app.Resources["ExpanderHeaderBackground"] = EditorThemeTokens.Surface;
+        app.Resources["ExpanderContentBackground"] = EditorThemeTokens.Surface;
+        app.Resources["ExpanderHeaderBorderBrush"] = EditorThemeTokens.PanelBorder;
+        app.Resources["ExpanderContentBorderBrush"] = EditorThemeTokens.PanelBorder;
+        app.Resources["ExpanderHeaderBackgroundPointerOver"] = EditorThemeTokens.SurfaceHover;
+        app.Resources["ExpanderHeaderForeground"] = EditorThemeTokens.TextPrimary;
+        app.Styles.Add(new Style(x => x.OfType<NumericUpDown>())
+        {
+            Setters =
+            {
+                new Setter(NumericUpDown.ShowButtonSpinnerProperty, false),
+                new Setter(NumericUpDown.MinHeightProperty, 32d),
+                new Setter(NumericUpDown.PaddingProperty, new Thickness(6, 3)),
+                new Setter(NumericUpDown.FontSizeProperty, 13d),
+            },
+        });
+        app.Styles.Add(new Style(x => x.OfType<Expander>())
+        {
+            Setters =
+            {
+                new Setter(Expander.HorizontalAlignmentProperty, Avalonia.Layout.HorizontalAlignment.Stretch),
+                new Setter(Expander.HorizontalContentAlignmentProperty, Avalonia.Layout.HorizontalAlignment.Stretch),
+                new Setter(Expander.MinHeightProperty, 34d),
+                new Setter(Expander.PaddingProperty, new Thickness(0)),
+                new Setter(Expander.BackgroundProperty, EditorThemeTokens.Surface),
+                new Setter(Expander.BorderBrushProperty, EditorThemeTokens.PanelBorder),
+            },
+        });
 
         // Keep Fluent controls (checkboxes, expanders, scrollbars, etc.) on the
         // same mint accent as the custom editor chrome.
@@ -30,7 +63,7 @@ public static class EditorStyles
                 new Setter(Button.BorderThicknessProperty, new Thickness(1)),
                 new Setter(Button.CornerRadiusProperty, EditorThemeTokens.ControlRadius),
                 new Setter(Button.PaddingProperty, new Thickness(9, 5)),
-                new Setter(Button.FontSizeProperty, 12d),
+                new Setter(Button.FontSizeProperty, 13d),
                 new Setter(Button.MinHeightProperty, 30d),
             },
         });
@@ -95,7 +128,7 @@ public static class EditorStyles
                 new Setter(Button.MinWidthProperty, 44d),
                 new Setter(Button.MinHeightProperty, 28d),
                 new Setter(Button.PaddingProperty, new Thickness(6, 3)),
-                new Setter(Button.FontSizeProperty, 11d),
+                new Setter(Button.FontSizeProperty, 12d),
             },
         });
         app.Styles.Add(new Style(x => x.OfType<Button>().Class("ghost"))
@@ -138,7 +171,7 @@ public static class EditorStyles
             Setters =
             {
                 new Setter(TextBlock.ForegroundProperty, EditorThemeTokens.TextPrimary),
-                new Setter(TextBlock.FontSizeProperty, 12d),
+                new Setter(TextBlock.FontSizeProperty, 13d),
             },
         });
         app.Styles.Add(new Style(x => x.OfType<TextBlock>().Class("muted"))
@@ -150,7 +183,7 @@ public static class EditorStyles
             Setters =
             {
                 new Setter(TextBlock.ForegroundProperty, EditorThemeTokens.TextMuted),
-                new Setter(TextBlock.FontSizeProperty, 11d),
+                new Setter(TextBlock.FontSizeProperty, 12d),
             },
         });
         app.Styles.Add(new Style(x => x.OfType<TextBlock>().Class("accent"))
@@ -162,7 +195,7 @@ public static class EditorStyles
             Setters =
             {
                 new Setter(TextBlock.ForegroundProperty, EditorThemeTokens.TextMuted),
-                new Setter(TextBlock.FontSizeProperty, 10d),
+                new Setter(TextBlock.FontSizeProperty, 12d),
             },
         });
         app.Styles.Add(new Style(x => x.OfType<TextBlock>().Class("section-title"))
@@ -184,7 +217,7 @@ public static class EditorStyles
             Setters =
             {
                 new Setter(CheckBox.ForegroundProperty, EditorThemeTokens.TextPrimary),
-                new Setter(CheckBox.FontSizeProperty, 12d),
+                new Setter(CheckBox.FontSizeProperty, 13d),
             },
         });
         app.Styles.Add(new Style(x => x.OfType<TabControl>())
@@ -197,14 +230,13 @@ public static class EditorStyles
             {
                 new Setter(TabItem.ForegroundProperty, EditorThemeTokens.TextSecondary),
                 new Setter(TabItem.PaddingProperty, new Thickness(10, 7)),
-                new Setter(TabItem.FontSizeProperty, 12d),
+                new Setter(TabItem.FontSizeProperty, 13d),
             },
         });
         app.Styles.Add(new Style(x => x.OfType<TabItem>().Class(":selected"))
         {
             Setters = { new Setter(TabItem.ForegroundProperty, EditorThemeTokens.Accent) },
         });
-        EditorUxStyles.Apply(app);
     }
 
     private static void AddInputStyle<T>(Avalonia.Application app, AvaloniaProperty background, AvaloniaProperty foreground, AvaloniaProperty borderBrush, AvaloniaProperty borderThickness)

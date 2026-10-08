@@ -1,4 +1,13 @@
+# Current delivery: named palette on the complete UX build
+
+Use `ux-release-20260926` for subsequent development. This feature is based on `f4985b1`, not the older `main` UI. Read `docs/NAMED_PALETTE.md` for names, HEX, schema-1 migration, storage and UI details. Preserve `EditorMotion`, `HoverToolTips`, `MainWindow.SecondaryErase` and all desktop regression tests. No workflow or project format changes are required.
+
 # MyLovePixel — Handoff
+
+## UX P0/P1 release continuation — 2026-09-26
+
+Work branch: `ux-release-20260926`. See `docs/UX_RELEASE.md` for implemented scope and verification boundaries. The current release gate is the Windows UX workflow, including the final packaged EXE smoke run; the old main branch and historical batch CI are not release evidence. Desktop regression entry: `tests/MyLovePixel.Desktop.UxTests`; native entry: `scripts/Test-UxRelease.ps1`. Delivered source and SHA are recorded by the workflow, and checksums identify the actual binary. The public EXE is unsigned. Core/schema/plugin boundaries below remain unchanged.
+
 
 > 继续开发时先确认 `main` HEAD 与最新 GitHub Actions，再读本文件、`docs/IMPLEMENTATION_PLAN.md`、`docs/ARCHITECTURE.md` 和 `docs/DECISIONS/`。不要仅凭本文记录的 SHA 判断仓库是否已经继续更新。
 
@@ -360,3 +369,11 @@ Plugin project bytes 的原则：Persistence 只保存 opaque namespaced bytes�
 约束：这些模块优先通过现有 `RenderNode / AnimationTrack / Exporter / Plugin SDK` 接入，不能污染普通 Cel 模型或扩张 Core mutable API。
 
 如果下一个需求只是一个私人工具、效果、导出器、Panel 或算法，**先尝试作为 Plugin SDK extension 实现，而不是开新的 Core feature batch。**
+
+## Color Studio update (base: delivered 5572f97)
+
+- Continues the exact delivered white-preview/1px-brush/named-palette UX build; do not revert to the old main tree.
+- Current preferences path unchanged. Schema 3 reads schemas 1/2, preserves byte-exact migration backup and a rolling backup. Includes saved names, folders and persisted quick slots; no artwork schema/history mutation.
+- Colors tab has virtualized search/folder library, drag HSV picker next to upper HEX, Keep quick slots and a collapsible naming editor. Removed huge swatch wall and redundant Photo tab. Tools/Tiles/Preview now have their own tabs. Enlarged white preview has a permanent inspector shortcut.
+- Domain coverage: 319 unit tests; desktop headless coverage: 68 scenarios. Windows packaged smoke must also pass before distribution. See docs/COLOR_STUDIO.md and the release logs for scope.
+- Isolated build branch: color-studio-5572f97-20261008. After verified EXE publication, replace canonical main/UX trees with this tested tree while preserving previous commit history.

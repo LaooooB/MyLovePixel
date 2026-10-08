@@ -24,57 +24,8 @@ public sealed partial class MainWindow
     private bool _canvasPointerActive;
     private bool _refreshing;
 
-    private async Task NewProjectAsync()
-    {
-        var choice = await new NewProjectDialog().ShowDialog<CanvasSizeChoice?>(this);
-        if (choice is null) return;
-        _workspace.NewDocument(choice.Width, choice.Height);
-        _selectionMode = false;
-    }
 
-    private async Task ExportAsync()
-    {
-        var session = Current(); if (session is null) return;
-        var preset = await new ExportDialog().ShowDialog<ExportPreset?>(this);
-        if (preset is null) return;
-        var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = "Export", AllowMultiple = false });
-        if (folders.Count == 0) return;
-        Safe(() => _plugins.Export(session, preset, folders[0].Path.LocalPath));
-    }
 
-    private async Task ImportAssetAsync()
-    {
-        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
-        {
-            Title = "Import PNG or Sprite JSON",
-            AllowMultiple = false,
-            FileTypeFilter =
-            [
-                new FilePickerFileType("Pixel assets") { Patterns = ["*.png", "*.json"] },
-                new FilePickerFileType("PNG") { Patterns = ["*.png"] },
-                new FilePickerFileType("Sprite JSON") { Patterns = ["*.json"] },
-            ],
-        });
-        if (files.Count == 0) return;
-
-        var path = files[0].Path.LocalPath;
-        Safe(() =>
-        {
-            switch (Path.GetExtension(path).ToLowerInvariant())
-            {
-                case ".json":
-                    _workspace.ImportSpriteMetadata(path);
-                    break;
-                case ".png":
-                    _workspace.ImportPng(path);
-                    break;
-                default:
-                    throw new NotSupportedException("Import supports PNG images and sprite JSON metadata.");
-            }
-        });
-        _selectionMode = false;
-        RefreshAll();
-    }
 
     private async Task EditSelectedTileAsync()
     {
@@ -169,6 +120,7 @@ public sealed partial class MainWindow
 
     private void OnPlaybackTick(object? sender, EventArgs e)
     {
+        if (_busy || _closed) return;
         var session = Current(); if (session is null || !_playback.IsPlaying(session)) { _playbackTimestamp = Stopwatch.GetTimestamp(); return; }
         var now = Stopwatch.GetTimestamp();
         var elapsed = Stopwatch.GetElapsedTime(_playbackTimestamp, now); _playbackTimestamp = now;
@@ -183,83 +135,20 @@ public sealed partial class MainWindow
 
     private void TransformSelection(Action action) { Safe(action); RefreshCanvas(); }
 
-    private void OnWorkspaceChanged(object? sender, EventArgs e)
-    {
-        var switched = !ReferenceEquals(_observedSession, Current());
-        ObserveCurrentSession();
-        QueueRefreshAll();
-        if (!switched) return; // Saving a project must not move its camera.
-        _timelineStart = 0;
-        _selectionStart = null;
-        StopCanvasZoom();
-        EndCanvasPan();
-        var session = Current();
-        Dispatcher.UIThread.Post(() => { if (ReferenceEquals(Current(), session)) FitCanvas(); }, DispatcherPriority.Background);
-    }
 
-    private void ObserveCurrentSession()
-    {
-        if (ReferenceEquals(_observedSession, Current())) return;
-        if (_observedSession is not null) _observedSession.StateChanged -= OnSessionChanged;
-        _observedSession = Current();
-        if (_observedSession is not null) _observedSession.StateChanged += OnSessionChanged;
-    }
 
-    private void OnSessionChanged(object? sender, EventArgs e)
-    {
-        if (!ReferenceEquals(sender, Current())) return;
-        if (e is SessionStateChangedEventArgs state)
-        {
-            switch (state.Kind)
-            {
-                case SessionStateChangeKind.Viewport:
-                    if (!_zoomAnimating) _canvas.SetViewZoom(Current()!.Zoom);
-                    QueuePointerStatus();
-                    return;
-                case SessionStateChangeKind.Colors:
-                    RefreshPalette();
-                    RefreshConvenienceUi();
-                    return;
-                case SessionStateChangeKind.ToolOptions:
-                    return; // The originating editor owns its value and pointer capture.
-                case SessionStateChangeKind.ToolSelection:
-                    RefreshTools(); RefreshToolOptions(); QueueCanvasRefresh();
-                    return;
-                case SessionStateChangeKind.Preview:
-                    QueueCanvasRefresh();
-                    return;
-            }
-        }
-        if (_canvasPointerActive) QueueCanvasRefresh();
-        else QueueRefreshAll();
-    }
 
-    private void QueueCanvasRefresh()
-    {
-        if (_canvasRefreshQueued) return;
-        _canvasRefreshQueued = true;
-        RequestAnimationFrame(_ =>
-        {
-            _canvasRefreshQueued = false;
-            if (_navigationClosed) return;
-            RefreshCanvas(updatePreview: !_canvasPointerActive);
-            RefreshStatus();
-        });
-    }
 
-    private void QueueRefreshAll()
-    {
-        if (_refreshQueued) return;
-        _refreshQueued = true;
-        Dispatcher.UIThread.Post(() =>
-        {
-            _refreshQueued = false;
-            if (!_navigationClosed) RefreshAll();
-        }, DispatcherPriority.Background);
-    }
 
     private void RefreshActions()
     {
+        var hasDocument = Current() is not null;
+        foreach (var control in _documentControls) control.IsEnabled = hasDocument;
+        _documentSelector.IsEnabled = hasDocument;
+        foreach (var panel in new Control[] { _toolOptionsPanel, _layersPanel, _palettePanel, _tilesPanel, _animationPanel, _studioPaletteSwatches })
+            panel.IsEnabled = hasDocument;
+        _effectsPanel.IsEnabled = hasDocument && !Current()!.GetLayers().Any(l => l.IsCurrent && l.Locked);
+        if (_timelineContent is not null) _timelineContent.IsEnabled = hasDocument;
         foreach (var pair in _actionControls)
         {
             var enabled = _actions.CanExecute(pair.Key, _actionContext);
@@ -267,46 +156,10 @@ public sealed partial class MainWindow
         }
     }
 
-    private async Task InvokeActionAsync(ActionId id)
-    {
-        try { if (_actions.CanExecute(id, _actionContext)) await _actions.ExecuteAsync(id, _actionContext); }
-        catch (Exception ex) { SetError(ex.Message); }
-        RefreshAll();
-    }
 
-    private async void OnKeyDown(object? sender, KeyEventArgs e)
-    {
-        if (e.Handled) return;
-        if (e.KeyModifiers == KeyModifiers.Control && e.Key == Key.N) { e.Handled = true; await NewProjectAsync(); return; }
-        if (e.KeyModifiers == KeyModifiers.Control && e.Key == Key.E) { e.Handled = true; await ExportAsync(); return; }
-        if (e.Key == Key.Escape)
-        {
-            if (_eyedropperMode) { _eyedropperMode = false; RefreshTools(); RefreshToolOptions(); }
-            if (Current() is { } session) { _selection.Clear(session); _plugins.CancelTool(session); }
-            _selectionStart = null; e.Handled = true; RefreshCanvas(); return;
-        }
-        var modifiers = ShortcutModifiers.None;
-        if ((e.KeyModifiers & KeyModifiers.Control) != 0) modifiers |= ShortcutModifiers.Control;
-        if ((e.KeyModifiers & KeyModifiers.Shift) != 0) modifiers |= ShortcutModifiers.Shift;
-        if ((e.KeyModifiers & KeyModifiers.Alt) != 0) modifiers |= ShortcutModifiers.Alt;
-        if ((e.KeyModifiers & KeyModifiers.Meta) != 0) modifiers |= ShortcutModifiers.Meta;
-        if (!_shortcuts.TryResolve(new ShortcutGesture(e.Key.ToString(), modifiers), out var id)) return;
-        e.Handled = true; await InvokeActionAsync(id);
-    }
 
-    private void OnAutosaveTick(object? sender, EventArgs e)
-    {
-        // Never start a synchronous checkpoint in the middle of direct manipulation.
-        if (_panPointer is not null || _zoomAnimating || _canvasPointerActive || _selectionStart is not null) return;
-        var attempts = _recovery.Tick(DateTimeOffset.UtcNow);
-        if (attempts.Any(v => !v.WroteCheckpoint)) SetError(attempts.First(v => !v.WroteCheckpoint).Error ?? "Autosave failed");
-        _recoveryUiLoaded = false;
-        if (_recoveryPanel.IsEffectivelyVisible) RefreshRecovery();
-    }
 
     private void RecoverCandidate(string id) { Safe(() => _recovery.Recover(id)); RefreshAll(); }
     private void DismissCandidate(string id) { Safe(() => _recovery.Dismiss(id)); RefreshRecovery(); }
-    private void ChangeZoom(double factor) => AnimateCanvasZoom(factor, CanvasViewportCenter());
-    private void SetZoom(double zoom) { StopCanvasZoom(); ApplyCanvasZoom(zoom, CanvasViewportCenter()); }
     private DocumentSession? Current() => _workspace.CurrentSession;
 }

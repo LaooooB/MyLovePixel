@@ -318,7 +318,7 @@ public static partial class AdvancedEditingExtensions
             snapshot,
             new FrameRenderRequest(session.CurrentFrameId),
             new OnionSkinSettings(settings.PreviousFrames, settings.NextFrames, settings.Opacity, settings.DepthFalloff));
-        return CanvasPresentation.FromImmutableRgba(
+        return new CanvasPresentation(
             current.FrameId,
             current.Size,
             onion.Surface.Bytes,

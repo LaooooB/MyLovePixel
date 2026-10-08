@@ -142,7 +142,7 @@ public sealed partial class PluginWorkspaceRuntime : IDisposable
         EnsureOwned(session);
         ArgumentNullException.ThrowIfNull(presentation);
         if (!_previews.TryGetValue(session, out var preview) || preview.Count == 0) return presentation;
-        return CanvasPresentation.FromImmutableRgba(
+        return new CanvasPresentation(
             presentation.FrameId,
             presentation.Size,
             presentation.Rgba,

@@ -23,3 +23,6 @@ Thumbs.db
 
 # Local developer settings
 local.settings.json
+
+# Local verification output
+release/

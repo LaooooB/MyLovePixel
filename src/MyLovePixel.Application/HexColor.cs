@@ -3,7 +3,6 @@ using MyLovePixel.Core.Pixel;
 
 namespace MyLovePixel.Application;
 
-/// <summary>Unambiguous RGB/RGBA hex notation shared by color input and personal palettes.</summary>
 public static class HexColor
 {
     public static bool TryParse(string? text, out Rgba32 color)
@@ -11,14 +10,8 @@ public static class HexColor
         color = default;
         var value = (text ?? string.Empty).Trim();
         if (value.StartsWith('#')) value = value[1..];
-        if (value.Length is not (6 or 8)) return false;
-        foreach (var character in value)
-        {
-            if (character is not (>= '0' and <= '9' or >= 'a' and <= 'f' or >= 'A' and <= 'F'))
-                return false;
-        }
-        if (!uint.TryParse(value, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out var packed))
-            return false;
+        if (value.Length is not (6 or 8) || value.Any(c => !Uri.IsHexDigit(c))) return false;
+        if (!uint.TryParse(value, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out var packed)) return false;
         color = value.Length == 6
             ? new Rgba32((byte)(packed >> 16), (byte)(packed >> 8), (byte)packed, 255)
             : new Rgba32((byte)(packed >> 24), (byte)(packed >> 16), (byte)(packed >> 8), (byte)packed);

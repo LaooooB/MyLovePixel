@@ -16,8 +16,7 @@ internal static class Program
 
     public static AppBuilder BuildAvaloniaApp() =>
         AppBuilder.Configure<EditorApp>()
-            .UsePlatformDetect()
-            .With(new Avalonia.SkiaOptions { MaxGpuResourceSizeBytes = 256 * 1024 * 1024 });
+            .UsePlatformDetect();
 }
 
 internal static class CrashLog

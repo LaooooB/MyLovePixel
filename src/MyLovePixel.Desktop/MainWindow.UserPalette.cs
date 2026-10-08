@@ -2,9 +2,11 @@ using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Controls.Templates;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Styling;
 using MyLovePixel.Application;
 using MyLovePixel.Core.Pixel;
 
@@ -12,498 +14,273 @@ namespace MyLovePixel.Desktop;
 
 public sealed partial class MainWindow
 {
-    private const int LibraryPageSize = 12;
-    private ColorLibraryStore? _userPaletteStore;
-    private readonly WrapPanel _userPaletteSwatches = new() { ItemWidth = 76, ItemHeight = 64 };
-    private readonly WrapPanel _temporarySwatches = new() { ItemWidth = 76, ItemHeight = 64 };
-    private readonly TextBlock _userPaletteCount = new() { FontSize = 11 };
-    private readonly TextBlock _userPaletteStatus = new() { FontSize = 11, TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis };
-    private Control? _libraryRecoveryActions;
-    private readonly TextBlock _userPaletteEmpty = new() { TextWrapping = TextWrapping.Wrap };
-    private readonly TextBlock _studioHexHint = new() { FontSize = 11, TextWrapping = TextWrapping.Wrap };
-    private readonly TextBlock _temporaryCount = new() { FontSize = 11, TextWrapping = TextWrapping.Wrap };
-    private readonly TextBlock _libraryPageLabel = new() { VerticalAlignment = VerticalAlignment.Center };
-    private readonly TextBlock _temporaryPageLabel = new() { VerticalAlignment = VerticalAlignment.Center };
-    private readonly TextBox _librarySearch = new() { PlaceholderText = "Search HEX, name or folder", MaxLength = 160 };
-    private readonly TextBox _librarySaveHex = new() { PlaceholderText = "#RRGGBB or #RRGGBBAA", MaxLength = 32 };
-    private readonly ComboBox _libraryFolder = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
-    private readonly TabControl _colorLibraryTabs = new();
-    private readonly TabItem _temporaryLibraryTab = new() { Header = "Temporary" };
-    private Button? _saveActiveLibraryButton;
-    private Button? _pinTemporaryButton;
-    private Button? _newLibraryFolderButton;
-    private Button? _userPaletteAdd;
-    private Button? _userPaletteRemove;
-    private Button? _libraryEdit;
-    private Button? _libraryPrevious;
-    private Button? _libraryNext;
-    private Button? _temporaryPrevious;
-    private Button? _temporaryNext;
-    private Button? _temporarySave;
-    private Button? _temporaryRemove;
-    private Button? _temporaryClear;
-    private Button? _folderRename;
-    private Button? _folderDelete;
-    private Button? _libraryRestore;
-    private Button? _studioApplyHex;
-    private Guid? _selectedLibraryColor;
-    private string? _selectedTemporaryColor;
-    private int _libraryPage;
-    private int _temporaryPage;
-    private bool _syncingLibrary;
+    private readonly UserPaletteStore _userPaletteStore;
+    private readonly TextBox _personalHex = new() { PlaceholderText = "#654321", MaxLength = 32, MinWidth = 0 };
+    private readonly TextBox _personalName = new() { PlaceholderText = "Color name", MaxLength = UserPaletteStore.MaxNameLength, MinWidth = 0 };
+    private readonly TextBox _personalSearch = new() { PlaceholderText = "Search name, HEX or folder", MinWidth = 0 };
+    private readonly ColorSwatchView _personalPreview = new() { Width = 30, Height = 30 };
+    private readonly TextBlock _personalCount = new() { Foreground = EditorThemeTokens.TextSecondary, VerticalAlignment = VerticalAlignment.Center, FontSize = 12 };
+    private readonly TextBlock _personalValidation = new() { Foreground = EditorThemeTokens.Danger, TextWrapping = TextWrapping.Wrap, IsVisible = false };
+    private readonly TextBlock _personalEmpty = new() { Text = "No saved colors", Foreground = EditorThemeTokens.TextSecondary, TextWrapping = TextWrapping.Wrap, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12) };
+    private readonly ListBox _personalList = new() { Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(0) };
+    private readonly Button _personalSave = new() { Content = "Save color", HorizontalAlignment = HorizontalAlignment.Stretch };
+    private readonly Button _personalRename = new() { Content = "Rename" };
+    private readonly Button _personalRemove = new() { Content = "Remove" };
+    private readonly Button _personalMove = new() { Content = "Move…" };
+    private readonly ComboBox _folderFilter = new() { HorizontalAlignment = HorizontalAlignment.Stretch, MinWidth = 0 };
+    private readonly ComboBox _personalFolder = new() { HorizontalAlignment = HorizontalAlignment.Stretch, MinWidth = 0 };
+    private readonly Button _folderManage = new() { Content = "Folders…", Padding = new Thickness(7, 4) };
+    private readonly Border _personalEditorHost = new() { IsVisible = false };
+    private Rgba32? _selectedPersonalColor;
+    private bool _personalDraftEdited;
+    private bool _syncingPersonal;
+    private bool _syncingFolder;
+    private bool _syncingList;
+    private bool _personalBuilt;
+    private string? _folderSignature;
+    private IReadOnlyList<SavedColor> _visiblePersonalColors = Array.Empty<SavedColor>();
+    private Grid? _colorPageBody;
+    private ScrollViewer? _colorPageScroll;
 
-    private sealed record LibraryFolderChoice(string Name, Guid? Id, bool IsAll = false)
+    private sealed record FolderChoice(string? Id, string Name)
     {
         public override string ToString() => Name;
     }
 
-    private static Button LibraryButton(string text, Action action, string? automationId = null)
+    private Control BuildColorsPage()
     {
-        var button = new Button { Content = text, MinWidth = 0, Padding = new Thickness(7, 5) };
-        button.Classes.Add("text-action");
-        if (automationId is not null) AutomationProperties.SetAutomationId(button, automationId);
-        AutomationProperties.SetName(button, text);
-        button.Click += (_, _) => action();
-        return button;
+        _colorPageBody = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*") };
+        _colorEditor = DocumentControl(BuildColorEditor());
+        _colorPageBody.Children.Add(_colorEditor);
+        _colorPageBody.Children.Add(PlaceRow(BuildQuickColors(), 1));
+        _colorPageBody.Children.Add(PlaceRow(BuildUserPaletteEditor(), 2));
+        _colorPageScroll = new ScrollViewer
+        {
+            Content = _colorPageBody, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        };
+        _colorPageScroll.SizeChanged += (_, _) => SizeColorPage();
+        return _colorPageScroll;
     }
 
-    private static Control LibraryRow(params Control[] controls)
+    private void SizeColorPage()
     {
-        var row = new WrapPanel { Orientation = Orientation.Horizontal };
-        foreach (var control in controls)
-        {
-            control.Margin = new Thickness(0, 0, 5, 4);
-            row.Children.Add(control);
-        }
-        return row;
+        if (_colorPageBody is null || _colorPageScroll is null) return;
+        // Normally only the virtualized results scroll. Small windows also allow
+        // the complete form to scroll, so saving never strands its buttons.
+        var minimum = _personalEditorHost.IsVisible ? 520 : 330;
+        _colorPageBody.Height = Math.Max(minimum, _colorPageScroll.Bounds.Height);
     }
 
     private Control BuildUserPaletteEditor()
     {
-        foreach (var text in new[] { _userPaletteCount, _userPaletteStatus, _userPaletteEmpty, _studioHexHint, _temporaryCount })
-            text.Classes.Add("muted");
-        AutomationProperties.SetAutomationId(_librarySearch, "color-library-search");
-        AutomationProperties.SetName(_librarySearch, "Search saved colors by HEX, name or folder");
-        AutomationProperties.SetAutomationId(_libraryFolder, "color-library-folder");
-        AutomationProperties.SetName(_libraryFolder, "Color folder filter");
-        AutomationProperties.SetAutomationId(_librarySaveHex, "saved-color-hex");
-        AutomationProperties.SetName(_librarySaveHex, "HEX color to save to the library");
-        _librarySearch.TextChanged += (_, _) =>
+        var root = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto"), RowSpacing = 7, Margin = new Thickness(9, 3, 9, 8) };
+        Named(root, "palette.personal", "My palette");
+        var filters = new StackPanel { Spacing = 6 };
+        var search = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 4 };
+        search.Children.Add(Named(_personalSearch, "palette.search", "Search saved colors by name, HEX or folder"));
+        search.Children.Add(Place(Named(SlimButton("Clear", () => _personalSearch.Text = string.Empty), "palette.search.clear", "Clear color search"), 1));
+        filters.Children.Add(search);
+        var folders = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 4 };
+        folders.Children.Add(Named(_folderFilter, "palette.folder.filter", "Filter color folder"));
+        folders.Children.Add(Place(Named(_folderManage, "palette.folder.manage", "Create or manage color folders"), 1));
+        filters.Children.Add(folders);
+        root.Children.Add(filters);
+
+        _personalEditorHost.Child = BuildPersonalForm();
+        root.Children.Add(PlaceRow(_personalEditorHost, 1));
+        _personalList.Styles.Add(new Style(x => x.OfType<ListBoxItem>())
+        { Setters = { new Setter(ListBoxItem.HorizontalContentAlignmentProperty, HorizontalAlignment.Stretch), new Setter(ListBoxItem.PaddingProperty, new Thickness(0)) } });
+        _personalList.ItemTemplate = new FuncDataTemplate<SavedColor>((saved, _) => saved is null ? new Border() : BuildPersonalRow(saved));
+        _personalList.SelectionChanged += (_, _) =>
         {
-            if (_syncingLibrary) return;
-            _libraryPage = 0;
-            _selectedLibraryColor = null;
-            RefreshUserPalette();
+            if (!_syncingList && _personalList.SelectedItem is SavedColor saved) SelectPersonalColor(saved.Color);
         };
-        _libraryFolder.SelectionChanged += (_, _) =>
+        ScrollViewer.SetHorizontalScrollBarVisibility(_personalList, ScrollBarVisibility.Disabled);
+        var results = new Grid();
+        results.Children.Add(Named(_personalList, "palette.results", "Saved colors"));
+        results.Children.Add(Named(_personalEmpty, "palette.empty", "Palette results"));
+        root.Children.Add(PlaceRow(results, 2));
+        var footer = new StackPanel { Spacing = 4 };
+        var actions = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*,*,*"), ColumnSpacing = 4 };
+        actions.Children.Add(Named(SlimButton("New", OpenPersonalPalette), "palette.new", "Save a new named color"));
+        actions.Children.Add(Place(Named(_personalRename, "palette.rename", "Rename selected saved color"), 1));
+        actions.Children.Add(Place(Named(_personalMove, "palette.move", "Move selected color to a folder"), 2));
+        actions.Children.Add(Place(Named(_personalRemove, "palette.remove", "Remove selected saved color"), 3));
+        foreach (var button in actions.Children.OfType<Button>()) { button.Padding = new Thickness(5, 4); button.FontSize = 12; button.HorizontalAlignment = HorizontalAlignment.Stretch; }
+        footer.Children.Add(actions);
+        footer.Children.Add(_personalCount);
+        // Errors stay visible even when the save form is closed.
+        footer.Children.Add(Named(_personalValidation, "palette.validation", "Palette validation"));
+        root.Children.Add(PlaceRow(footer, 3));
+
+        _personalSearch.TextChanged += (_, _) => FilterPersonalRows();
+        _folderFilter.SelectionChanged += (_, _) => { if (!_syncingFolder) FilterPersonalRows(); };
+        _folderManage.Click += (_, _) => ShowFolderMenu();
+        _personalSave.Click += (_, _) => SavePersonalColor();
+        _personalRename.Click += (_, _) =>
         {
-            if (_syncingLibrary) return;
-            _libraryPage = 0;
-            _selectedLibraryColor = null;
-            RefreshUserPalette();
+            if (_selectedPersonalColor is not { } color) return;
+            ShowPersonalEditor(); FillPersonalDraft(color); FocusPersonalName();
         };
-        _librarySaveHex.TextChanged += (_, _) => UpdateUserPaletteButtons();
-        _librarySaveHex.KeyDown += (_, e) =>
+        _personalMove.Click += async (_, _) => await MovePersonalColorAsync();
+        _personalRemove.Click += (_, _) => RemovePersonalColor();
+        ToolTip.SetTip(_personalCount, _userPaletteStore.FilePath);
+        _personalHex.TextChanging += (_, _) => PersonalDraftChanged();
+        _personalName.TextChanging += (_, _) => PersonalDraftChanged();
+        _personalFolder.SelectionChanged += (_, _) => PersonalDraftChanged();
+        _personalHex.KeyDown += PersonalInputKey; _personalName.KeyDown += PersonalInputKey;
+        _personalBuilt = true;
+        RefreshPersonalRows(); FillPersonalDraft(_studioColor);
+        Activated += (_, _) => { _userPaletteStore.Reload(); RefreshPersonalRows(); RefreshQuickColors(); };
+        return root;
+    }
+
+    private Control BuildPersonalForm()
+    {
+        var form = new StackPanel { Spacing = 6 };
+        var hex = new Grid { ColumnDefinitions = new ColumnDefinitions("40,*,Auto"), ColumnSpacing = 5 };
+        hex.Children.Add(FieldLabel("HEX"));
+        hex.Children.Add(Place(Named(_personalHex, "palette.hex", "Saved color HEX"), 1));
+        hex.Children.Add(Place(_personalPreview, 2)); form.Children.Add(hex);
+        var name = new Grid { ColumnDefinitions = new ColumnDefinitions("40,*"), ColumnSpacing = 5 };
+        name.Children.Add(FieldLabel("Name")); name.Children.Add(Place(Named(_personalName, "palette.name", "Saved color name"), 1)); form.Children.Add(name);
+        var folder = new Grid { ColumnDefinitions = new ColumnDefinitions("40,*"), ColumnSpacing = 5 };
+        folder.Children.Add(FieldLabel("Folder")); folder.Children.Add(Place(Named(_personalFolder, "palette.folder.target", "Save color in folder"), 1)); form.Children.Add(folder);
+        var actions = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 5 };
+        actions.Children.Add(Named(_personalSave, "palette.save", "Save named color"));
+        actions.Children.Add(Place(Named(SlimButton("Close", () => { _personalEditorHost.IsVisible = false; SizeColorPage(); }), "palette.editor.close", "Close saved color form"), 1));
+        form.Children.Add(actions);
+        return new Border { Padding = new Thickness(8), Background = EditorThemeTokens.SurfaceRaised, CornerRadius = EditorThemeTokens.CardRadius, Child = form };
+    }
+
+    private Control BuildPersonalRow(SavedColor saved)
+    {
+        var label = new TextBlock { Text = saved.Name, FontSize = 13, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap };
+        var details = HexColor.Format(saved.Color);
+        if (saved.FolderId is { } id && _userPaletteStore.Folders.FirstOrDefault(f => f.Id == id) is { } folder) details += "  ·  " + folder.Name;
+        var text = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
+        text.Children.Add(label);
+        text.Children.Add(new TextBlock { Text = details, FontSize = 12, Foreground = EditorThemeTokens.TextSecondary, TextWrapping = TextWrapping.Wrap });
+        var content = new Grid { ColumnDefinitions = new ColumnDefinitions("32,*"), ColumnSpacing = 8 };
+        content.Children.Add(new ColorSwatchView { Color = saved.Color, Width = 32, Height = 32, VerticalAlignment = VerticalAlignment.Center });
+        content.Children.Add(Place(text, 1));
+        var button = new Button
         {
-            if (e.Key == Key.Enter) { SaveUserPaletteColor(); e.Handled = true; }
+            Content = content, Padding = new Thickness(7, 5), MinHeight = 48, Margin = new Thickness(0, 1),
+            HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch,
         };
-        _userPaletteAdd = LibraryButton("Save HEX", SaveUserPaletteColor, "user-palette-save");
-        _userPaletteRemove = LibraryButton("Remove", () => _ = RemoveLibraryColorAsync(), "user-palette-remove");
-        _libraryEdit = LibraryButton("Edit", () => _ = EditLibraryColorAsync(), "color-library-edit");
-        _folderRename = LibraryButton("Rename folder", () => _ = RenameLibraryFolderAsync());
-        _folderDelete = LibraryButton("Delete folder", () => _ = DeleteLibraryFolderAsync());
-        _libraryPrevious = LibraryButton("Prev", () => { _libraryPage--; _selectedLibraryColor = null; RefreshUserPalette(); });
-        _libraryNext = LibraryButton("Next", () => { _libraryPage++; _selectedLibraryColor = null; RefreshUserPalette(); });
-        _temporaryPrevious = LibraryButton("Prev", () => { _temporaryPage--; _selectedTemporaryColor = null; RefreshUserPalette(); });
-        _temporaryNext = LibraryButton("Next", () => { _temporaryPage++; _selectedTemporaryColor = null; RefreshUserPalette(); });
-        _temporarySave = LibraryButton("Save selected", SaveSelectedTemporaryColor);
-        _temporaryRemove = LibraryButton("Remove slot", RemoveSelectedTemporaryColor);
-        _temporaryClear = LibraryButton("Clear tray", () => _ = ClearTemporaryLibraryAsync());
-        _libraryRestore = LibraryButton("Restore backup", () => _ = RestoreColorLibraryAsync());
-        var folders = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 5 };
-        folders.Children.Add(_libraryFolder);
-        _newLibraryFolderButton = LibraryButton("New folder", () => _ = CreateLibraryFolderAsync());
-        folders.Children.Add(Place(_newLibraryFolderButton, 1));
-        var save = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 5 };
-        save.Children.Add(_librarySaveHex);
-        save.Children.Add(Place(_userPaletteAdd, 1));
-        _temporaryLibraryTab.Content = BuildTemporaryLibraryLayout();
-        _colorLibraryTabs.ItemsSource = new object[]
-        {
-            new TabItem { Header = "Saved colors", Content = BuildSavedLibraryLayout(folders, save) },
-            _temporaryLibraryTab,
-        };
-        var body = new Grid { RowDefinitions = new RowDefinitions("*,Auto"), RowSpacing = 6 };
-        body.Children.Add(_colorLibraryTabs);
-        var status = new StackPanel { Spacing = 4 };
-        status.Children.Add(_userPaletteStatus);
-        _libraryRecoveryActions = LibraryRow(LibraryButton("Reload", ReloadColorLibrary), _libraryRestore);
-        status.Children.Add(_libraryRecoveryActions);
-        Grid.SetRow(status, 1); body.Children.Add(status);
-        AutomationProperties.SetAutomationId(body, "user-palette");
-        AutomationProperties.SetAutomationId(_colorLibraryTabs, "color-library-tabs");
-        ReloadColorLibrary();
-        return body;
-    }
-
-    private void ReloadColorLibrary()
-    {
-        try
-        {
-            _userPaletteStore = new ColorLibraryStore();
-            ToolTip.SetTip(_userPaletteCount, _userPaletteStore.FilePath);
-            RefreshUserPalette();
-        }
-        catch (Exception error) when (LibraryFailure(error))
-        {
-            _userPaletteStore = null;
-            _userPaletteStatus.Text = "Color library unavailable: " + error.Message;
-            UpdateUserPaletteButtons();
-        }
-    }
-
-    private void RefreshStudioHexFeedback()
-    {
-        if (_syncingStudioColor) return;
-        var valid = HexColor.TryParse(_studioHex.Text, out _);
-        _studioHexHint.Text = valid ? "Enter to apply · I: eyedropper · Esc: cancel entry"
-            : "Use #RRGGBB or #RRGGBBAA, for example #654321.";
-        if (_studioApplyHex is not null) _studioApplyHex.IsEnabled = valid;
-        UpdateUserPaletteButtons();
-    }
-
-    private void UpdateUserPaletteButtons()
-    {
-        var writable = _userPaletteStore is { LoadError: null };
-        if (_saveActiveLibraryButton is not null) _saveActiveLibraryButton.IsEnabled = writable;
-        if (_pinTemporaryButton is not null) _pinTemporaryButton.IsEnabled = writable;
-        if (_newLibraryFolderButton is not null) _newLibraryFolderButton.IsEnabled = writable;
-        var selected = writable && _userPaletteStore!.Colors.Any(color => color.Id == _selectedLibraryColor);
-        var tempSelected = writable && _selectedTemporaryColor is { } hex && _userPaletteStore!.TemporaryColors.Contains(hex);
-        if (_userPaletteAdd is not null) _userPaletteAdd.IsEnabled = writable && HexColor.TryParse(_librarySaveHex.Text, out _);
-        if (_userPaletteRemove is not null) _userPaletteRemove.IsEnabled = selected;
-        if (_libraryEdit is not null) _libraryEdit.IsEnabled = selected;
-        if (_temporarySave is not null) _temporarySave.IsEnabled = tempSelected;
-        if (_temporaryRemove is not null) _temporaryRemove.IsEnabled = tempSelected;
-        if (_temporaryClear is not null) _temporaryClear.IsEnabled = writable && _userPaletteStore!.TemporaryColors.Count > 0;
-        var folderSelected = writable && (_libraryFolder.SelectedItem as LibraryFolderChoice)?.Id is not null;
-        if (_folderRename is not null) _folderRename.IsEnabled = folderSelected;
-        if (_folderDelete is not null) _folderDelete.IsEnabled = folderSelected;
-        if (_libraryRecoveryActions is not null) _libraryRecoveryActions.IsVisible = _userPaletteStore is null || _userPaletteStore.LoadError is not null;
-        ToolTip.SetTip(_userPaletteStatus, _userPaletteStatus.Text);
-        if (_libraryRestore is not null)
-            _libraryRestore.IsVisible = _userPaletteStore is { LoadError: not null } store && File.Exists(store.BackupPath);
-    }
-
-    private void RefreshLibraryFolders()
-    {
-        var old = _libraryFolder.SelectedItem as LibraryFolderChoice;
-        var colors = _userPaletteStore?.Colors ?? Array.Empty<ColorLibraryColor>();
-        var options = new List<LibraryFolderChoice>
-        {
-            new($"All colors ({colors.Count})", null, true),
-            new($"Unfiled ({colors.Count(color => color.FolderId is null)})", null),
-        };
-        foreach (var folder in (_userPaletteStore?.Folders ?? Array.Empty<ColorLibraryFolder>()).OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase))
-            options.Add(new LibraryFolderChoice($"{folder.Name} ({colors.Count(c => c.FolderId == folder.Id)})", folder.Id));
-        _syncingLibrary = true;
-        try
-        {
-            _libraryFolder.ItemsSource = options;
-            _libraryFolder.SelectedItem = options.FirstOrDefault(option => old is not null && option.Id == old.Id && option.IsAll == old.IsAll) ?? options[0];
-        }
-        finally { _syncingLibrary = false; }
-    }
-
-    private void RefreshUserPalette(string? message = null)
-    {
-        RefreshLibraryFolders();
-        var folder = _libraryFolder.SelectedItem as LibraryFolderChoice;
-        var results = _userPaletteStore?.Search(_librarySearch.Text, folder?.Id, folder is { IsAll: false, Id: null })
-            ?? Array.Empty<ColorLibraryColor>();
-        _libraryPage = Math.Clamp(_libraryPage, 0, Math.Max(0, (results.Count - 1) / LibraryPageSize));
-        _userPaletteSwatches.Children.Clear();
-        foreach (var color in results.Skip(_libraryPage * LibraryPageSize).Take(LibraryPageSize))
-        {
-            var captured = color;
-            _userPaletteSwatches.Children.Add(BuildLibrarySwatch(color.Hex, color.Name, color.Id == _selectedLibraryColor, () =>
-            {
-                _selectedLibraryColor = captured.Id;
-                ApplyStudioColor(ColorLibraryStore.ParseColor(captured.Hex));
-                _userPaletteStatus.Text = "Selected " + captured.Hex + ".";
-                RefreshLibrarySelection();
-            }, "user-palette-" + color.Hex[1..]));
-        }
-        _userPaletteCount.Text = $"{results.Count} matching · {_userPaletteStore?.Colors.Count ?? 0} saved colors";
-        _userPaletteEmpty.IsVisible = results.Count == 0;
-        _userPaletteEmpty.Text = (_userPaletteStore?.Colors.Count ?? 0) == 0
-            ? "Save current above, or choose More → Save by HEX."
-            : "No matching colors. Clear the search or choose All colors.";
-        SetLibraryPage(_libraryPage, results.Count, _libraryPageLabel, _libraryPrevious, _libraryNext);
-        var temporary = _userPaletteStore?.TemporaryColors ?? Array.Empty<string>();
-        _temporaryPage = Math.Clamp(_temporaryPage, 0, Math.Max(0, (temporary.Count - 1) / LibraryPageSize));
-        _temporarySwatches.Children.Clear();
-        for (var index = _temporaryPage * LibraryPageSize; index < Math.Min(temporary.Count, (_temporaryPage + 1) * LibraryPageSize); index++)
-        {
-            var hex = temporary[index];
-            _temporarySwatches.Children.Add(BuildLibrarySwatch(hex, "Slot " + (index + 1), hex == _selectedTemporaryColor, () =>
-            {
-                _selectedTemporaryColor = hex;
-                ApplyStudioColor(ColorLibraryStore.ParseColor(hex));
-                _userPaletteStatus.Text = "Selected temporary color " + hex + ".";
-                RefreshLibrarySelection();
-            }, "temporary-color-" + hex[1..]));
-        }
-        _temporaryLibraryTab.Header = $"Temporary ({temporary.Count})";
-        _temporaryCount.Text = temporary.Count == 0 ? "No temporary colors yet." : $"{temporary.Count} temporary colors · click a slot to use it";
-        SetLibraryPage(_temporaryPage, temporary.Count, _temporaryPageLabel, _temporaryPrevious, _temporaryNext);
-        _userPaletteStatus.Text = _userPaletteStore?.LoadError ?? message ?? "Saved on this computer · available after restarting.";
-        UpdateUserPaletteButtons();
-    }
-
-    private static void SetLibraryPage(int page, int count, TextBlock label, Button? previous, Button? next)
-    {
-        var pages = Math.Max(1, (count + LibraryPageSize - 1) / LibraryPageSize);
-        label.Text = $"{page + 1} / {pages}";
-        label.IsVisible = pages > 1;
-        if (previous is not null) previous.IsVisible = pages > 1;
-        if (next is not null) next.IsVisible = pages > 1;
-        if (previous is not null) previous.IsEnabled = page > 0;
-        if (next is not null) next.IsEnabled = page + 1 < pages;
-    }
-
-    private Control BuildLibrarySwatch(string hex, string name, bool selected, Action action, string automationId)
-    {
-        var content = new StackPanel { Spacing = 2 };
-        content.Children.Add(new Border { Height = 20, Background = CanvasBackdrop.Create(new CanvasDisplaySettings()), Child = new Border { Background = Brush(ColorLibraryStore.ParseColor(hex)) }, BorderBrush = EditorThemeTokens.PanelBorder, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(2) });
-        content.Children.Add(new TextBlock { Text = hex, FontSize = 10, HorizontalAlignment = HorizontalAlignment.Center });
-        if (!string.IsNullOrEmpty(name)) content.Children.Add(new TextBlock { Text = name, FontSize = 10, TextTrimming = TextTrimming.CharacterEllipsis, HorizontalAlignment = HorizontalAlignment.Center });
-        var button = new Button { Width = 72, Height = 60, MinWidth = 0, MinHeight = 0, Padding = new Thickness(3), Content = content, HorizontalContentAlignment = HorizontalAlignment.Stretch };
-        if (selected) button.Classes.Add("selected");
-        AutomationProperties.SetAutomationId(button, automationId);
-        AutomationProperties.SetName(button, $"Use {name} {hex}");
-        ToolTip.SetTip(button, string.IsNullOrEmpty(name) ? hex : name + " · " + hex);
-        button.Click += (_, _) => action();
+        Named(button, "palette.swatch." + HexColor.Format(saved.Color)[1..], $"{saved.Name}, {HexColor.Format(saved.Color)}");
+        button.Click += (_, _) => SelectPersonalColor(saved.Color);
         return button;
     }
 
-    private Rgba32 ActiveLibraryColor()
+    private void OpenPersonalPalette()
     {
-        var session = Current();
-        if (session is null) return _studioColor;
-        var colors = session.GetToolColors();
-        return _studioSecondaryTarget ? colors.Secondary : colors.Primary;
+        if (!TryParseHex(_studioHex.Text, out var color)) { ApplyStudioHex(); return; }
+        _sideTabs.SelectedIndex = 0;
+        ShowPersonalEditor(); FillPersonalDraft(color); FocusPersonalName();
     }
-
-    private void SaveUserPaletteColor()
+    private void ShowPersonalEditor() { _personalEditorHost.IsVisible = true; SizeColorPage(); }
+    private void FocusPersonalName() => Avalonia.Threading.Dispatcher.UIThread.Post(() => { _personalName.BringIntoView(); _personalName.Focus(); _personalName.SelectAll(); });
+    private void PersonalInputKey(object? sender, KeyEventArgs e)
     {
-        if (!HexColor.TryParse(_librarySaveHex.Text, out var color))
-        {
-            _userPaletteStatus.Text = "Enter a valid #RRGGBB or #RRGGBBAA color to save.";
-            return;
-        }
-        SaveLibraryColor(color);
+        if (e.Key == Key.Enter) { SavePersonalColor(); e.Handled = true; }
+        else if (e.Key == Key.Escape) { FillPersonalDraft(_selectedPersonalColor ?? _studioColor); e.Handled = true; }
     }
-
-    private void SaveActiveLibraryColor()
+    private void PersonalDraftChanged()
     {
-        if (!HexColor.TryParse(_studioHex.Text, out var color))
-        {
-            _studioHexHint.Text = "Enter a valid HEX before saving this color.";
-            _studioHex.Focus(); return;
-        }
-        ApplyStudioColor(color);
-        SaveLibraryColor(color);
+        if (_syncingPersonal || !_personalBuilt || _syncingFolder) return;
+        _personalDraftEdited = true; _personalValidation.IsVisible = false; UpdatePersonalActions();
     }
-
-    private void SaveLibraryColor(Rgba32 color)
+    private void FillPersonalDraft(Rgba32 color)
     {
-        TryLibraryChange(() =>
-        {
-            var id = _userPaletteStore!.SaveColor(color, folderId: (_libraryFolder.SelectedItem as LibraryFolderChoice)?.Id);
-            var savedColor = _userPaletteStore.Colors.First(c => c.Id == id);
-            _syncingLibrary = true;
-            try
-            {
-                _librarySearch.Text = string.Empty;
-                var selectedFolder = _libraryFolder.SelectedItem as LibraryFolderChoice;
-                if (selectedFolder is { IsAll: false } && selectedFolder.Id != savedColor.FolderId)
-                    _libraryFolder.SelectedItem = ((IEnumerable<LibraryFolderChoice>)_libraryFolder.ItemsSource!).First(f => !f.IsAll && f.Id == savedColor.FolderId);
-            }
-            finally { _syncingLibrary = false; }
-            _selectedLibraryColor = id;
-            var filter = _libraryFolder.SelectedItem as LibraryFolderChoice;
-            var visible = _userPaletteStore.Search(null, filter?.Id, filter is { IsAll: false, Id: null });
-            _libraryPage = Math.Max(0, visible.ToList().FindIndex(item => item.Id == id) / LibraryPageSize);
-            _librarySaveHex.Text = HexColor.Format(color);
-        }, "Saved " + HexColor.Format(color) + ". Existing names and folders are kept.");
-    }
-
-    private void PinTemporaryColor()
-    {
-        if (!HexColor.TryParse(_studioHex.Text, out var current)) { ApplyStudioHex(); _studioHex.Focus(); return; }
-        ApplyStudioColor(current);
-        TryLibraryChange(() =>
-        {
-            var color = current;
-            _userPaletteStore!.AddTemporary(color);
-            _selectedTemporaryColor = HexColor.Format(color);
-            _temporaryPage = Math.Max(0, _userPaletteStore.TemporaryColors.ToList().IndexOf(_selectedTemporaryColor) / LibraryPageSize);
-        }, "Temporary color kept. Pick another pixel, then Add temp again.");
-    }
-
-    private void SaveSelectedTemporaryColor()
-    {
-        if (_selectedTemporaryColor is { } hex) SaveLibraryColor(ColorLibraryStore.ParseColor(hex));
-    }
-
-    private void RemoveSelectedTemporaryColor()
-    {
-        if (_selectedTemporaryColor is not { } hex) return;
-        TryLibraryChange(() => { _userPaletteStore!.RemoveTemporary(hex); _selectedTemporaryColor = null; }, "Temporary slot removed. Saved colors are unchanged.");
-    }
-
-    private async Task ClearTemporaryLibraryAsync()
-    {
-        if (!await ConfirmLibraryAsync("Clear temporary colors", "Remove all temporary slots? Permanently saved colors will be kept.")) return;
-        TryLibraryChange(() => { _userPaletteStore!.ClearTemporary(); _selectedTemporaryColor = null; }, "Temporary tray cleared.");
-    }
-
-    private async Task RemoveLibraryColorAsync()
-    {
-        if (_selectedLibraryColor is not { } id || _userPaletteStore is null) return;
-        var selected = _userPaletteStore.Colors.FirstOrDefault(color => color.Id == id);
-        if (selected is null || !await ConfirmLibraryAsync("Remove saved color", $"Remove {selected.Hex} from the library? Your artwork and current drawing color stay unchanged.")) return;
-        TryLibraryChange(() => { _userPaletteStore!.RemoveColor(id); _selectedLibraryColor = null; }, "Saved color removed.");
-    }
-
-    private async Task CreateLibraryFolderAsync()
-    {
-        var name = await AskLibraryTextAsync("New color folder", "Folder name", string.Empty);
-        if (name is null) return;
-        TryLibraryChange(() =>
-        {
-            var id = _userPaletteStore!.CreateFolder(name);
-            RefreshLibraryFolders();
-            _libraryFolder.SelectedItem = ((IEnumerable<LibraryFolderChoice>)_libraryFolder.ItemsSource!).First(option => option.Id == id);
-        }, "Folder created. New saves go into the selected folder.");
-    }
-
-    private async Task RenameLibraryFolderAsync()
-    {
-        if ((_libraryFolder.SelectedItem as LibraryFolderChoice)?.Id is not { } id || _userPaletteStore is null) return;
-        var folder = _userPaletteStore.Folders.FirstOrDefault(item => item.Id == id);
-        if (folder is null) return;
-        var name = await AskLibraryTextAsync("Rename folder", "Folder name", folder.Name);
-        if (name is not null) TryLibraryChange(() => _userPaletteStore!.RenameFolder(id, name), "Folder renamed.");
-    }
-
-    private async Task DeleteLibraryFolderAsync()
-    {
-        if ((_libraryFolder.SelectedItem as LibraryFolderChoice)?.Id is not { } id) return;
-        if (!await ConfirmLibraryAsync("Delete folder", "Delete this folder? Every color inside will move to Unfiled. No colors will be deleted.")) return;
-        TryLibraryChange(() => _userPaletteStore!.DeleteFolder(id), "Folder deleted. Its colors are in Unfiled.");
-    }
-
-    private async Task EditLibraryColorAsync()
-    {
-        var saved = _userPaletteStore?.Colors.FirstOrDefault(color => color.Id == _selectedLibraryColor);
-        if (saved is null || _userPaletteStore is null) return;
-        var name = new TextBox { Text = saved.Name, MaxLength = 120, PlaceholderText = "Optional color name" };
-        var options = new List<LibraryFolderChoice> { new("Unfiled", null) };
-        options.AddRange(_userPaletteStore.Folders.Select(folder => new LibraryFolderChoice(folder.Name, folder.Id)));
-        var folder = new ComboBox { ItemsSource = options, SelectedItem = options.First(item => item.Id == saved.FolderId), HorizontalAlignment = HorizontalAlignment.Stretch };
-        var body = new StackPanel { Spacing = 9 };
-        var window = LibraryDialog("Edit " + saved.Hex, body);
-        var errorText = new TextBlock { TextWrapping = TextWrapping.Wrap };
-        body.Children.Add(new TextBlock { Text = "Color name" });
-        body.Children.Add(name);
-        body.Children.Add(new TextBlock { Text = "Folder" });
-        body.Children.Add(folder);
-        body.Children.Add(errorText);
-        body.Children.Add(LibraryRow(LibraryButton("Save", () =>
-        {
-            if (TryLibraryChange(() => _userPaletteStore!.UpdateColor(saved.Id, name.Text ?? string.Empty, (folder.SelectedItem as LibraryFolderChoice)?.Id), "Color details saved.")) window.Close();
-            else errorText.Text = _userPaletteStatus.Text;
-        }), LibraryButton("Cancel", () => window.Close())));
-        window.KeyDown += (_, e) => { if (e.Key == Key.Escape) { window.Close(); e.Handled = true; } };
-        window.Opened += (_, _) => { name.Focus(); name.SelectAll(); };
-        await window.ShowDialog(this);
-    }
-
-    private async Task RestoreColorLibraryAsync()
-    {
-        if (_userPaletteStore is null || !await ConfirmLibraryAsync("Restore color-library backup", "Restore the previous saved library? It may not include the most recent change. The damaged file will be kept separately for recovery.")) return;
+        if (!_personalBuilt) return;
+        _syncingPersonal = true;
         try
         {
-            _userPaletteStore.RestoreBackup();
-            RefreshUserPalette("Backup restored. The damaged file, if present, was kept beside the library.");
+            var saved = _userPaletteStore.Swatches.FirstOrDefault(s => s.Color == color);
+            _personalHex.Text = HexColor.Format(color); _personalName.Text = saved?.Name ?? string.Empty;
+            var folderId = saved is not null ? saved.FolderId : ((_folderFilter.SelectedItem as FolderChoice)?.Id is { } id && id != "*" ? id : null);
+            _personalFolder.SelectedItem = _personalFolder.Items.Cast<FolderChoice>().FirstOrDefault(f => f.Id == folderId);
+            _personalValidation.IsVisible = false; _personalDraftEdited = false;
         }
-        catch (Exception error) when (LibraryFailure(error)) { _userPaletteStatus.Text = "Backup was not restored: " + error.Message; }
+        finally { _syncingPersonal = false; }
+        UpdatePersonalActions();
     }
-
-    private bool TryLibraryChange(Action action, string message)
+    private void SyncPersonalColor(Rgba32 color)
+    { if (_personalBuilt && !_personalDraftEdited) FillPersonalDraft(color); }
+    private void UpdatePersonalActions()
     {
-        if (_userPaletteStore is null) { _userPaletteStatus.Text = "The library is unavailable. Choose Reload."; return false; }
-        try { action(); RefreshUserPalette(message); return true; }
-        catch (Exception error) when (LibraryFailure(error))
+        var valid = HexColor.TryParse(_personalHex.Text, out var color);
+        var exists = valid && _userPaletteStore.Swatches.Any(s => s.Color == color);
+        _personalSave.Content = exists ? "Save changes" : "Save color";
+        _personalSave.IsEnabled = _userPaletteStore.LoadError is null && valid && (exists || _userPaletteStore.Swatches.Count < UserPaletteStore.MaxColors);
+        _personalPreview.Color = valid ? color : Rgba32.Transparent;
+        var selected = _selectedPersonalColor is { } chosen && _userPaletteStore.Swatches.Any(s => s.Color == chosen);
+        _personalRename.IsEnabled = _personalMove.IsEnabled = _personalRemove.IsEnabled = selected && _userPaletteStore.LoadError is null;
+        if (_userPaletteStore.LoadError is { } error) ShowPersonalError(error);
+    }
+    private void FilterPersonalRows()
+    {
+        RefreshPersonalRows();
+        if (_visiblePersonalColors.Count > 0) _personalList.ScrollIntoView(_visiblePersonalColors[0]);
+    }
+    private void RefreshPersonalRows()
+    {
+        if (!_personalBuilt) return;
+        RefreshFolderChoices();
+        var folder = _folderFilter.SelectedItem as FolderChoice;
+        var wanted = _userPaletteStore.Query(_personalSearch.Text, folder?.Id == "*" ? null : folder?.Id, folder is { Id: null });
+        if (!_visiblePersonalColors.SequenceEqual(wanted))
         {
-            _userPaletteStatus.Text = "Change not saved: " + error.Message;
-            SetError(_userPaletteStatus.Text);
-            UpdateUserPaletteButtons();
-            return false;
+            _visiblePersonalColors = wanted;
+            _syncingList = true;
+            try { _personalList.ItemsSource = wanted; _personalList.SelectedItem = wanted.FirstOrDefault(s => s.Color == _selectedPersonalColor); }
+            finally { _syncingList = false; }
         }
+        if (_selectedPersonalColor is { } old && !_userPaletteStore.Swatches.Any(s => s.Color == old)) _selectedPersonalColor = null;
+        _personalCount.Text = wanted.Count == _userPaletteStore.Swatches.Count ? $"{wanted.Count} saved colors" : $"{wanted.Count} of {_userPaletteStore.Swatches.Count} colors";
+        _personalEmpty.Text = _userPaletteStore.Swatches.Count == 0 ? "Save your first color with New." : "No matching colors";
+        _personalEmpty.IsVisible = wanted.Count == 0;
+        UpdatePersonalActions();
     }
-
-    private static bool LibraryFailure(Exception error) => error is IOException or InvalidDataException
-        or UnauthorizedAccessException or ArgumentException or InvalidOperationException or System.Text.Json.JsonException or NotSupportedException;
-
-    private static Window LibraryDialog(string title, Control body) => new()
+    private void SelectPersonalColor(Rgba32 color)
     {
-        Title = title, Width = 400, CanResize = false, SizeToContent = SizeToContent.Height,
-        WindowStartupLocation = WindowStartupLocation.CenterOwner,
-        Background = EditorThemeTokens.AppBackground,
-        Content = new Border { Padding = new Thickness(16), Child = body },
-    };
-
-    private async Task<string?> AskLibraryTextAsync(string title, string label, string value)
+        _selectedPersonalColor = color;
+        ApplyStudioColor(color); FillPersonalDraft(color);
+        _syncingList = true;
+        try { _personalList.SelectedItem = _visiblePersonalColors.FirstOrDefault(s => s.Color == color); }
+        finally { _syncingList = false; }
+        UpdatePersonalActions();
+    }
+    private void SavePersonalColor()
     {
-        var input = new TextBox { Text = value, MaxLength = 80 };
-        var hint = new TextBlock { TextWrapping = TextWrapping.Wrap };
-        var body = new StackPanel { Spacing = 9 };
-        var window = LibraryDialog(title, body);
-        void Submit()
+        if (!HexColor.TryParse(_personalHex.Text, out var color)) { ShowPersonalError("Enter #RRGGBB or #RRGGBBAA."); return; }
+        try
         {
-            var text = (input.Text ?? string.Empty).Trim();
-            if (text.Length == 0) { hint.Text = "Enter a folder name."; return; }
-            window.Close(text);
+            var folder = (_personalFolder.SelectedItem as FolderChoice)?.Id;
+            if (_userPaletteStore.Swatches.Any(s => s.Color == color)) _userPaletteStore.Update(color, _personalName.Text, folder);
+            else _userPaletteStore.Add(color, _personalName.Text, folder);
+            _selectedPersonalColor = color;
+            _personalSearch.Text = string.Empty;
+            _folderFilter.SelectedItem = _folderFilter.Items.Cast<FolderChoice>().First(f => f.Id == (folder ?? "*"));
+            RefreshPersonalRows(); SelectPersonalColor(color);
+            _personalEditorHost.IsVisible = false; SizeColorPage();
+            _personalList.ScrollIntoView(_personalList.SelectedItem!);
         }
-        body.Children.Add(new TextBlock { Text = label });
-        body.Children.Add(input);
-        body.Children.Add(hint);
-        body.Children.Add(LibraryRow(LibraryButton("Save", Submit), LibraryButton("Cancel", () => window.Close(null))));
-        input.KeyDown += (_, e) =>
-        {
-            if (e.Key == Key.Enter) { Submit(); e.Handled = true; }
-            else if (e.Key == Key.Escape) { window.Close(null); e.Handled = true; }
-        };
-        window.Opened += (_, _) => input.Focus();
-        return await window.ShowDialog<string?>(this);
+        catch (Exception ex) when (IsPaletteError(ex)) { ShowPersonalError($"Not saved. {ex.Message}"); }
     }
-
-    private async Task<bool> ConfirmLibraryAsync(string title, string message)
+    private void RemovePersonalColor()
     {
-        var body = new StackPanel { Spacing = 12 };
-        var window = LibraryDialog(title, body);
-        body.Children.Add(new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap });
-        var cancel = LibraryButton("Cancel", () => window.Close(false));
-        var confirm = LibraryButton(title.StartsWith("Delete", StringComparison.Ordinal) ? "Delete folder" :
-            title.StartsWith("Clear", StringComparison.Ordinal) ? "Clear temporary" :
-            title.StartsWith("Restore", StringComparison.Ordinal) ? "Restore backup" : "Remove color", () => window.Close(true));
-        confirm.Classes.Add("danger");
-        body.Children.Add(LibraryRow(cancel, confirm));
-        window.Opened += (_, _) => cancel.Focus();
-        window.KeyDown += (_, e) => { if (e.Key == Key.Escape) { window.Close(false); e.Handled = true; } };
-        return await window.ShowDialog<bool?>(this) == true;
+        if (_selectedPersonalColor is not { } color) return;
+        try { _userPaletteStore.Remove(color); _selectedPersonalColor = null; RefreshPersonalRows(); FillPersonalDraft(_studioColor); }
+        catch (Exception ex) when (IsPaletteError(ex)) { ShowPersonalError($"Not removed. {ex.Message}"); }
     }
+    private void ShowPersonalError(string message) { _personalValidation.Text = message; _personalValidation.IsVisible = true; }
+    private static bool IsPaletteError(Exception ex) => ex is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException or InvalidOperationException or System.Text.Json.JsonException;
+    private static TextBlock FieldLabel(string text) => new() { Text = text, FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Foreground = EditorThemeTokens.TextSecondary };
+    private static Button SlimButton(string text, Action action)
+    { var button = new Button { Content = text, Padding = new Thickness(7, 4), MinHeight = 30, FontSize = 12 }; button.Click += (_, _) => action(); return button; }
+    private static T PlaceRow<T>(T control, int row) where T : Control { Grid.SetRow(control, row); return control; }
 }
