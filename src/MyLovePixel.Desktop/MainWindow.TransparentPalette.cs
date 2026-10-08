@@ -10,35 +10,6 @@ namespace MyLovePixel.Desktop;
 
 public sealed partial class MainWindow
 {
-    private bool _transparentPaletteInstalled;
-
-    protected override void OnApplyTemplate(TemplateAppliedEventArgs e)
-    {
-        base.OnApplyTemplate(e);
-        Dispatcher.UIThread.Post(InstallTransparentPaletteSwatch, DispatcherPriority.Background);
-    }
-
-    private void InstallTransparentPaletteSwatch()
-    {
-        if (_transparentPaletteInstalled || _studioPaletteSwatches.Children.Count < 512) return;
-        _transparentPaletteInstalled = true;
-
-        var button = new Button
-        {
-            Width = 18,
-            Height = 18,
-            MinHeight = 18,
-            Padding = new Thickness(1),
-            CornerRadius = new CornerRadius(3),
-            BorderBrush = EditorThemeTokens.Accent,
-            BorderThickness = new Thickness(1),
-            Content = BuildTransparentSwatchVisual(),
-        };
-        ToolTip.SetTip(button, "Transparent · erase with Pencil, Line, Fill, Arc or Shape");
-        button.Click += (_, _) => ApplyStudioColor(Rgba32.Transparent);
-        _studioPaletteSwatches.Children.Insert(0, button);
-    }
-
     private static Control BuildTransparentSwatchVisual()
     {
         var grid = new Grid

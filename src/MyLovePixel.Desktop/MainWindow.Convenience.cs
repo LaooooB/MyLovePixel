@@ -14,7 +14,6 @@ namespace MyLovePixel.Desktop;
 public sealed partial class MainWindow
 {
     private readonly PixelPreviewView _quickPreview = new();
-    private readonly WrapPanel _studioPaletteSwatches = new() { ItemWidth = 20, ItemHeight = 20 };
     private readonly NumericUpDown _studioR = ChannelInput();
     private readonly NumericUpDown _studioG = ChannelInput();
     private readonly NumericUpDown _studioB = ChannelInput();
@@ -96,105 +95,48 @@ public sealed partial class MainWindow
 
     private Control BuildStudioPaletteEditor()
     {
-        if (_studioPaletteSwatches.Children.Count == 0)
-        {
-            foreach (var color in BuildStudioPaletteColors())
-            {
-                var captured = color;
-                var button = new Button
-                {
-                    Width = 18,
-                    Height = 18,
-                    MinHeight = 18,
-                    Padding = new Thickness(1),
-                    CornerRadius = new CornerRadius(3),
-                    BorderBrush = EditorThemeTokens.PanelBorder,
-                    BorderThickness = new Thickness(1),
-                    Content = new Border
-                    {
-                        Background = Brush(captured),
-                        CornerRadius = new CornerRadius(2),
-                    },
-                };
-                ToolTip.SetTip(button, $"Apply #{captured.R:X2}{captured.G:X2}{captured.B:X2} to the active color");
-                button.Click += (_, _) => ApplyStudioColor(captured);
-                _studioPaletteSwatches.Children.Add(button);
-            }
-        }
-
-        _studioColorPreview.Width = 28;
-        _studioColorPreview.Height = 28;
+        _studioColorPreview.Width = 16;
+        _studioColorPreview.Height = 16;
         AutomationProperties.SetAutomationId(_studioHex, "studio-hex-input");
-        AutomationProperties.SetName(_studioHex, "HEX color, RRGGBB or RRGGBBAA");
+        AutomationProperties.SetName(_studioHex, "Current drawing color, RRGGBB or RRGGBBAA");
         _studioR.ValueChanged += (_, _) => ApplyStudioRgb();
         _studioG.ValueChanged += (_, _) => ApplyStudioRgb();
         _studioB.ValueChanged += (_, _) => ApplyStudioRgb();
         _studioHex.TextChanged += (_, _) => RefreshStudioHexFeedback();
         _studioHex.KeyDown += (_, e) =>
         {
-            if (e.Key == Key.Enter)
-            {
-                ApplyStudioHex();
-                e.Handled = true;
-            }
-            else if (e.Key == Key.Escape)
-            {
-                SyncStudioColor(_studioColor);
-                e.Handled = true;
-            }
+            if (e.Key == Key.Enter) { ApplyStudioHex(); e.Handled = true; }
+            else if (e.Key == Key.Escape) { SyncStudioColor(_studioColor); e.Handled = true; }
         };
         _studioHex.LostFocus += (_, _) => ApplyStudioHex();
-        _studioApplyHex = new Button { Content = "Apply", Padding = new Thickness(8, 5) };
-        _studioApplyHex.Classes.Add("text-action");
-        AutomationProperties.SetAutomationId(_studioApplyHex, "studio-hex-apply");
-        _studioApplyHex.Click += (_, _) => ApplyStudioHex();
-
-        var rgb = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,*,Auto,*"), ColumnSpacing = 5 };
-        rgb.Children.Add(ChannelLabel("R"));
-        rgb.Children.Add(Place(_studioR, 1));
-        rgb.Children.Add(Place(ChannelLabel("G"), 2));
-        rgb.Children.Add(Place(_studioG, 3));
-        rgb.Children.Add(Place(ChannelLabel("B"), 4));
-        rgb.Children.Add(Place(_studioB, 5));
-
-        var hex = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto"), ColumnSpacing = 6 };
-        hex.Children.Add(ChannelLabel("HEX"));
-        hex.Children.Add(Place(_studioHex, 1));
-        hex.Children.Add(Place(_studioApplyHex, 2));
-        hex.Children.Add(Place(_studioColorPreview, 3));
-
-        // Keep direct entry visible even when the 512-color grid is collapsed.
-        var body = new StackPanel { Spacing = 8 };
-        body.Children.Add(hex);
-        body.Children.Add(_studioHexHint);
-        body.Children.Add(rgb);
-        body.Children.Add(new Expander
+        _studioApplyHex = ColorAction("Apply", "studio-hex-apply", ApplyStudioHex);
+        var picker = ColorAsyncAction("Palette", "open-color-palette", async () =>
         {
-            Header = "Palette · 512 colors",
-            IsExpanded = true,
-            Content = new ScrollViewer
-            {
-                MaxHeight = 160,
-                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                Content = _studioPaletteSwatches,
-            },
+            var session = Current();
+            if (session is null) return;
+            var colors = session.GetToolColors();
+            var color = await new ColorPickerDialog(_studioSecondaryTarget ? colors.Secondary : colors.Primary).ShowDialog<Rgba32?>(this);
+            if (color is { } selected) ApplyStudioColor(selected);
         });
-
-        var result = new StackPanel { Spacing = 10 };
-        result.Children.Add(new Border
-        {
-            Padding = new Thickness(10, 7),
-            CornerRadius = EditorThemeTokens.CardRadius,
-            Background = EditorThemeTokens.SurfaceRaised,
-            BorderBrush = EditorThemeTokens.PanelBorder,
-            BorderThickness = new Thickness(1),
-            Child = body,
-        });
-        // Personal swatches live directly below the existing studio palette.
-        result.Children.Add(BuildUserPaletteEditor());
+        var pickerContent = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
+        pickerContent.Children.Add(_studioColorPreview); pickerContent.Children.Add(new TextBlock { Text = "Palette", VerticalAlignment = VerticalAlignment.Center });
+        picker.Content = pickerContent;
+        var hex = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), ColumnSpacing = 6 };
+        hex.Children.Add(_studioHex); hex.Children.Add(Place(_studioApplyHex, 1)); hex.Children.Add(Place(picker, 2));
+        var quick = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), ColumnSpacing = 6 };
+        _temporaryQuickSave = ColorAction("+ Temp", "temporary-save-current", SaveTemporaryColor);
+        quick.Children.Add(_temporaryQuickSave);
+        quick.Children.Add(Place(ColorAction("Eyedropper", "color-eyedropper", ActivateEyedropper), 1));
+        quick.Children.Add(Place(ColorAction("Transparent", "color-transparent", () => ApplyStudioColor(Rgba32.Transparent)), 2));
+        var body = new StackPanel { Spacing = 6 };
+        body.Children.Add(_palettePanel); body.Children.Add(hex); body.Children.Add(_studioHexHint); body.Children.Add(quick);
         RefreshStudioHexFeedback();
-        return result;
+        return new Border
+        {
+            Padding = new Thickness(8), CornerRadius = EditorThemeTokens.CardRadius,
+            Background = EditorThemeTokens.SurfaceRaised, BorderBrush = EditorThemeTokens.PanelBorder,
+            BorderThickness = new Thickness(1), Child = body,
+        };
     }
 
     private static NumericUpDown ChannelInput() => new()
@@ -353,6 +295,10 @@ public sealed partial class MainWindow
         if (e.Handled || e.KeyModifiers != KeyModifiers.None || IsEditingText(e.Source)) return;
         switch (e.Key)
         {
+            case Key.I:
+                ActivateEyedropper(); e.Handled = true; break;
+            case Key.Escape when _eyedropperMode:
+                LeaveEyedropper(); RefreshAll(); e.Handled = true; break;
             case Key.B:
                 SelectQuickTool("core.pencil");
                 e.Handled = true;
@@ -389,6 +335,7 @@ public sealed partial class MainWindow
         if (session is null) return;
         Safe(() =>
         {
+            LeaveEyedropper();
             _selectionMode = false;
             session.EnsureEditableCel();
             _plugins.SelectTool(session, id);

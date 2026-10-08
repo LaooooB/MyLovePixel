@@ -7,6 +7,7 @@ on:
       - main
       - ui-dark-release-build
       - ui-full-ux-build
+      - color-library-upgrade-20261008
     paths:
       - 'src/**'
       - 'tests/**'
@@ -43,7 +44,19 @@ jobs:
         run: dotnet build MyLovePixel.slnx -c Release --no-restore
 
       - name: Test solution
-        run: dotnet test MyLovePixel.slnx -c Release --no-build --no-restore
+        run: dotnet test --solution MyLovePixel.slnx -c Release --no-build --no-restore
+
+      - name: Exercise color library and native picker UI
+        timeout-minutes: 3
+        run: dotnet run --project tests/MyLovePixel.Desktop.Smoke/MyLovePixel.Desktop.Smoke.csproj -c Release
+
+      - name: Upload UI smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: color-library-ui-smoke
+          path: smoke-output/
+          retention-days: 14
 
       - name: Publish Windows x64 self-contained app
         shell: pwsh

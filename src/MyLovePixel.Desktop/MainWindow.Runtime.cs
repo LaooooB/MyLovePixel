@@ -156,6 +156,12 @@ public sealed partial class MainWindow
         if (session is null) return;
         try
         {
+            if (_eyedropperMode)
+            {
+                if (e.Kind == EditorPointerKind.Pressed && (e.Buttons & EditorPointerButtons.Primary) != 0)
+                    PickCanvasColor(e.CanvasPixel.X, e.CanvasPixel.Y, _studioSecondaryTarget);
+                return;
+            }
             if (!_selectionMode && e.Kind == EditorPointerKind.Pressed)
                 _canvasPointerActive = true;
 
@@ -243,6 +249,7 @@ public sealed partial class MainWindow
     {
         var session = Current();
         if (session is null) return;
+        if (_eyedropperMode) { PickCanvasColor(x, y, secondary: true); return; }
         Safe(() => session.EraseCanvasPixel(x, y));
         QueueRefreshAll();
     }

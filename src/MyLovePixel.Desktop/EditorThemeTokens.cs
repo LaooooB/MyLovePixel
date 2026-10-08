@@ -44,7 +44,7 @@ public static class EditorThemeTokens
     public const double ControlSpacing = 6d;
     public const double PanelSpacing = 10d;
     public const double ShellPadding = 10d;
-    public const double ToolRailWidth = 64d;
+    public const double ToolRailWidth = 108d;
     public const double RightPanelWidth = 380d;
     public const double TimelineHeight = 148d;
 

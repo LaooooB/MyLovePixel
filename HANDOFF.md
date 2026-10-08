@@ -1,3 +1,15 @@
+# Color-library upgrade handoff (2026-10-08)
+
+Branch: `color-library-upgrade-20261008`. Based on upstream `d3fbeff52e2ac55b84974ddaeab278c20eb1ea13`; main is not overwritten.
+
+Implemented the persistent v2 color library, lossless legacy migration, pre-v2 and rolling backups, folders/search/paging, a draggable HSV dialog beside the upper HEX entry, persistent temporary rack, sticky actual artwork eyedropper, independent full-height Colors tab, and Photo-tab removal. Tool names now remain visible in the rail. Details and migration limitations: `docs/USER_PALETTE.md`.
+
+Desktop smoke project: `tests/MyLovePixel.Desktop.Smoke` (not in the MTP solution). Run `dotnet run --project tests/MyLovePixel.Desktop.Smoke -c Release` on Windows; artifacts go to `MLP_SMOKE_OUTPUT`. It never uses a user's real palette path. Linux local smoke needs the Skia 4.151 native dependency matching the managed assembly and an optional test font passed through `SmokeFontPath`; do not distribute that test font or test binary.
+
+Full unit-test command with the pinned .NET 10 MTP SDK: `dotnet test --solution MyLovePixel.slnx`. Positional solution syntax is invalid with this test runner. Keep EXE assembly identity and AppData location unchanged. The v2 store is intentionally read-only on malformed input rather than silently losing colors. `.lock` is an empty lockfile, not a data file.
+
+---
+
 # MyLovePixel — Handoff
 
 > 继续开发时先确认 `main` HEAD 与最新 GitHub Actions，再读本文件、`docs/IMPLEMENTATION_PLAN.md`、`docs/ARCHITECTURE.md` 和 `docs/DECISIONS/`。不要仅凭本文记录的 SHA 判断仓库是否已经继续更新。

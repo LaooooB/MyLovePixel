@@ -81,8 +81,9 @@ public sealed partial class MainWindow : Window
     private (int X, int Y)? _selectedTileCell;
     private EffectInstanceId? _selectedEffect;
 
-    public MainWindow()
+    public MainWindow(UserPaletteStore? paletteStore = null)
     {
+        _userPaletteStore = paletteStore;
         Width = 1480;
         Height = 920;
         MinWidth = 1080;
@@ -141,10 +142,6 @@ public sealed partial class MainWindow : Window
         };
         DockPanel.SetDock(status, Dock.Bottom);
         root.Children.Add(status);
-
-        var timeline = BuildTimeline();
-        DockPanel.SetDock(timeline, Dock.Bottom);
-        root.Children.Add(timeline);
 
         root.Children.Add(BuildWorkspace());
         return root;
@@ -205,7 +202,8 @@ public sealed partial class MainWindow : Window
     {
         var grid = new Grid
         {
-            ColumnDefinitions = new ColumnDefinitions($"{EditorThemeTokens.ToolRailWidth},*,{EditorThemeTokens.RightPanelWidth}")
+            ColumnDefinitions = new ColumnDefinitions($"{EditorThemeTokens.ToolRailWidth},*,{EditorThemeTokens.RightPanelWidth}"),
+            RowDefinitions = new RowDefinitions($"*,{EditorThemeTokens.TimelineHeight}")
         };
 
         var toolsRoot = new DockPanel();
@@ -257,6 +255,10 @@ public sealed partial class MainWindow : Window
 
         var inspector = BuildInspector();
         Grid.SetColumn(inspector, 2);
+        Grid.SetRowSpan(inspector, 2);
+        var timeline = BuildTimeline();
+        Grid.SetRow(timeline, 1); Grid.SetColumnSpan(timeline, 2);
+        grid.Children.Add(timeline);
         grid.Children.Add(inspector);
         return grid;
     }
@@ -264,9 +266,10 @@ public sealed partial class MainWindow : Window
     private Control BuildInspector()
     {
         var editorPage = InspectorScroll(
+            BuildInspectorPreviewBox(),
             SectionCard("Tool options", "Changes apply to the active drawing or selection tool.", _toolOptionsPanel),
-            SectionCard("Color", "Choose Primary or Secondary, then pick a color from the palette below.", _palettePanel),
-            BuildStudioPaletteEditor());
+            ColorAsyncAction("Photo → Pixel…", "photo-convert-open", OpenPhotoConversionAsync),
+            BuildSpriteSheetImportCard());
 
         var layersPage = InspectorScroll(
             SectionCard("Layers", "Select, rename, reorder, hide, lock and change opacity.", _layersPanel));
@@ -297,10 +300,11 @@ public sealed partial class MainWindow : Window
             Background = EditorThemeTokens.Surface,
             BorderBrush = EditorThemeTokens.PanelBorder,
             BorderThickness = new Thickness(1, 0, 0, 0),
+            SelectedIndex = 1,
             ItemsSource = new object[]
             {
                 TextTab("Edit", editorPage),
-                TextTab("Photo", BuildPhotoPixelPanel()),
+                TextTab("Colors", BuildColorWorkspace()),
                 TextTab("Layers", layersPage),
                 TextTab("Advanced", advancedTabs),
             },
@@ -316,10 +320,6 @@ public sealed partial class MainWindow : Window
         };
         DockPanel.SetDock(title, Dock.Top);
         root.Children.Add(title);
-
-        var preview = BuildInspectorPreviewBox();
-        DockPanel.SetDock(preview, Dock.Top);
-        root.Children.Add(preview);
 
         root.Children.Add(tabs);
         return root;

@@ -58,62 +58,7 @@ public sealed class NewProjectDialog : Window
     };
 }
 
-public sealed class ColorDialog : Window
-{
-    private readonly NumericUpDown _r;
-    private readonly NumericUpDown _g;
-    private readonly NumericUpDown _b;
-    private readonly NumericUpDown _a;
-    private readonly Border _preview = new() { Height = 42, CornerRadius = new CornerRadius(6) };
-
-    public ColorDialog(Rgba32 initial)
-    {
-        Title = "Color";
-        Width = 340;
-        Height = 350;
-        CanResize = false;
-        WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        Background = EditorThemeTokens.AppBackground;
-
-        _r = Channel(initial.R);
-        _g = Channel(initial.G);
-        _b = Channel(initial.B);
-        _a = Channel(initial.A);
-        foreach (var n in new[] { _r, _g, _b, _a }) n.ValueChanged += (_, _) => RefreshPreview();
-
-        var root = new StackPanel { Margin = new Thickness(16), Spacing = 9 };
-        root.Children.Add(new TextBlock { Text = "RGBA Color", FontSize = 15, FontWeight = FontWeight.SemiBold });
-        root.Children.Add(_preview);
-        root.Children.Add(DialogChrome.Labeled("Red", _r));
-        root.Children.Add(DialogChrome.Labeled("Green", _g));
-        root.Children.Add(DialogChrome.Labeled("Blue", _b));
-        root.Children.Add(DialogChrome.Labeled("Alpha", _a));
-        root.Children.Add(DialogChrome.ConfirmCancel(() => Close(null), () => Close(Current()), "Apply"));
-        Content = root;
-        RefreshPreview();
-    }
-
-    private Rgba32 Current() => new(
-        (byte)(_r.Value ?? 0),
-        (byte)(_g.Value ?? 0),
-        (byte)(_b.Value ?? 0),
-        (byte)(_a.Value ?? 255));
-
-    private void RefreshPreview()
-    {
-        var c = Current();
-        _preview.Background = new SolidColorBrush(Color.FromArgb(c.A, c.R, c.G, c.B));
-    }
-
-    private static NumericUpDown Channel(byte value) => new()
-    {
-        Value = value,
-        Minimum = 0,
-        Maximum = 255,
-        Increment = 1,
-        FormatString = "0",
-    };
-}
+public sealed class ColorDialog(Rgba32 initial) : ColorPickerDialog(initial);
 
 public sealed class ExportDialog : Window
 {

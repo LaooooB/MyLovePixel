@@ -17,6 +17,19 @@ public sealed partial class MainWindow
     private readonly TextBlock _photoPixelStatus = new() { TextWrapping = TextWrapping.Wrap };
     private bool _photoPixelBusy;
 
+    private async Task OpenPhotoConversionAsync()
+    {
+        var dialog = new Window
+        {
+            Title = "Photo → Pixel", Width = 440, Height = 600,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = EditorThemeTokens.AppBackground,
+            Content = BuildPhotoPixelPanel(),
+        };
+        try { await dialog.ShowDialog(this); }
+        finally { dialog.Content = null; }
+    }
+
     private Control BuildPhotoPixelPanel()
     {
         var dropTitle = new TextBlock
@@ -29,7 +42,7 @@ public sealed partial class MainWindow
 
         var dropHint = new TextBlock
         {
-            Text = "The image is center-cropped to your current canvas size, reduced to pixel resolution, then mapped to the 128-color palette.",
+            Text = "The image is center-cropped to your current canvas size, reduced to pixel resolution, then mapped to the built-in conversion palette.",
             TextWrapping = TextWrapping.Wrap,
             TextAlignment = TextAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Center,
@@ -72,8 +85,7 @@ public sealed partial class MainWindow
             {
                 Padding = new Thickness(10, 4),
                 Child = _photoPixelStatus,
-            },
-            BuildSpriteSheetImportCard());
+            });
     }
 
     private void OnPhotoPixelDragOver(object? sender, DragEventArgs e)

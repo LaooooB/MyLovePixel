@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../../src/MyLovePixel.Desktop/MyLovePixel.Desktop.csproj" /></ItemGroup>
+  <!-- Optional local test font only; release/source artifacts never include font bytes. -->
+  <ItemGroup Condition="'$(SmokeFontPath)' != ''">
+    <AvaloniaResource Include="$(SmokeFontPath)" Link="Assets/SmokeFont.ttf" />
+  </ItemGroup>
+</Project>

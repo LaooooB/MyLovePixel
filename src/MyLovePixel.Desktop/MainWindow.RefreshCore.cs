@@ -75,15 +75,30 @@ public sealed partial class MainWindow
         _diagnostics.Text = $"{d.CacheOutcome}\nUpload {d.UploadMode} · {d.UploadPixelCount}px\nHit {d.Cache.CacheHitCount} · Partial {d.Cache.PartialRecomposeCount} · Full {d.Cache.FullRecomposeCount}\nUndo {h.EstimatedHistoryBytes / 1024d:0.0}/{h.MemoryBudgetBytes / 1024d:0.0} KiB · Evicted {h.EvictedUndoEntryCount}";
     }
 
+    private static Button RailToolButton(string name, Action action)
+    {
+        var button = new Button
+        {
+            Content = new TextBlock { Text = name, FontSize = 11, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center },
+            HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center,
+            MinHeight = 34, Padding = new Thickness(4),
+        };
+        button.Classes.Add("ghost");
+        Avalonia.Automation.AutomationProperties.SetName(button, name);
+        button.Click += (_, _) => action();
+        return button;
+    }
+
     private void RefreshTools()
     {
         _toolsPanel.Children.Clear();
         var session = Current();
         if (session is null) return;
-        _toolsPanel.Margin = new Thickness(14, 6, 14, 8);
+        _toolsPanel.Margin = new Thickness(6, 6, 6, 8);
 
-        var select = IconButton("▧", "Selection", () =>
+        var select = RailToolButton("Selection", () =>
         {
+            LeaveEyedropper();
             _selectionMode = true;
             _plugins.CancelTool(session);
             RefreshTools();
@@ -92,6 +107,9 @@ public sealed partial class MainWindow
         });
         if (_selectionMode) select.Classes.Add("selected");
         _toolsPanel.Children.Add(select);
+        var eyedropper = RailToolButton("Eyedropper", ActivateEyedropper);
+        if (_eyedropperMode) eyedropper.Classes.Add("selected");
+        _toolsPanel.Children.Add(eyedropper);
         _toolsPanel.Children.Add(SeparatorH());
 
         var tools = _plugins.GetTools(session);
@@ -108,9 +126,10 @@ public sealed partial class MainWindow
             var tip = shortcut is null
                 ? tool.DisplayName
                 : $"{tool.DisplayName} · {shortcut}";
-            var button = IconButton(ToolGlyph(id), tool.DisplayName, () =>
+            var button = RailToolButton(tool.DisplayName, () =>
             {
                 CancelSelectionTransformGesture();
+                LeaveEyedropper();
                 _selectionMode = false;
                 session.EnsureEditableCel();
                 _plugins.SelectTool(session, id);
@@ -118,7 +137,7 @@ public sealed partial class MainWindow
             });
             ToolTip.SetTip(button, tip);
             button.IsEnabled = session.HasEditableCel || session.CaptureSnapshot().Layers.ContainsKey(session.CurrentLayerId);
-            if (!_selectionMode && tool.IsActive) button.Classes.Add("selected");
+            if (!_selectionMode && !_eyedropperMode && tool.IsActive) button.Classes.Add("selected");
             _toolsPanel.Children.Add(button);
         }
     }
@@ -129,6 +148,7 @@ public sealed partial class MainWindow
         var session = Current();
         if (session is null) return;
 
+        if (_eyedropperMode) { _toolOptionsPanel.Children.Add(BuildEyedropperOptions()); return; }
         if (_selectionMode)
         {
             AddPanelLabel(_toolOptionsPanel, "Selection type");
@@ -259,9 +279,16 @@ public sealed partial class MainWindow
         _primarySwatch.Background = Brush(colors.Primary);
         _secondarySwatch.Background = Brush(colors.Secondary);
 
-        _palettePanel.Children.Add(Labeled("Primary", SwatchButton(_primarySwatch, "Primary color", true)));
-        _palettePanel.Children.Add(Labeled("Secondary", SwatchButton(_secondarySwatch, "Secondary color", false)));
-        _palettePanel.Children.Add(TextIconButton("⇄", "Swap Colors", "Swap primary and secondary colors", SwapColors));
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*,Auto"), ColumnSpacing = 6 };
+        var primary = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
+        primary.Children.Add(SwatchButton(_primarySwatch, "Primary color", true));
+        primary.Children.Add(new TextBlock { Text = "Primary", VerticalAlignment = VerticalAlignment.Center });
+        var secondary = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
+        secondary.Children.Add(SwatchButton(_secondarySwatch, "Secondary color", false));
+        secondary.Children.Add(new TextBlock { Text = "Secondary", VerticalAlignment = VerticalAlignment.Center });
+        row.Children.Add(primary); row.Children.Add(Place(secondary, 1));
+        row.Children.Add(Place(ColorAction("Swap", "color-swap", SwapColors), 2));
+        _palettePanel.Children.Add(row);
     }
 
     private static void AddPanelLabel(Panel panel, string text)
