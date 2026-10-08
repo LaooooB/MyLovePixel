@@ -53,6 +53,7 @@ internal static partial class Program
         });
         Run("Invalid palette HEX cannot save and typing names cannot switch tools", w =>
         {
+            Call(w, "OpenPersonalPalette"); Pump();
             var hex = Find<TextBox>(w, "palette.hex"); var name = Find<TextBox>(w, "palette.name");
             hex.Text = "#invalid"; name.Text = "Pencil";
             Check(!Find<Button>(w, "palette.save").IsEnabled, "Invalid HEX is saveable.");
@@ -70,6 +71,7 @@ internal static partial class Program
         });
         Run("Palette drafts survive ordinary editing and main HEX can seed a new named color", w =>
         {
+            Call(w, "OpenPersonalPalette"); Pump();
             var hex = Find<TextBox>(w, "palette.hex"); var name = Find<TextBox>(w, "palette.name");
             hex.Text = "#654321"; name.Text = "Draft name";
             Session(w).SetToolColors(new Rgba32(4, 5, 6), Rgba32.Transparent); Pump();
@@ -82,17 +84,17 @@ internal static partial class Program
             var preview = Field<Expander>(w, "_previewExpander"); Check(preview.IsExpanded, "Preview starts hidden.");
             w.Width = 960; w.Height = 640; Pump(); Check(preview.IsExpanded, "Compact sizing hid Preview.");
         });
-        Run("Palette is below Color library and named rows remain usable at high DPI", w =>
+        Run("Named palette rows remain usable on the Colors tab at high DPI", w =>
         {
             SaveNamed(w, "#654321", "Wood shadow"); SaveNamed(w, "#FFB76B", "Warm light"); SaveNamed(w, "#248FC8", "Ocean blue");
             foreach (var scale in new[] { 1d, 1.5d, 2d })
             {
                 w.SetRenderScaling(scale); w.Width = 1280 / scale; w.Height = 820 / scale; Pump();
+                var list = Find<ListBox>(w, "palette.results");
+                list.ScrollIntoView(Field<UserPaletteStore>(w, "_userPaletteStore").Swatches.Last()); Pump();
                 var row = Find<Button>(w, "palette.swatch.248FC8"); row.BringIntoView(); Pump();
                 Check(row.Bounds.Width >= 200 && row.GetVisualDescendants().OfType<TextBlock>().First(t => t.Text == "Ocean blue").Bounds.Width > 80, "Name is clipped.");
-                var personal = Find<StackPanel>(w, "palette.personal");
-                var library = w.GetVisualDescendants().OfType<Expander>().First(e => e.Header?.ToString() == "Color library");
-                Check(library.TranslatePoint(new Point(0, 0), personal)!.Value.Y < 0, "My palette is not under Color library.");
+                Check(Find<Grid>(w, "palette.personal").IsEffectivelyVisible, "My palette is not visible on the Colors page.");
                 using var frame = w.CaptureRenderedFrame(); frame!.Save($"release/ui/named-palette-{scale * 100:0}.png", Avalonia.Media.Imaging.PngBitmapEncoderOptions.Default);
             }
         });
@@ -100,6 +102,7 @@ internal static partial class Program
 
     private static void SaveNamed(MainWindow w, string hex, string name)
     {
+        Call(w, "OpenPersonalPalette"); Pump();
         Find<TextBox>(w, "palette.hex").Text = hex;
         Find<TextBox>(w, "palette.name").Text = name;
         Click(Find<Button>(w, "palette.save")); Pump();

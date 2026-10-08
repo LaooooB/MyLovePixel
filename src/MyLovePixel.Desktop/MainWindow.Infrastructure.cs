@@ -190,7 +190,8 @@ public sealed partial class MainWindow
         return new Border { Child = body, Padding = new Thickness(0, 4), Background = Brushes.Transparent };
     }
 
-    private static TabItem TextTab(string title, Control content) => new() { Header = title, Content = content };
+    private static TabItem TextTab(string title, Control content) => Named(new TabItem
+    { Header = title, Content = content, FontSize = 12, Height = 32, MinHeight = 32, Padding = new Thickness(5, 2) }, "tab." + title.ToLowerInvariant(), title);
     private static Expander Expander(string header, Control content)
     {
         var expander = new Expander { Header = header, Content = content, IsExpanded = false, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch };

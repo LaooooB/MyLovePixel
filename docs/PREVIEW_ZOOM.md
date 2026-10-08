@@ -11,3 +11,5 @@ The preview and frame thumbnails use pure white behind the unchanged RGBA compos
 At very short window heights, the sidebar keeps Enlarge and a small white preview visible; all zoom controls remain available in the larger window. No project/palette format or storage changes were made.
 
 Regression commands: `dotnet build MyLovePixel.slnx -c Release`; `dotnet test MyLovePixel.slnx -c Release --no-build`; `dotnet run --project tests/MyLovePixel.Desktop.UxTests -c Release`. The Windows packaging smoke test also opens/reopens the real EXE's Preview, checks zoom controls and samples the white background from screen pixels.
+
+Color Studio update: the sidebar preview is now on its own Preview tab; the inspector always keeps Open large preview visible. The enlarged window and white background are unchanged.

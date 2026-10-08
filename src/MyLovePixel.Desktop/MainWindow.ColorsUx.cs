@@ -17,7 +17,6 @@ public sealed partial class MainWindow
     private readonly TextBlock _sampleInfo = new() { IsVisible = false, TextWrapping = TextWrapping.Wrap, Foreground = EditorThemeTokens.TextSecondary };
     private Button? _foregroundButton;
     private Button? _backgroundButton;
-    private readonly List<(Button Button, Rgba32 Color)> _colorButtons = [];
 
     private Control BuildColorEditor()
     {
@@ -44,9 +43,10 @@ public sealed partial class MainWindow
             column.Children.Add(input);
             channels.Children.Add(Place(column, i));
         }
-        body.Children.Add(channels);
+        var channelOptions = Named(new Border { Child = channels, IsVisible = false }, "color.channels.panel", "RGBA channels");
 
-        var hex = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto"), ColumnSpacing = 4 };
+
+        var hex = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), ColumnSpacing = 4 };
         hex.Children.Add(new TextBlock { Text = "HEX", VerticalAlignment = VerticalAlignment.Center, Foreground = EditorThemeTokens.TextSecondary });
         Named(_studioHex, "color.hex", "HEX color, RRGGBB or RRGGBBAA");
         _studioHex.KeyDown += (_, e) =>
@@ -56,43 +56,20 @@ public sealed partial class MainWindow
         };
         _studioHex.LostFocus += (_, _) => ApplyStudioHex();
         hex.Children.Add(Place(_studioHex, 1));
-        hex.Children.Add(Place(TextIconButton("⇄", "Swap", "Swap foreground / background · X", SwapColors), 2));
-        hex.Children.Add(Place(Named(TextIconButton("", "Save…", "Name and save this color in My palette", OpenPersonalPalette), "palette.open", "Save color to My palette"), 3));
+        hex.Children.Add(Place(Named(SlimButton("Pick…", () => _ = OpenColorPickerAsync()), "color.picker", "Open the color spectrum picker"), 2));
         body.Children.Add(hex);
+        var actions = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*,*,*"), ColumnSpacing = 4 };
+        actions.Children.Add(SlimButton("Swap", SwapColors));
+        actions.Children.Add(Place(Named(SlimButton("Keep", KeepCurrentColor), "color.keep", "Keep current color in a quick slot"), 1));
+        actions.Children.Add(Place(Named(SlimButton("Save…", OpenPersonalPalette), "palette.open", "Save color to My palette"), 2));
+        actions.Children.Add(Place(Named(SlimButton("RGBA", () => channelOptions.IsVisible = !channelOptions.IsVisible), "color.channels", "Show or hide RGBA channel controls"), 3));
+        foreach (var button in actions.Children.OfType<Button>()) button.HorizontalAlignment = HorizontalAlignment.Stretch;
+        body.Children.Add(actions);
+        body.Children.Add(channelOptions);
         body.Children.Add(Named(_colorValidation, "color.validation", "Color validation"));
         body.Children.Add(_sampleInfo);
         SyncStudioColor(_studioColor);
         return new Border { Padding = new Thickness(10, 8), Child = body, BorderBrush = EditorThemeTokens.PanelBorder, BorderThickness = new Thickness(0, 0, 0, 1) };
-    }
-
-    private Control BuildStudioPaletteEditor()
-    {
-        if (_studioPaletteSwatches.Children.Count == 0)
-        {
-            _studioPaletteSwatches.ItemWidth = 26;
-            _studioPaletteSwatches.ItemHeight = 26;
-            foreach (var color in new[] { Rgba32.Transparent }.Concat(BuildStudioPaletteColors()))
-            {
-                var captured = color;
-                var label = color.A == 0 ? "Transparent" : Hex(color);
-                var button = new Button
-                {
-                    Width = 24, Height = 24, MinHeight = 24, Padding = new Thickness(2),
-                    Content = new ColorSwatchView { Color = color },
-                };
-                AutomationProperties.SetName(button, label);
-                ToolTip.SetTip(button, label);
-                ToolTip.SetPlacement(button, PlacementMode.Right);
-                button.Click += (_, _) => ApplyStudioColor(captured);
-                _colorButtons.Add((button, color));
-                _studioPaletteSwatches.Children.Add(button);
-            }
-            _transparentPaletteInstalled = true;
-        }
-        var palette = new ScrollViewer { Content = _studioPaletteSwatches, MaxHeight = 156, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-        var expander = Expander("Color library", palette);
-        expander.IsExpanded = true;
-        return expander;
     }
 
     private void RefreshPalette()
@@ -172,7 +149,6 @@ public sealed partial class MainWindow
             if (_studioColorPreview.Child is ColorSwatchView preview) preview.Color = color;
             _colorValidation.IsVisible = false;
             DataValidationErrors.ClearErrors(_studioHex);
-            foreach (var pair in _colorButtons) SetSelected(pair.Button, pair.Color == color);
         }
         finally { _syncingStudioColor = false; }
         SyncPersonalColor(color);

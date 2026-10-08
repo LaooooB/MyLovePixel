@@ -369,3 +369,11 @@ Plugin project bytes 的原则：Persistence 只保存 opaque namespaced bytes�
 约束：这些模块优先通过现有 `RenderNode / AnimationTrack / Exporter / Plugin SDK` 接入，不能污染普通 Cel 模型或扩张 Core mutable API。
 
 如果下一个需求只是一个私人工具、效果、导出器、Panel 或算法，**先尝试作为 Plugin SDK extension 实现，而不是开新的 Core feature batch。**
+
+## Color Studio update (base: delivered 5572f97)
+
+- Continues the exact delivered white-preview/1px-brush/named-palette UX build; do not revert to the old main tree.
+- Current preferences path unchanged. Schema 3 reads schemas 1/2, preserves byte-exact migration backup and a rolling backup. Includes saved names, folders and persisted quick slots; no artwork schema/history mutation.
+- Colors tab has virtualized search/folder library, drag HSV picker next to upper HEX, Keep quick slots and a collapsible naming editor. Removed huge swatch wall and redundant Photo tab. Tools/Tiles/Preview now have their own tabs. Enlarged white preview has a permanent inspector shortcut.
+- Domain coverage: 319 unit tests; desktop headless coverage: 67 scenarios. Windows packaged smoke must also pass before distribution. See docs/COLOR_STUDIO.md and the release logs for scope.
+- Isolated build branch: color-studio-5572f97-20261008. After verified EXE publication, replace canonical main/UX trees with this tested tree while preserving previous commit history.

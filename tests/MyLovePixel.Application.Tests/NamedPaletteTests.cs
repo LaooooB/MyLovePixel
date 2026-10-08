@@ -81,7 +81,7 @@ public sealed class NamedPaletteTests : IDisposable
         store.Rename(Brown, "木头");
         Assert.Equal(legacy, File.ReadAllText(FilePath + ".v1.bak"));
         Assert.Equal("木头", Open().Swatches[0].Name);
-        using var json = JsonDocument.Parse(File.ReadAllText(FilePath)); Assert.Equal(2, json.RootElement.GetProperty("schemaVersion").GetInt32());
+        using var json = JsonDocument.Parse(File.ReadAllText(FilePath)); Assert.Equal(3, json.RootElement.GetProperty("schemaVersion").GetInt32());
     }
 
     [Fact]
@@ -93,7 +93,7 @@ public sealed class NamedPaletteTests : IDisposable
     }
 
     [Theory]
-    [InlineData("not json")] [InlineData("null")] [InlineData("{}")] [InlineData("{\"schemaVersion\":3,\"colors\":[]}")]
+    [InlineData("not json")] [InlineData("null")] [InlineData("{}")] [InlineData("{\"schemaVersion\":99,\"colors\":[]}")]
     [InlineData("{\"schemaVersion\":2,\"colors\":[{\"hex\":\"#654321\",\"name\":12}]}")]
     public void CorruptOrNewerFilesArePreserved(string content)
     {
@@ -120,10 +120,10 @@ public sealed class NamedPaletteTests : IDisposable
     {
         var store = Open(); Assert.Throws<ArgumentException>(() => store.Add(Brown, new string('a', 65)));
         Directory.CreateDirectory(_root);
-        File.WriteAllText(FilePath, JsonSerializer.Serialize(new { schemaVersion = 2, colors = Enumerable.Range(0, 512).Select(i => new { hex = HexColor.Format(new Rgba32((byte)i, (byte)(i >> 8), 0)), name = "Color" + i }) }));
-        store = Open(); Assert.Equal(512, store.Swatches.Count);
+        File.WriteAllText(FilePath, JsonSerializer.Serialize(new { schemaVersion = 2, colors = Enumerable.Range(0, UserPaletteStore.MaxColors).Select(i => new { hex = HexColor.Format(new Rgba32((byte)i, (byte)(i >> 8), 0)), name = "Color" + i }) }));
+        store = Open(); Assert.Equal(UserPaletteStore.MaxColors, store.Swatches.Count);
         Assert.Throws<InvalidOperationException>(() => store.Add(Brown, "Full"));
-        Assert.Equal(512, Open().Swatches.Count);
+        Assert.Equal(UserPaletteStore.MaxColors, Open().Swatches.Count);
     }
 
     [Fact]

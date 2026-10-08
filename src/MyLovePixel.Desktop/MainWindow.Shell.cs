@@ -156,37 +156,30 @@ public sealed partial class MainWindow
     private Control BuildInspector()
     {
         var root = new DockPanel { Background = EditorThemeTokens.Surface };
-        _colorEditor = DocumentControl(BuildColorEditor());
-        DockPanel.SetDock(_colorEditor, Dock.Top);
-        root.Children.Add(_colorEditor);
-
         _previewExpander.Content = BuildInspectorPreviewBox();
         _previewExpander.HorizontalContentAlignment = HorizontalAlignment.Stretch;
-        DockPanel.SetDock(_previewExpander, Dock.Bottom);
-        root.Children.Add(_previewExpander);
+        var previewShortcut = Named(SlimButton("Open large preview", OpenPreviewWindow), "preview.enlarge", "Open larger live preview");
+        previewShortcut.HorizontalAlignment = HorizontalAlignment.Stretch;
+        previewShortcut.Margin = new Thickness(9, 6);
+        DockPanel.SetDock(previewShortcut, Dock.Bottom);
+        root.Children.Add(previewShortcut);
 
         var extensions = new StackPanel { Spacing = 10 };
         extensions.Children.Add(Expander("Plugins", _pluginsPanel));
         extensions.Children.Add(Expander("Recovery", _recoveryPanel));
         extensions.Children.Add(Expander("Diagnostics", _diagnostics));
-        var advanced = new TabControl
-        {
-            ItemsSource = new object[]
-            {
-                TextTab("Effects", InspectorScroll(_effectsPanel)),
-                TextTab("Tiles", InspectorScroll(_tilesPanel)),
-                TextTab("Animation", InspectorScroll(_animationPanel)),
-                TextTab("More", InspectorScroll(extensions)),
-            },
-        };
-        advanced.SelectionChanged += (_, _) => QueueRefreshAll();
+        _sideTabs.ItemsPanel = new Avalonia.Controls.Templates.FuncTemplate<Panel?>(() => new UniformGrid { Columns = 4 });
         _sideTabs.ItemsSource = new object[]
         {
-            TextTab("Edit", InspectorScroll(_toolOptionsPanel, BuildStudioPaletteEditor(), BuildUserPaletteEditor())),
+            TextTab("Colors", BuildColorsPage()),
             TextTab("Layers", InspectorScroll(_layersPanel)),
-            TextTab("Photo", BuildPhotoPixelPanel()),
-            TextTab("More", advanced),
+            TextTab("Tools", InspectorScroll(_toolOptionsPanel)),
+            TextTab("Effects", InspectorScroll(_effectsPanel)),
+            TextTab("Tiles", InspectorScroll(_tilesPanel)),
+            TextTab("Preview", _previewExpander),
+            TextTab("More", InspectorScroll(Expander("Animation", _animationPanel), extensions)),
         };
+        _sideTabs.SelectedIndex = 0;
         _sideTabs.SelectionChanged += (_, _) => QueueRefreshAll();
         root.Children.Add(_sideTabs);
         return root;

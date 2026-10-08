@@ -14,11 +14,14 @@ public sealed partial class MainWindow
 
     private Control BuildInspectorPreviewBox()
     {
-        _quickPreview.Height = 128;
+        _quickPreview.Height = double.NaN;
+        _quickPreview.VerticalAlignment = VerticalAlignment.Stretch;
+        _previewExpander.VerticalContentAlignment = VerticalAlignment.Stretch;
+        _previewExpander.VerticalAlignment = VerticalAlignment.Stretch;
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 8, HorizontalAlignment = HorizontalAlignment.Stretch };
         header.Children.Add(new TextBlock { Text = "Preview", VerticalAlignment = VerticalAlignment.Center });
         var enlarge = Named(new Button { Content = "Enlarge", Padding = new Thickness(7, 3), MinHeight = 26, FontSize = 12 },
-            "preview.enlarge", "Open larger live preview");
+            "preview.tab.enlarge", "Open larger live preview");
         enlarge.Click += (_, _) => OpenPreviewWindow();
         ToolTip.SetTip(enlarge, "Open larger live preview");
         Grid.SetColumn(enlarge, 1); header.Children.Add(enlarge);
@@ -26,9 +29,9 @@ public sealed partial class MainWindow
         _quickPreview.EnlargeRequested = OpenPreviewWindow;
         AutomationProperties.SetAutomationId(_quickPreview, "preview.viewport");
         AutomationProperties.SetName(_quickPreview, "Final image preview. Scroll to zoom, double-click to enlarge.");
-        var body = new StackPanel { Spacing = 5 };
+        var body = new Grid { RowDefinitions = new RowDefinitions("*,Auto"), RowSpacing = 5 };
         body.Children.Add(_quickPreview);
-        body.Children.Add(_previewZoomControls = PreviewControls.Build(_quickPreview, "preview"));
+        body.Children.Add(PlaceRow(_previewZoomControls = PreviewControls.Build(_quickPreview, "preview"), 1));
         return new Border { Margin = new Thickness(8, 0, 8, 8), Child = body, ClipToBounds = true };
     }
 

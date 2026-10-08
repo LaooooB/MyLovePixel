@@ -45,8 +45,8 @@ public sealed partial class MainWindow
         }
         // An explicitly reopened timeline remains scrollable on small screens.
         if (_timelineContent is not null) _timelineContent.MaxHeight = Math.Clamp(height * .26, 96, 230);
-        _quickPreview.Height = height < 500 ? 24 : compactHeight ? 64 : 128;
-        if (_previewZoomControls is not null) _previewZoomControls.IsVisible = height >= 500;
+        _quickPreview.Height = double.NaN;
+        if (_previewZoomControls is not null) _previewZoomControls.IsVisible = true;
     }
 
     private void ShowViewMenu()

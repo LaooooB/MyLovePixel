@@ -23,6 +23,12 @@ $paletteFile = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 
 $paletteBackup = Join-Path $OutputDirectory 'original-palette.json'
 $hadPalette = Test-Path $paletteFile
 if ($hadPalette) { Copy-Item $paletteFile $paletteBackup -Force }
+# Exercise an upgrade of real legacy-format preferences in the isolated runner.
+$legacyColors = @(0..63 | ForEach-Object { @{ hex = ('#{0:X6}' -f (0x110000 + $_)); name = ('Existing color ' + $_) } })
+New-Item -ItemType Directory -Force (Split-Path $paletteFile) | Out-Null
+$legacyText = @{ schemaVersion = 2; colors = $legacyColors } | ConvertTo-Json -Depth 5
+[IO.File]::WriteAllText($paletteFile, $legacyText, (New-Object Text.UTF8Encoding($false)))
+$legacyHash = (Get-FileHash $paletteFile -Algorithm SHA256).Hash
 $p = Start-Process $Executable -PassThru
 function Alive {
     $p.Refresh()
@@ -109,6 +115,7 @@ try {
     [NativeUi]::mouse_event(16, 0, 0, 0, [UIntPtr]::Zero)
     Start-Sleep -Milliseconds 150
     Invoke-Control 'tool.core.eyedropper'
+    Invoke-Control 'color.channels'
     foreach ($fraction in @(0.2, 0.5, 0.8)) {
         Click-Point ($x1+($x2-$x1)*$fraction) $y
         $alpha = Find-Control 'color.alpha'
@@ -123,6 +130,22 @@ try {
         if ($range.Current.Value -ne 255) { throw 'One native Undo failed to restore the erase path.' }
     }
     $results.Add('PASS packaged right-button drag, gap-free erase, and whole-stroke Undo')
+    Invoke-Control 'color.channels'
+    Invoke-Control 'color.keep'
+    $firstQuick = (Find-Control 'color.hex').GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value
+    Invoke-Control 'palette.folder.manage'
+    Invoke-Control 'folder.action.new'
+    $folderName = 'My scene colors'
+    (Find-Control 'folder.name').GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue($folderName)
+    Invoke-Control 'folder.save'
+    $data = Get-Content -Raw -Encoding UTF8 $paletteFile | ConvertFrom-Json
+    if (@($data.folders).Count -ne 1 -or $data.folders[0].name -ne $folderName) { throw 'Native folder creation was not persisted.' }
+    if ($data.schemaVersion -ne 3 -or @($data.colors).Count -ne 64) { throw 'Legacy colors were lost during folder migration.' }
+    foreach ($i in 0..63) {
+        if ($data.colors[$i].name -ne ('Existing color ' + $i) -or $data.colors[$i].hex -ne ('#{0:X6}' -f (0x110000 + $i))) { throw 'An existing saved color changed on upgrade.' }
+    }
+    if ((Get-FileHash ($paletteFile + '.v2.bak') -Algorithm SHA256).Hash -ne $legacyHash) { throw 'The original legacy palette backup is not byte-exact.' }
+    $results.Add('PASS native legacy palette upgrade retains all 64 existing names, HEX values, order and original backup')
     Invoke-Control 'palette.open'
     $savedHex = Find-Control 'palette.hex'
     $savedHex.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue('#654321')
@@ -142,12 +165,42 @@ try {
     $results.Add('PASS native HEX entry, visible Unicode name, rename and persistent named palette')
     Stop-Process -Id $p.Id -Force
     $p = Start-Process $Executable -PassThru
+    (Find-Control 'palette.search').GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue('#654321')
+    Start-Sleep -Milliseconds 200
     $swatch = Find-Control 'palette.swatch.654321'
     if (!$swatch.Current.Name.Contains($name2)) { throw 'Named swatch disappeared after restart.' }
     Invoke-Control 'palette.swatch.654321'
     $value = (Find-Control 'color.hex').GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value
     if ($value -ne '#654321') { throw 'Reloaded named color does not apply to drawing.' }
     $results.Add('PASS native restart retains the custom name and color and can use it again')
+    $data = Get-Content -Raw -Encoding UTF8 $paletteFile | ConvertFrom-Json
+    if (@($data.colors).Count -ne 65 -or @($data.folders).Count -ne 1 -or @($data.quickColors).Count -ne 1) { throw 'Restart lost stored colors, folders or temporary slots.' }
+    (Find-Control 'palette.search').GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue($folderName)
+    Start-Sleep -Milliseconds 200
+    Find-Control 'palette.swatch.654321' | Out-Null
+    $results.Add('PASS native saved-color search includes folder names after restart')
+    Invoke-Control 'color.keep'
+    Invoke-Control ('quick.swatch.' + $firstQuick.TrimStart('#'))
+    $actual = (Find-Control 'color.hex').GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value
+    if ($actual -ne $firstQuick) { throw 'Quick color cannot be restored after restart.' }
+    Invoke-Control 'color.picker'
+    $spectrum = Find-Control 'color.picker.spectrum'
+    $srect = $spectrum.Current.BoundingRectangle
+    [NativeUi]::SetCursorPos([int]($srect.X + $srect.Width*.25), [int]($srect.Y+$srect.Height*.25)) | Out-Null
+    [NativeUi]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero)
+    [NativeUi]::SetCursorPos([int]($srect.X + $srect.Width*.8), [int]($srect.Y+$srect.Height*.4)) | Out-Null
+    Start-Sleep -Milliseconds 100
+    [NativeUi]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 150
+    $picked = (Find-Control 'color.picker.hex').GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value
+    if ($picked -eq $firstQuick) { throw 'Dragging the native spectrum did not update the color.' }
+    Invoke-Control 'color.picker.cancel'
+    if ((Find-Control 'color.hex').GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value -ne $firstQuick) { throw 'Cancel picker changed drawing color.' }
+    Invoke-Control 'color.picker'
+    (Find-Control 'color.picker.hex').GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue('#1289AB40')
+    Invoke-Control 'color.picker.apply'
+    if ((Find-Control 'color.hex').GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value -ne '#1289AB40') { throw 'Picker lost confirmed HEX or alpha.' }
+    $results.Add('PASS native quick-slot reuse, draggable spectrum, cancellation and exact RGBA confirmation')
     Invoke-Control 'preview.enlarge'
     $previewWindow = Find-Control 'preview.window'
     $previewView = Find-Control 'preview.large.viewport'
@@ -185,7 +238,6 @@ try {
     $eye = Find-Control 'tool.core.eyedropper'
     if ($eye.Current.IsOffscreen) { throw 'Named eyedropper is clipped in the compact window.' }
     $results.Add('PASS compact native window')
-    Invoke-Control 'palette.rename'
     $screen = [System.Windows.Forms.SystemInformation]::VirtualScreen
     $bitmap = New-Object System.Drawing.Bitmap($screen.Width, $screen.Height)
     $graphics = [System.Drawing.Graphics]::FromImage($bitmap)

@@ -252,6 +252,7 @@ internal static partial class Program
             {
                 window.SetRenderScaling(scale); window.Width = 1280 / scale; window.Height = 800 / scale; Pump();
                 Call(window, "FitCanvas"); Pump();
+                Click(Find<Button>(window, "color.channels")); Pump();
                 var input = Find<NumericUpDown>(window, "color.alpha");
                 Check(input.GetVisualDescendants().OfType<TextBox>().Any(t => t.Bounds.Width >= 25 && t.Text == "255"), "Alpha value is clipped at this DPI.");
                 Check(Find<Button>(window, "tool.core.eyedropper").Bounds.Width >= 120, "Named tool row became too narrow.");
@@ -399,14 +400,16 @@ internal static partial class Program
             Check(session.Commands.UndoCount == before && !session.IsDirty, "Repeated undo did not return to the initial document.");
             Check(Find<Button>(window, "tool.core.eyedropper").IsEffectivelyEnabled, "Repeated editing left controls disabled.");
         });
-        Run("Named personal palette is present below Color library", w =>
+        Run("Named personal palette opens on the Colors page", w =>
         {
+            Click(Find<Button>(w, "palette.open"));
             var hex = Find<TextBox>(w, "palette.hex");
             var name = Find<TextBox>(w, "palette.name");
             Check(hex.IsEffectivelyVisible && name.IsEffectivelyVisible, "Palette input is hidden.");
             Check(Find<Button>(w, "palette.save").IsEffectivelyVisible, "Save color is hidden.");
         });
         RunInteractionPolishTests();
+        RunColorStudioTests();
         RunNamedPaletteTests();
         RunPreviewUxTests();
         Console.WriteLine($"Desktop UX tests: {_tests - _failures}/{_tests} passed.");
@@ -427,6 +430,7 @@ internal static partial class Program
             Field<DispatcherTimer>(window, "_autosaveTimer").Stop();
             Field<DispatcherTimer>(window, "_playbackTimer").Stop();
             Pump();
+            if (name.StartsWith("Preview ", StringComparison.Ordinal)) { Field<TabControl>(window, "_sideTabs").SelectedIndex = 5; Pump(); }
             test(window);
             Directory.CreateDirectory("release/ui");
             using (var frame = window.CaptureRenderedFrame())
