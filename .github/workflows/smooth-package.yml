@@ -6,46 +6,12 @@ on:
 permissions:
   contents: read
 jobs:
-  source:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    outputs:
-      revision: ${{ steps.source.outputs.revision }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref_name }}
-          fetch-depth: 0
-      - name: Preserve exact source before building
-        id: source
-        shell: bash
-        run: |
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || { echo 'Branch changed; refusing stale integration'; exit 1; }
-          if [ -f tools/input-latency.delta ]; then
-            python3 - <<'PY'
-          from pathlib import Path
-          import hashlib, subprocess, zlib
-          patch = zlib.decompress(Path('tools/input-latency.delta').read_bytes())
-          assert hashlib.sha256(patch).hexdigest() == '7a869d21ebd6a9f92bfbcb63058ae78327cfee16f6ff014b6b79be4f1f1e9788', 'Source checksum mismatch'
-          subprocess.run(['git', 'apply', '--check', '-'], input=patch, check=True)
-          subprocess.run(['git', 'apply', '-'], input=patch, check=True)
-          PY
-            git add src/ tests/
-            git rm tools/input-latency.delta
-            git config user.name 'github-actions[bot]'
-            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git commit -m 'perf: restore reference UX, retain camera rendering and refresh only changed inspectors'
-            git push origin HEAD:"$GITHUB_REF_NAME"
-          fi
-          echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
   windows:
-    needs: source
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.source.outputs.revision }}
+          ref: ${{ github.sha }}
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
@@ -56,24 +22,42 @@ jobs:
       - name: Check pan, zoom, hover and stable controls
         run: dotnet run --project tests/MyLovePixel.PerformanceSmoke -c Release -- artifacts/checks
       - name: Publish portable executable
-        run: dotnet publish src/MyLovePixel.Desktop/MyLovePixel.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:PublishTrimmed=false -o artifacts/windows
-      - name: Open and close the actual EXE
         shell: pwsh
         run: |
-          $p = Start-Process (Resolve-Path artifacts/windows/MyLovePixel.Desktop.exe) -PassThru
-          try {
-            if (-not $p.WaitForInputIdle(30000)) { throw 'EXE did not become ready' }
-            Start-Sleep -Milliseconds 1500
-            $p.Refresh()
-            if ($p.HasExited -or $p.MainWindowHandle -eq 0 -or $p.MainWindowTitle -notlike '*MyLovePixel*') { throw 'Main window did not open' }
-            [void]$p.CloseMainWindow()
-            if (-not $p.WaitForExit(15000) -or $p.ExitCode -ne 0) { throw 'EXE did not close normally' }
-          } finally { if (-not $p.HasExited) { $p.Kill() } }
+          dotnet publish src/MyLovePixel.Desktop/MyLovePixel.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:PublishTrimmed=false -o artifacts/windows
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Copy-Item THIRD_PARTY_NOTICES.md artifacts/windows/
           Get-ChildItem artifacts/windows -Filter *.pdb | Remove-Item
           (Get-FileHash artifacts/windows/MyLovePixel.Desktop.exe -Algorithm SHA256).Hash | Set-Content artifacts/windows/SHA256.txt
           git rev-parse HEAD | Set-Content artifacts/windows/BUILD_COMMIT.txt
           git archive --format=zip --output=artifacts/source.zip HEAD
+      - name: Open and close the actual EXE
+        shell: pwsh
+        run: |
+          $watch = [Diagnostics.Stopwatch]::StartNew()
+          $p = Start-Process (Resolve-Path artifacts/windows/MyLovePixel.Desktop.exe) -PassThru
+          $ready = $false
+          $states = [Collections.Generic.List[object]]::new()
+          try {
+            do {
+              $p.Refresh()
+              if ($p.HasExited) { throw "EXE exited during startup: $($p.ExitCode)" }
+              $states.Add(@{elapsedMs=$watch.ElapsedMilliseconds; handle=$p.MainWindowHandle.ToInt64(); title=$p.MainWindowTitle})
+              if ($p.MainWindowHandle -ne 0 -and $p.MainWindowTitle -like '*MyLovePixel*') { $ready = $true; break }
+              Start-Sleep -Milliseconds 200
+            } while ($watch.ElapsedMilliseconds -lt 20000)
+            if (-not $ready) { throw 'Main window did not become ready within the startup deadline' }
+            Write-Output "Native window ready after $($watch.ElapsedMilliseconds) ms: $($p.MainWindowTitle)"
+            if (-not $p.WaitForInputIdle(10000)) { throw 'Main window message loop did not become responsive' }
+            if (-not $p.CloseMainWindow()) { throw 'Main window rejected the normal close message' }
+            if (-not $p.WaitForExit(15000) -or $p.ExitCode -ne 0) { throw 'EXE did not close normally' }
+            Write-Output 'Native startup and normal shutdown passed; exit code 0'
+          } finally {
+            $states | ConvertTo-Json -Depth 4 | Set-Content artifacts/checks/native-startup.json
+            $crash = Join-Path $env:LOCALAPPDATA 'MyLovePixel/crash.log'
+            if (Test-Path $crash) { Copy-Item $crash artifacts/checks/native-crash.log; Get-Content $crash -Tail 60 }
+            if (-not $p.HasExited) { $p.Kill() }
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: MyLovePixel-Smooth-win64
