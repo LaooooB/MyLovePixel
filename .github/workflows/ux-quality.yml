@@ -1,14 +1,11 @@
 name: UX quality and Windows package
-
 on:
   push:
     branches: ['ux/color-library-comfort']
     paths: ['src/**', 'tests/**', 'tools/**', '.github/workflows/**']
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
   quality:
     runs-on: ubuntu-latest
@@ -25,8 +22,7 @@ jobs:
       - run: dotnet build MyLovePixel.slnx -c Release
       - run: dotnet test MyLovePixel.slnx -c Release --no-build
       - name: Headless desktop UX checks
-        run: |
-          if [ -f tests/MyLovePixel.UxSmoke/MyLovePixel.UxSmoke.csproj ]; then dotnet run --project tests/MyLovePixel.UxSmoke -c Release -- /tmp/ux-evidence; fi
+        run: dotnet run --project tests/MyLovePixel.UxSmoke -c Release -- /tmp/ux-evidence
       - name: Archive exact source
         if: always()
         run: |
@@ -63,9 +59,7 @@ jobs:
       - run: dotnet build MyLovePixel.slnx -c Release
       - run: dotnet test MyLovePixel.slnx -c Release --no-build
       - name: Windows UX checks
-        shell: pwsh
-        run: |
-          if (Test-Path tests/MyLovePixel.UxSmoke/MyLovePixel.UxSmoke.csproj) { dotnet run --project tests/MyLovePixel.UxSmoke -c Release -- "$env:RUNNER_TEMP/ux-evidence"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
+        run: dotnet run --project tests/MyLovePixel.UxSmoke -c Release -- "${{ runner.temp }}/ux-evidence"
       - name: Publish portable EXE
         run: dotnet publish src/MyLovePixel.Desktop/MyLovePixel.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:PublishTrimmed=false -o artifacts/windows
       - name: Native executable startup and shutdown
@@ -109,3 +103,26 @@ jobs:
           name: MyLovePixel-Windows-UX-evidence
           path: ${{ runner.temp }}/ux-evidence/
           if-no-files-found: ignore
+  materialize:
+    needs: [quality, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ux/color-library-comfort
+          fetch-depth: 0
+      - name: Preserve the tested source as regular files
+        env:
+          VERIFIED_SHA: ${{ github.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$VERIFIED_SHA" || { echo 'Branch advanced; refusing stale materialization'; exit 1; }
+          if [ ! -f tools/ux-upgrade/apply.py ]; then exit 0; fi
+          python3 tools/ux-upgrade/apply.py
+          git add src/ tests/
+          git rm -r tools/ux-upgrade
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'chore: preserve Windows-verified UX source and remove migration scaffolding'
+          git push origin HEAD:refs/heads/ux/color-library-comfort

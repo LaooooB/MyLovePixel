@@ -1,29 +1,12 @@
-name: Commit verified UX source
+# Reserved for future manual release processes. Verified source materialization
+# is part of ux-quality.yml so it is gated by both platform checks.
+name: Reserved UX release maintenance
 on:
-  workflow_run:
-    workflows: ['UX quality and Windows package']
-    types: [completed]
+  workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
 jobs:
-  materialize:
-    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'ux/color-library-comfort'
+  information:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ux/color-library-comfort
-          fetch-depth: 0
-      - name: Preserve the checked source as regular files
-        env:
-          VERIFIED_SHA: ${{ github.event.workflow_run.head_sha }}
-        run: |
-          test "$(git rev-parse HEAD)" = "$VERIFIED_SHA" || { echo 'Branch advanced; refusing stale materialization'; exit 1; }
-          if [ ! -f tools/ux-upgrade/apply.py ]; then exit 0; fi
-          python3 tools/ux-upgrade/apply.py
-          git add src/
-          git rm -r tools/ux-upgrade
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'chore: commit the Windows-verified UX source and remove migration scaffolding'
-          git push origin HEAD:refs/heads/ux/color-library-comfort
+      - run: echo 'Use UX quality and Windows package for build and release verification.'
