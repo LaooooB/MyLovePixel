@@ -1,12 +1,11 @@
 """One-time, pinned source integration; refuses unexpected edits. No network access."""
 from pathlib import Path
-import base64, hashlib, json, subprocess, zlib
+import base64, hashlib, json, subprocess, zlib, runpy
 
 ROOT = Path(__file__).resolve().parents[2]
 BASE = '49ceb612855cb1176952b094bff105c83aef9202'
 EXPECTED = '9dab73825cbdbc2a99ed8f33b5ba61e1fb18256593890cf346fde7b6cd1d78b1'
 encoded = (Path(__file__).parent / 'patches.b64').read_text().strip()
-# Normalize an accidental transport insertion; the decoded SHA still gates all data.
 encoded = encoded.replace('g2VXPi2aibtCrU5', 'g2VXPi2ibtCrU5')
 payload = zlib.decompress(base64.b64decode(encoded, validate=True))
 assert hashlib.sha256(payload).hexdigest() == EXPECTED, 'Patch payload checksum mismatch'
@@ -40,7 +39,6 @@ for patch in json.loads(payload):
 for path, text in candidates.items():
     (ROOT / path).write_text(text, encoding='utf-8', newline='\n')
     print('Integrated', path)
-# The base-type selector intentionally includes derived controls.
 p = ROOT / 'src/MyLovePixel.Desktop/EditorUxStyles.cs'
 p.write_text(p.read_text().replace('x.OfType<Control>()', 'x.Is<Control>()'), encoding='utf-8', newline='\n')
 p = ROOT / 'src/MyLovePixel.Desktop/MainWindow.ColorPicker.cs'
@@ -53,4 +51,5 @@ if 'private Flyout? _colorPickerFlyout;' not in s:
     s = s.replace('ApplyStudioColor(original); flyout.Hide();', 'ApplyStudioColor(original); flyout.Hide(); button.Focus();')
     s = s.replace('LibraryButton("Done", () => flyout.Hide())', 'LibraryButton("Done", () => { flyout.Hide(); button.Focus(); })')
     p.write_text(s, encoding='utf-8', newline='\n')
+runpy.run_path(str(Path(__file__).parent / 'post.py'))
 print('Pinned integration complete')

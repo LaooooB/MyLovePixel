@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/MyLovePixel.Desktop/MyLovePixel.Desktop.csproj" />
+    <PackageReference Include="Avalonia.Headless" VersionOverride="12.1.1" />
+  </ItemGroup>
+</Project>
