@@ -1,0 +1,29 @@
+name: Commit verified UX source
+on:
+  workflow_run:
+    workflows: ['UX quality and Windows package']
+    types: [completed]
+permissions:
+  contents: write
+jobs:
+  materialize:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'ux/color-library-comfort'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ux/color-library-comfort
+          fetch-depth: 0
+      - name: Preserve the checked source as regular files
+        env:
+          VERIFIED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$VERIFIED_SHA" || { echo 'Branch advanced; refusing stale materialization'; exit 1; }
+          if [ ! -f tools/ux-upgrade/apply.py ]; then exit 0; fi
+          python3 tools/ux-upgrade/apply.py
+          git add src/
+          git rm -r tools/ux-upgrade
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'chore: commit the Windows-verified UX source and remove migration scaffolding'
+          git push origin HEAD:refs/heads/ux/color-library-comfort
