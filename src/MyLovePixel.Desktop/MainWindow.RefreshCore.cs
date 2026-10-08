@@ -44,7 +44,7 @@ public sealed partial class MainWindow
             RefreshVisibleInspector(_tilesPanel, stamp + ":" + _selectedTilemap + ":" + _selectedTile, RefreshTiles);
             RefreshVisibleInspector(_animationPanel, stamp, RefreshAnimation);
             RefreshVisibleInspector(_pluginsPanel, stamp, RefreshPlugins);
-            if (!_recoveryUiLoaded && _recoveryPanel.GetVisualRoot() is not null && _recoveryPanel.IsEffectivelyVisible) RefreshRecovery();
+            if (!_recoveryUiLoaded && TopLevel.GetTopLevel(_recoveryPanel) is not null && _recoveryPanel.IsEffectivelyVisible) RefreshRecovery();
             RefreshTimeline();
             RefreshStatus();
         }

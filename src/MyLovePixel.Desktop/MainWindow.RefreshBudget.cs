@@ -18,7 +18,7 @@ public sealed partial class MainWindow
     // cannot steal an input frame to rebuild controls or discover files on disk.
     private void RefreshVisibleInspector(Control panel, string stamp, Action refresh)
     {
-        if (panel.GetVisualRoot() is null || !panel.IsEffectivelyVisible || panel.IsKeyboardFocusWithin) return;
+        if (TopLevel.GetTopLevel(panel) is null || !panel.IsEffectivelyVisible || panel.IsKeyboardFocusWithin) return;
         if (_inspectorStamps.TryGetValue(panel, out var previous) && previous == stamp) return;
         refresh();
         _inspectorStamps[panel] = stamp;

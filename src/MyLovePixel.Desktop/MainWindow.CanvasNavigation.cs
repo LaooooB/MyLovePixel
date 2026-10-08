@@ -104,7 +104,7 @@ public sealed partial class MainWindow
         }, RoutingStrategies.Tunnel);
         AddHandler(KeyDownEvent, (_, e) =>
         {
-            if (e.Key == Key.Space && e.KeyModifiers == KeyModifiers.None && !IsTextEntry(e.Source))
+            if (e.Key == Key.Space && e.KeyModifiers == KeyModifiers.None && IsCanvasShortcutSource(e.Source))
             { _navigationSpaceHeld = true; e.Handled = true; return; }
             if (e.Key != Key.Escape || _panPointer is null) return;
             EndCanvasPan(); e.Handled = true;
@@ -124,8 +124,10 @@ public sealed partial class MainWindow
 
     private static bool IsScrollbarSource(object? source) => source is Control control &&
         (control is ScrollBar || control.GetVisualAncestors().OfType<ScrollBar>().Any());
-    private static bool IsTextEntry(object? source) => source is Control control &&
-        (control is TextBox or NumericUpDown or ComboBox || control.GetVisualAncestors().Any(x => x is TextBox or NumericUpDown or ComboBox));
+    // Space belongs to buttons and form fields when they own keyboard focus.
+    private bool IsCanvasShortcutSource(object? source) => source is Control control &&
+        (ReferenceEquals(control, this) || ReferenceEquals(control, _canvasScroll) ||
+         ReferenceEquals(control, _canvas) || control.GetVisualAncestors().Any(x => ReferenceEquals(x, _canvas)));
 
     private void EndCanvasPan()
     {
