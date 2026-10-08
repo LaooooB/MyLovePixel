@@ -31,15 +31,14 @@ internal sealed partial class CanvasBitmapCache
 
     private static Bitmap ReduceImage(Bitmap source, PixelSize size)
     {
-        // Skia's CreateScaledBitmap accepts only immutable bitmap implementations.
-        // Draw into a new target instead; this supports the writable source and
-        // premultiplied-alpha filtering without touching original RGBA.
+        // The Skia backend cannot CreateScaledBitmap from a WriteableBitmap.
+        // A new drawing target supports writable input and alpha-aware filtering.
         var result = new RenderTargetBitmap(size, new Vector(96, 96));
         try
         {
             using (var context = result.CreateDrawingContext())
             using (context.PushRenderOptions(new RenderOptions { BitmapInterpolationMode = BitmapInterpolationMode.HighQuality }))
-                context.DrawImage(source, new Rect(source.Size), new Rect(size.Width, size.Height));
+                context.DrawImage(source, new Rect(source.Size), new Rect(0, 0, size.Width, size.Height));
             return result;
         }
         catch
