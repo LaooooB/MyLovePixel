@@ -26,7 +26,7 @@ public sealed partial class PixelCanvasView
     {
         var rect = new Rect(0, 0, presentation.Size.Width * _zoom, presentation.Size.Height * _zoom);
         context.FillRectangle(_displayBackdrop, rect);
-        _displayBitmap.Draw(context, rect);
+        _displayBitmap.Draw(context, rect, GetVisibleCanvasRect());
     }
 
     public void ReleaseDisplayResources() => _displayBitmap.Dispose();

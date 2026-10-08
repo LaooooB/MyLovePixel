@@ -368,10 +368,11 @@ public sealed partial class MainWindow
         var canvas = session.CaptureSnapshot().Canvas.Size;
         if (canvas.Width <= 0 || canvas.Height <= 0) return;
 
-        var availableWidth = Math.Max(240d, Bounds.Width - EditorThemeTokens.ToolRailWidth - EditorThemeTokens.RightPanelWidth - 120d);
-        var availableHeight = Math.Max(220d, Bounds.Height - EditorThemeTokens.TimelineHeight - 170d);
-        var zoom = Math.Min(availableWidth / canvas.Width, availableHeight / canvas.Height) * 0.9d;
-        SetZoom(Math.Clamp(zoom, 0.125d, 32d));
+        var availableWidth = Math.Max(1d, (_canvasScroll?.Viewport.Width ?? 640d) - 100d);
+        var availableHeight = Math.Max(1d, (_canvasScroll?.Viewport.Height ?? 480d) - 100d);
+        var zoom = Math.Min(availableWidth / canvas.Width, availableHeight / canvas.Height);
+        SetZoom(Math.Clamp(zoom, DocumentSession.MinimumZoom, 32d));
+        CenterCanvasViewport();
     }
 }
 

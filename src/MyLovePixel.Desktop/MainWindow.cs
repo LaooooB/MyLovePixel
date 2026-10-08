@@ -105,7 +105,7 @@ public sealed partial class MainWindow : Window
         _canvas.PickColorRequested = PickCanvasColor;
         _canvas.PointerInput = DispatchCanvasPointer;
         _canvas.CancelPointerInput = CancelCanvasInteraction;
-        _canvas.HoverPixelChanged = value => { _hover = value; RefreshStatus(); };
+        _canvas.HoverPixelChanged = value => { _hover = value; QueuePointerStatus(); };
         _canvas.SecondaryPickRequested = ErasePixelFromCanvas;
         _canvas.ZoomFactorRequested = ChangeZoom;
 
@@ -234,7 +234,7 @@ public sealed partial class MainWindow : Window
         Grid.SetColumn(rail, 0);
         grid.Children.Add(rail);
 
-        var canvasHost = new ScrollViewer
+        var canvasHost = _canvasScroll = new ScrollViewer
         {
             Background = EditorThemeTokens.CanvasWorkspace,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
@@ -251,6 +251,7 @@ public sealed partial class MainWindow : Window
                 Child = _canvas,
             },
         };
+        InitializeCanvasNavigation(canvasHost);
         var canvasColumn = new DockPanel();
         var comfort = BuildCanvasComfortBar();
         DockPanel.SetDock(comfort, Dock.Top);
@@ -331,7 +332,11 @@ public sealed partial class MainWindow : Window
         root.Children.Add(preview);
         // Give the color library the full inspector height when Colors is selected.
         preview.IsVisible = tabs.SelectedIndex != 1;
-        tabs.SelectionChanged += (_, _) => preview.IsVisible = tabs.SelectedIndex != 1;
+        tabs.SelectionChanged += (_, _) =>
+        {
+            preview.IsVisible = tabs.SelectedIndex != 1;
+            if (preview.IsVisible) _quickPreview.SetPresentation(_canvas.Presentation);
+        };
 
         root.Children.Add(tabs);
         return root;

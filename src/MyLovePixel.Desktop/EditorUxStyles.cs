@@ -1,7 +1,9 @@
 using Avalonia;
 using Avalonia.Animation;
+using Avalonia.Animation.Easings;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Controls.Presenters;
 using Avalonia.Media;
 using Avalonia.Styling;
 using MyLovePixel.Application;
@@ -10,9 +12,13 @@ namespace MyLovePixel.Desktop;
 
 internal static class EditorUxStyles
 {
+    private static BrushTransition Fade(AvaloniaProperty property) => new()
+    {
+        Property = property, Duration = TimeSpan.FromMilliseconds(160), Easing = new CubicEaseOut(),
+    };
+
     public static void Apply(Avalonia.Application app)
     {
-        // A full dwell is required for every control. No instant follow-on popups.
         app.Styles.Add(new Style(x => x.Is<Control>())
         {
             Setters =
@@ -28,29 +34,78 @@ internal static class EditorUxStyles
         {
             Setters = { new Setter(ToolTip.MaxWidthProperty, 340d), new Setter(ToolTip.FontSizeProperty, 12d) },
         });
-        app.Styles.Add(new Style(x => x.OfType<Button>())
+        // Fluent paints hover states on the presenter, bypassing Button.Background.
+        // Animate that exact element; keep bounds fixed through hover/focus/press.
+        app.Styles.Add(new Style(x => x.Is<Button>().Template().OfType<ContentPresenter>().Name("PART_ContentPresenter"))
         {
-            Setters = { new Setter(Button.TransitionsProperty, new Transitions
+            Setters = { new Setter(ContentPresenter.TransitionsProperty, new Transitions
             {
-                new BrushTransition { Property = Button.BackgroundProperty, Duration = TimeSpan.FromMilliseconds(120) },
-                new BrushTransition { Property = Button.BorderBrushProperty, Duration = TimeSpan.FromMilliseconds(120) },
+                Fade(ContentPresenter.BackgroundProperty), Fade(ContentPresenter.BorderBrushProperty), Fade(ContentPresenter.ForegroundProperty),
             }) },
         });
-        app.Styles.Add(new Style(x => x.OfType<Button>().Class(":focus-visible"))
+        app.Styles.Add(new Style(x => x.Is<Button>().Class(":pointerover").Template().OfType<ContentPresenter>().Name("PART_ContentPresenter"))
         {
-            Setters = { new Setter(Button.BorderBrushProperty, EditorThemeTokens.Accent), new Setter(Button.BorderThicknessProperty, new Thickness(2)) },
+            Setters =
+            {
+                new Setter(ContentPresenter.BackgroundProperty, EditorThemeTokens.SurfaceHover),
+                new Setter(ContentPresenter.BorderBrushProperty, EditorThemeTokens.StrongBorder),
+                new Setter(ContentPresenter.ForegroundProperty, EditorThemeTokens.TextPrimary),
+            },
         });
-        app.Styles.Add(new Style(x => x.OfType<Button>().Class("danger"))
+        app.Styles.Add(new Style(x => x.Is<Button>().Class("selected").Class(":pointerover").Template().OfType<ContentPresenter>().Name("PART_ContentPresenter"))
+        {
+            Setters =
+            {
+                new Setter(ContentPresenter.BackgroundProperty, EditorThemeTokens.SurfaceSelected),
+                new Setter(ContentPresenter.BorderBrushProperty, EditorThemeTokens.Accent),
+                new Setter(ContentPresenter.ForegroundProperty, EditorThemeTokens.Accent),
+            },
+        });
+        app.Styles.Add(new Style(x => x.Is<Button>().Class("primary").Class(":pointerover").Template().OfType<ContentPresenter>().Name("PART_ContentPresenter"))
+        {
+            Setters =
+            {
+                new Setter(ContentPresenter.BackgroundProperty, EditorThemeTokens.AccentHover),
+                new Setter(ContentPresenter.BorderBrushProperty, EditorThemeTokens.Accent),
+                new Setter(ContentPresenter.ForegroundProperty, EditorThemeTokens.AccentForeground),
+            },
+        });
+        app.Styles.Add(new Style(x => x.Is<Button>().Class(":pressed").Template().OfType<ContentPresenter>().Name("PART_ContentPresenter"))
+        {
+            Setters =
+            {
+                new Setter(ContentPresenter.BackgroundProperty, EditorThemeTokens.SurfaceSelected),
+                new Setter(ContentPresenter.BorderBrushProperty, EditorThemeTokens.Accent),
+                // A press is immediate; release transitions smoothly back to hover.
+                new Setter(ContentPresenter.TransitionsProperty, new Transitions()),
+            },
+        });
+        app.Styles.Add(new Style(x => x.Is<Button>().Class(":pressed"))
+        {
+            Setters = { new Setter(Button.RenderTransformProperty, null) },
+        });
+        app.Styles.Add(new Style(x => x.Is<Button>().Class(":focus-visible"))
+        {
+            Setters = { new Setter(Button.BorderBrushProperty, EditorThemeTokens.Accent) },
+        });
+        app.Styles.Add(new Style(x => x.Is<Button>().Class("danger"))
         {
             Setters = { new Setter(Button.ForegroundProperty, EditorThemeTokens.Danger) },
         });
-        app.Styles.Add(new Style(x => x.OfType<Button>().Class("selected").Class(":pointerover"))
+        app.Styles.Add(new Style(x => x.OfType<TabItem>().Template().OfType<Border>().Name("PART_LayoutRoot"))
         {
-            Setters = { new Setter(Button.BackgroundProperty, EditorThemeTokens.SurfaceSelected), new Setter(Button.BorderBrushProperty, EditorThemeTokens.Accent) },
+            Setters = { new Setter(Border.TransitionsProperty, new Transitions
+            {
+                Fade(Border.BackgroundProperty), Fade(Border.BorderBrushProperty),
+            }) },
         });
-        app.Styles.Add(new Style(x => x.OfType<TabItem>().Class(":pointerover"))
+        app.Styles.Add(new Style(x => x.OfType<TabItem>().Class(":pointerover").Template().OfType<Border>().Name("PART_LayoutRoot"))
         {
-            Setters = { new Setter(TabItem.ForegroundProperty, EditorThemeTokens.TextPrimary) },
+            Setters = { new Setter(Border.BackgroundProperty, EditorThemeTokens.SurfaceHover) },
+        });
+        app.Styles.Add(new Style(x => x.OfType<TabItem>().Class(":selected").Class(":pointerover").Template().OfType<Border>().Name("PART_LayoutRoot"))
+        {
+            Setters = { new Setter(Border.BackgroundProperty, EditorThemeTokens.SurfaceSelected) },
         });
         app.Styles.Add(new Style(x => x.OfType<TabItem>().Class(":selected"))
         {

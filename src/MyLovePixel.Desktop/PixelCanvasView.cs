@@ -59,6 +59,8 @@ public sealed partial class PixelCanvasView : Control
     public PixelCanvasView()
     {
         ClipToBounds = true;
+        UseLayoutRounding = false;
+        EffectiveViewportChanged += (_, e) => { _visibleCanvasRect = e.EffectiveViewport; InvalidateVisual(); };
         Focusable = true;
         PointerCaptureLost += (_, _) =>
         {
@@ -141,15 +143,22 @@ public sealed partial class PixelCanvasView : Control
         var presentation = _presentation;
         if (presentation is null) return;
 
+        var visible = GetVisibleCanvasRect();
+        if (visible.Width <= 0 || visible.Height <= 0) return;
+        using var clip = context.PushClip(visible);
         DrawDisplayBitmap(context, presentation);
 
         if (_grid && _zoom >= 8d)
         {
             var pen = new Pen(EditorThemeTokens.GridLine, 1d);
-            for (var x = 1; x < presentation.Size.Width; x++)
-                context.DrawLine(pen, new Point(x * _zoom, 0), new Point(x * _zoom, presentation.Size.Height * _zoom));
-            for (var y = 1; y < presentation.Size.Height; y++)
-                context.DrawLine(pen, new Point(0, y * _zoom), new Point(presentation.Size.Width * _zoom, y * _zoom));
+            var left = Math.Max(1, (int)Math.Ceiling(visible.Left / _zoom));
+            var right = Math.Min(presentation.Size.Width - 1, (int)Math.Floor(visible.Right / _zoom));
+            var top = Math.Max(1, (int)Math.Ceiling(visible.Top / _zoom));
+            var bottom = Math.Min(presentation.Size.Height - 1, (int)Math.Floor(visible.Bottom / _zoom));
+            for (var x = left; x <= right; x++)
+                context.DrawLine(pen, new Point(x * _zoom, visible.Top), new Point(x * _zoom, visible.Bottom));
+            for (var y = top; y <= bottom; y++)
+                context.DrawLine(pen, new Point(visible.Left, y * _zoom), new Point(visible.Right, y * _zoom));
         }
 
         if (_selection is { } selection)
@@ -184,6 +193,7 @@ public sealed partial class PixelCanvasView : Control
         Focus();
         UpdateHover(e);
         var point = e.GetCurrentPoint(this);
+        if (point.Properties.IsMiddleButtonPressed) { e.Handled = true; return; }
         if (point.Properties.IsLeftButtonPressed && _hoveredPixel is { } picked &&
             (IsColorPickActive?.Invoke() == true || (e.KeyModifiers & KeyModifiers.Alt) != 0))
         {

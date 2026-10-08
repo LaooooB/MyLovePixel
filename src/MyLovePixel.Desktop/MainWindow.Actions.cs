@@ -185,10 +185,16 @@ public sealed partial class MainWindow
 
     private void OnWorkspaceChanged(object? sender, EventArgs e)
     {
+        var switched = !ReferenceEquals(_observedSession, Current());
         ObserveCurrentSession();
+        QueueRefreshAll();
+        if (!switched) return; // Saving a project must not move its camera.
         _timelineStart = 0;
         _selectionStart = null;
-        QueueRefreshAll();
+        StopCanvasZoom();
+        EndCanvasPan();
+        var session = Current();
+        Dispatcher.UIThread.Post(() => { if (ReferenceEquals(Current(), session)) FitCanvas(); }, DispatcherPriority.Background);
     }
 
     private void ObserveCurrentSession()
@@ -201,6 +207,29 @@ public sealed partial class MainWindow
 
     private void OnSessionChanged(object? sender, EventArgs e)
     {
+        if (!ReferenceEquals(sender, Current())) return;
+        if (e is SessionStateChangedEventArgs state)
+        {
+            switch (state.Kind)
+            {
+                case SessionStateChangeKind.Viewport:
+                    _canvas.SetViewZoom(Current()!.Zoom);
+                    RefreshStatus();
+                    return;
+                case SessionStateChangeKind.Colors:
+                    RefreshPalette();
+                    RefreshConvenienceUi();
+                    return;
+                case SessionStateChangeKind.ToolOptions:
+                    return; // The originating editor owns its value and pointer capture.
+                case SessionStateChangeKind.ToolSelection:
+                    RefreshTools(); RefreshToolOptions(); QueueCanvasRefresh();
+                    return;
+                case SessionStateChangeKind.Preview:
+                    QueueCanvasRefresh();
+                    return;
+            }
+        }
         if (_canvasPointerActive) QueueCanvasRefresh();
         else QueueRefreshAll();
     }
@@ -273,7 +302,7 @@ public sealed partial class MainWindow
 
     private void RecoverCandidate(string id) { Safe(() => _recovery.Recover(id)); RefreshAll(); }
     private void DismissCandidate(string id) { Safe(() => _recovery.Dismiss(id)); RefreshRecovery(); }
-    private void ChangeZoom(double factor) { if (Current() is { } s) s.SetZoom(s.Zoom * factor); }
-    private void SetZoom(double zoom) => Current()?.SetZoom(zoom);
+    private void ChangeZoom(double factor) => AnimateCanvasZoom(factor, CanvasViewportCenter());
+    private void SetZoom(double zoom) { StopCanvasZoom(); ApplyCanvasZoom(zoom, CanvasViewportCenter()); }
     private DocumentSession? Current() => _workspace.CurrentSession;
 }

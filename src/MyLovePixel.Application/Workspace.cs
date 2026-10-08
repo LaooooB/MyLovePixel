@@ -10,7 +10,7 @@ using MyLovePixel.Tools;
 
 namespace MyLovePixel.Application;
 
-public sealed class DocumentSession
+public sealed partial class DocumentSession
 {
     private readonly FrameRenderer _renderer = new();
     private readonly Dictionary<ResourceId, List<IntRect>> _pendingDirtySurfaceRegions = [];
@@ -58,7 +58,9 @@ public sealed class DocumentSession
     public bool HasEditableCel => _toolHost is not null;
     public bool ShowDirtyRegions { get; private set; }
 
-    public DocumentSnapshot CaptureSnapshot() => DocumentSnapshot.Capture(Document);
+    private DocumentSnapshot? _cachedSnapshot;
+
+    public DocumentSnapshot CaptureSnapshot() => _cachedSnapshot ??= DocumentSnapshot.Capture(Document);
 
     public DocumentChange Execute(ICommand command)
     {
@@ -106,7 +108,7 @@ public sealed class DocumentSession
         if (string.Equals(_activeToolId, tool.Descriptor.Id, StringComparison.Ordinal)) return;
         _activeToolId = tool.Descriptor.Id;
         _toolHost?.SetActiveTool(tool);
-        StateChanged?.Invoke(this, EventArgs.Empty);
+        StateChanged?.Invoke(this, SessionStateChangedEventArgs.ToolSelection);
     }
 
     public IReadOnlyList<ToolPaletteItem> GetTools() => BuiltinToolCatalog.Describe(_activeToolId);
@@ -120,17 +122,18 @@ public sealed class DocumentSession
     {
         if (_toolHost is null) throw new InvalidOperationException("The current Layer/Frame has no editable Cel.");
         _toolHost.SetOption(id, value);
-        StateChanged?.Invoke(this, EventArgs.Empty);
+        StateChanged?.Invoke(this, SessionStateChangedEventArgs.ToolOptions);
     }
 
     public ToolColorState GetToolColors() => new(_primaryColor, _secondaryColor);
 
     public void SetToolColors(Rgba32 primary, Rgba32 secondary)
     {
+        if (_primaryColor == primary && _secondaryColor == secondary) return;
         _primaryColor = primary;
         _secondaryColor = secondary;
         _toolHost?.SetColors(primary, secondary);
-        StateChanged?.Invoke(this, EventArgs.Empty);
+        StateChanged?.Invoke(this, SessionStateChangedEventArgs.Colors);
     }
 
     public ToolDispatchPresentation DispatchPointer(EditorPointerEvent pointerEvent)
@@ -144,7 +147,7 @@ public sealed class DocumentSession
 
         var result = _toolHost.Dispatch(ToolPresentationMapper.ToToolEvent(pointerEvent));
         if (!result.Committed)
-            StateChanged?.Invoke(this, EventArgs.Empty);
+            StateChanged?.Invoke(this, SessionStateChangedEventArgs.Preview);
         return new ToolDispatchPresentation(result.Consumed, result.Committed, result.Preview is not null);
     }
 
@@ -153,16 +156,16 @@ public sealed class DocumentSession
         if (_toolHost is null) return;
         var hadPreview = _toolHost.Preview is not null || _toolHost.ActiveTool.IsInteracting;
         _toolHost.CancelInteraction();
-        if (hadPreview) StateChanged?.Invoke(this, EventArgs.Empty);
+        if (hadPreview) StateChanged?.Invoke(this, SessionStateChangedEventArgs.Preview);
     }
 
     public void SetZoom(double zoom)
     {
         if (!double.IsFinite(zoom) || zoom <= 0d) throw new ArgumentOutOfRangeException(nameof(zoom));
-        var clamped = Math.Clamp(zoom, 0.125d, 128d);
+        var clamped = Math.Clamp(zoom, MinimumZoom, MaximumZoom);
         if (Math.Abs(Zoom - clamped) < double.Epsilon) return;
         Zoom = clamped;
-        StateChanged?.Invoke(this, EventArgs.Empty);
+        StateChanged?.Invoke(this, SessionStateChangedEventArgs.Viewport);
     }
 
     public void SetDirtyRegionVisualization(bool enabled)
@@ -183,7 +186,7 @@ public sealed class DocumentSession
         var dirtyRegions = ShowDirtyRegions && result.UploadPlan.Mode == TextureUploadMode.Partial
             ? result.UploadPlan.Regions
             : Array.Empty<IntRect>();
-        return new CanvasPresentation(
+        return CanvasPresentation.FromImmutableRgba(
             CurrentFrameId,
             result.Surface.Size,
             result.Surface.Bytes,
@@ -336,6 +339,7 @@ public sealed class DocumentSession
 
     private void OnDocumentChanged(object? sender, DocumentChange change)
     {
+        _cachedSnapshot = null;
         IsDirty = true;
         foreach (var dirty in change.DirtySurfaces)
         {
@@ -445,38 +449,6 @@ public sealed class EditorWorkspace
         ArgumentNullException.ThrowIfNull(session);
         if (!_sessions.Contains(session)) throw new InvalidOperationException("Document session does not belong to this workspace.");
     }
-}
-
-public sealed class CanvasPresentation
-{
-    private readonly byte[] _rgba;
-    private readonly CanvasPreviewPixel[] _previewPixels;
-    private readonly IntRect[] _dirtyRegions;
-
-    public CanvasPresentation(
-        FrameId frameId,
-        IntSize size,
-        ReadOnlyMemory<byte> rgba,
-        IEnumerable<CanvasPreviewPixel>? previewPixels = null,
-        IEnumerable<IntRect>? dirtyRegions = null,
-        CanvasRenderDiagnostics? diagnostics = null)
-    {
-        var expected = checked(size.Width * size.Height * 4);
-        if (rgba.Length != expected) throw new ArgumentException("Canvas RGBA length does not match size.", nameof(rgba));
-        FrameId = frameId;
-        Size = size;
-        _rgba = rgba.ToArray();
-        _previewPixels = (previewPixels ?? Array.Empty<CanvasPreviewPixel>()).ToArray();
-        _dirtyRegions = (dirtyRegions ?? Array.Empty<IntRect>()).ToArray();
-        Diagnostics = diagnostics;
-    }
-
-    public FrameId FrameId { get; }
-    public IntSize Size { get; }
-    public ReadOnlyMemory<byte> Rgba => _rgba;
-    public IReadOnlyList<CanvasPreviewPixel> PreviewPixels => Array.AsReadOnly(_previewPixels);
-    public IReadOnlyList<IntRect> DirtyRegions => Array.AsReadOnly(_dirtyRegions);
-    public CanvasRenderDiagnostics? Diagnostics { get; }
 }
 
 public sealed record CanvasRenderDiagnostics(

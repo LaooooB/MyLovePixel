@@ -29,6 +29,7 @@ public sealed partial class PluginWorkspaceRuntime
     {
         EnsureOwned(session);
         var baseline = session.RenderCanvas();
+        if (onion is null && !_host.Effects.Values.Any()) return DecorateCanvas(session, baseline);
         ReadOnlyMemory<byte> rgba;
         if (onion is null)
         {
@@ -41,7 +42,7 @@ public sealed partial class PluginWorkspaceRuntime
                 new FrameRenderRequest(session.CurrentFrameId),
                 new OnionSkinSettings(onion.PreviousFrames, onion.NextFrames, onion.Opacity, onion.DepthFalloff)).Surface.Bytes;
         }
-        return DecorateCanvas(session, new CanvasPresentation(
+        return DecorateCanvas(session, CanvasPresentation.FromImmutableRgba(
             baseline.FrameId,
             baseline.Size,
             rgba,

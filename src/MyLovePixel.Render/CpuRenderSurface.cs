@@ -50,6 +50,7 @@ public interface IRenderTarget
 internal sealed class CpuRenderTarget : IRenderTarget
 {
     private readonly byte[] _pixels;
+    private CpuRenderSurface? _snapshot;
 
     public CpuRenderTarget(IntSize size)
     {
@@ -74,6 +75,7 @@ internal sealed class CpuRenderTarget : IRenderTarget
     {
         ValidateCoordinates(x, y);
         var offset = Offset(x, y);
+        _snapshot = null;
         _pixels[offset] = color.R;
         _pixels[offset + 1] = color.G;
         _pixels[offset + 2] = color.B;
@@ -84,6 +86,7 @@ internal sealed class CpuRenderTarget : IRenderTarget
     {
         var clipped = RenderMath.Intersect(region, RenderMath.Bounds(Size));
         if (clipped.IsEmpty) return;
+        _snapshot = null;
 
         for (var y = clipped.Y; y < clipped.Bottom; y++)
         {
@@ -92,7 +95,7 @@ internal sealed class CpuRenderTarget : IRenderTarget
         }
     }
 
-    public CpuRenderSurface Snapshot() => new(Size, (byte[])_pixels.Clone());
+    public CpuRenderSurface Snapshot() => _snapshot ??= new(Size, (byte[])_pixels.Clone());
 
     private int Offset(int x, int y) => ((y * Size.Width) + x) * 4;
 

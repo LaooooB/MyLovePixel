@@ -7,12 +7,16 @@ using MyLovePixel.Application;
 
 namespace MyLovePixel.Desktop;
 
-/// <summary>Owns only a disposable display copy; pointer hover never uploads a new bitmap.</summary>
+/// <summary>Retains image storage across navigation; previews update only changed pixels.</summary>
 internal sealed class CanvasBitmapCache : IDisposable
 {
     private WriteableBitmap? _bitmap;
     private CanvasPresentation? _source;
+    private ReadOnlyMemory<byte> _sourcePixels;
+    private Dictionary<int, int> _preview = [];
     private bool _inverted;
+    public long FullUploadCount { get; private set; }
+    public long PreviewPixelWriteCount { get; private set; }
 
     public void Update(CanvasPresentation? presentation, bool invert = false)
     {
@@ -20,42 +24,87 @@ internal sealed class CanvasBitmapCache : IDisposable
         if (ReferenceEquals(presentation, _source) && invert == _inverted && _bitmap is not null) return;
         var width = presentation.Size.Width;
         var height = presentation.Size.Height;
-        var expected = checked(width * height * 4);
-        if (width <= 0 || height <= 0 || presentation.Rgba.Length != expected)
+        if (width <= 0 || height <= 0 || presentation.Rgba.Length != checked(width * height * 4))
             throw new InvalidDataException("Invalid canvas display buffer.");
-        var bytes = CanvasDisplaySettings.CopyRgbaForDisplay(presentation.Rgba.Span, invert);
+        var resized = _bitmap is null || _bitmap.PixelSize.Width != width || _bitmap.PixelSize.Height != height;
+        var fullUpload = resized || invert != _inverted || !presentation.Rgba.Equals(_sourcePixels);
+        var nextPreview = new Dictionary<int, int>(presentation.PreviewPixels.Count);
         foreach (var pixel in presentation.PreviewPixels)
         {
             if ((uint)pixel.Point.X >= (uint)width || (uint)pixel.Point.Y >= (uint)height) continue;
-            var i = (pixel.Point.Y * width + pixel.Point.X) * 4;
-            var color = pixel.Color;
-            bytes[i] = invert ? (byte)(255 - color.R) : color.R;
-            bytes[i + 1] = invert ? (byte)(255 - color.G) : color.G;
-            bytes[i + 2] = invert ? (byte)(255 - color.B) : color.B;
-            bytes[i + 3] = color.A;
+            var c = pixel.Color;
+            nextPreview[pixel.Point.Y * width + pixel.Point.X] = Pack(c.R, c.G, c.B, c.A, invert);
         }
-        if (_bitmap is null || _bitmap.PixelSize.Width != width || _bitmap.PixelSize.Height != height)
+        if (resized)
         {
             _bitmap?.Dispose();
             _bitmap = new WriteableBitmap(new PixelSize(width, height), new Vector(96, 96), PixelFormat.Rgba8888, AlphaFormat.Unpremul);
         }
-        using (var framebuffer = _bitmap.Lock())
-            for (var y = 0; y < height; y++)
-                Marshal.Copy(bytes, y * width * 4, IntPtr.Add(framebuffer.Address, y * framebuffer.RowBytes), width * 4);
+        var previewChanged = nextPreview.Count != _preview.Count || nextPreview.Any(p => !_preview.TryGetValue(p.Key, out var value) || value != p.Value);
+        if (fullUpload || previewChanged)
+        {
+            using var framebuffer = _bitmap!.Lock();
+            if (fullUpload)
+            {
+                ReadOnlyMemory<byte> display = invert
+                    ? CanvasDisplaySettings.CopyRgbaForDisplay(presentation.Rgba.Span, true)
+                    : presentation.Rgba;
+                if (!MemoryMarshal.TryGetArray(display, out ArraySegment<byte> segment)) segment = new ArraySegment<byte>(display.ToArray());
+                if (framebuffer.RowBytes == width * 4)
+                    Marshal.Copy(segment.Array!, segment.Offset, framebuffer.Address, display.Length);
+                else
+                    for (var y = 0; y < height; y++)
+                        Marshal.Copy(segment.Array!, segment.Offset + y * width * 4,
+                            IntPtr.Add(framebuffer.Address, y * framebuffer.RowBytes), width * 4);
+                FullUploadCount++;
+            }
+            else
+            {
+                // Restore pixels removed from the previous preview from the unchanged base.
+                var rgba = presentation.Rgba.Span;
+                foreach (var previous in _preview)
+                {
+                    if (nextPreview.ContainsKey(previous.Key)) continue;
+                    var i = previous.Key * 4;
+                    WritePixel(framebuffer, width, previous.Key, Pack(rgba[i], rgba[i + 1], rgba[i + 2], rgba[i + 3], invert));
+                }
+            }
+            foreach (var pixel in nextPreview)
+                if (fullUpload || !_preview.TryGetValue(pixel.Key, out var old) || old != pixel.Value)
+                    WritePixel(framebuffer, width, pixel.Key, pixel.Value);
+        }
         _source = presentation;
+        _sourcePixels = presentation.Rgba;
         _inverted = invert;
+        _preview = nextPreview;
     }
 
-    public void Draw(DrawingContext context, Rect destination)
+    private void WritePixel(ILockedFramebuffer framebuffer, int width, int index, int value)
     {
-        if (_bitmap is not null)
-            context.DrawImage(_bitmap, new Rect(0, 0, _bitmap.PixelSize.Width, _bitmap.PixelSize.Height), destination);
+        var offset = index / width * framebuffer.RowBytes + index % width * 4;
+        Marshal.WriteInt32(framebuffer.Address, offset, value);
+        PreviewPixelWriteCount++;
+    }
+
+    private static int Pack(byte r, byte g, byte b, byte a, bool invert)
+    {
+        if (invert) { r = (byte)(255 - r); g = (byte)(255 - g); b = (byte)(255 - b); }
+        return BitConverter.IsLittleEndian ? r | g << 8 | b << 16 | a << 24 : a | b << 8 | g << 16 | r << 24;
+    }
+
+    public void Draw(DrawingContext context, Rect destination, Rect? visible = null)
+    {
+        if (_bitmap is null || destination.Width <= 0 || destination.Height <= 0) return;
+        var clipped = visible is { } viewport ? destination.Intersect(viewport) : destination;
+        if (clipped.Width <= 0 || clipped.Height <= 0) return;
+        var sx = _bitmap.PixelSize.Width / destination.Width;
+        var sy = _bitmap.PixelSize.Height / destination.Height;
+        context.DrawImage(_bitmap,
+            new Rect((clipped.X - destination.X) * sx, (clipped.Y - destination.Y) * sy, clipped.Width * sx, clipped.Height * sy), clipped);
     }
 
     public void Dispose()
     {
-        _bitmap?.Dispose();
-        _bitmap = null;
-        _source = null;
+        _bitmap?.Dispose(); _bitmap = null; _source = null; _sourcePixels = default; _preview.Clear();
     }
 }
