@@ -39,7 +39,7 @@ internal sealed class PixelPreviewView : Control
         var rect = new Rect((bounds.Width - p.Size.Width * scale) / 2,
             (bounds.Height - p.Size.Height * scale) / 2, p.Size.Width * scale, p.Size.Height * scale);
         context.FillRectangle(_backdrop, rect);
-        _bitmap.Draw(context, rect);
+        _bitmap.Draw(context, rect, renderScaling: TopLevel.GetTopLevel(this)?.RenderScaling ?? 1d);
     }
 
     public PixelPreviewView() => RenderOptions.SetBitmapInterpolationMode(this, BitmapInterpolationMode.HighQuality);

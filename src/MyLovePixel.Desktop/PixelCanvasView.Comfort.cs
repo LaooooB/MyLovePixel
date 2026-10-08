@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using MyLovePixel.Application;
@@ -26,7 +27,7 @@ public sealed partial class PixelCanvasView
     {
         var rect = new Rect(0, 0, presentation.Size.Width * _zoom, presentation.Size.Height * _zoom);
         context.FillRectangle(_displayBackdrop, rect);
-        _displayBitmap.Draw(context, rect, GetVisibleCanvasRect());
+        _displayBitmap.Draw(context, rect, GetVisibleCanvasRect(), TopLevel.GetTopLevel(this)?.RenderScaling ?? 1d);
     }
 
     public void ReleaseDisplayResources() => _displayBitmap.Dispose();

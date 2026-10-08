@@ -34,8 +34,6 @@ internal static class EditorUxStyles
         {
             Setters = { new Setter(ToolTip.MaxWidthProperty, 340d), new Setter(ToolTip.FontSizeProperty, 12d) },
         });
-        // Fluent paints hover states on the presenter, bypassing Button.Background.
-        // Animate that exact element; keep bounds fixed through hover/focus/press.
         app.Styles.Add(new Style(x => x.Is<Button>().Template().OfType<ContentPresenter>().Name("PART_ContentPresenter"))
         {
             Setters = { new Setter(ContentPresenter.TransitionsProperty, new Transitions
@@ -43,6 +41,12 @@ internal static class EditorUxStyles
                 Fade(ContentPresenter.BackgroundProperty), Fade(ContentPresenter.BorderBrushProperty), Fade(ContentPresenter.ForegroundProperty),
             }) },
         });
+        // Explicit resting template states prevent the leave transition from
+        // being replaced by a different TemplateBinding as pointer styles detach.
+        RestingButton(app, null, EditorThemeTokens.SurfaceRaised, EditorThemeTokens.PanelBorder, EditorThemeTokens.TextPrimary);
+        RestingButton(app, "ghost", Brushes.Transparent, Brushes.Transparent, EditorThemeTokens.TextPrimary);
+        RestingButton(app, "selected", EditorThemeTokens.SurfaceSelected, EditorThemeTokens.Accent, EditorThemeTokens.Accent);
+        RestingButton(app, "primary", EditorThemeTokens.Accent, EditorThemeTokens.Accent, EditorThemeTokens.AccentForeground);
         app.Styles.Add(new Style(x => x.Is<Button>().Class(":pointerover").Template().OfType<ContentPresenter>().Name("PART_ContentPresenter"))
         {
             Setters =
@@ -76,7 +80,6 @@ internal static class EditorUxStyles
             {
                 new Setter(ContentPresenter.BackgroundProperty, EditorThemeTokens.SurfaceSelected),
                 new Setter(ContentPresenter.BorderBrushProperty, EditorThemeTokens.Accent),
-                // A press is immediate; release transitions smoothly back to hover.
                 new Setter(ContentPresenter.TransitionsProperty, new Transitions()),
             },
         });
@@ -110,6 +113,24 @@ internal static class EditorUxStyles
         app.Styles.Add(new Style(x => x.OfType<TabItem>().Class(":selected"))
         {
             Setters = { new Setter(TabItem.ForegroundProperty, EditorThemeTokens.Accent) },
+        });
+    }
+
+    private static void RestingButton(Avalonia.Application app, string? @class, IBrush background, IBrush border, IBrush foreground)
+    {
+        app.Styles.Add(new Style(x =>
+        {
+            var selector = x.Is<Button>().Not(s => s.Class(":pointerover"));
+            if (@class is not null) selector = selector.Class(@class);
+            return selector.Template().OfType<ContentPresenter>().Name("PART_ContentPresenter");
+        })
+        {
+            Setters =
+            {
+                new Setter(ContentPresenter.BackgroundProperty, background),
+                new Setter(ContentPresenter.BorderBrushProperty, border),
+                new Setter(ContentPresenter.ForegroundProperty, foreground),
+            },
         });
     }
 }

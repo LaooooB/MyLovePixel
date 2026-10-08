@@ -7,6 +7,7 @@ namespace MyLovePixel.Desktop;
 public sealed partial class PixelCanvasView
 {
     private Rect? _visibleCanvasRect;
+    public long DisplayResampleCount => _displayBitmap.ResampleCount;
     public long DisplayFullUploadCount => _displayBitmap.FullUploadCount;
 
     /// <summary>Camera-only change. No composition, snapshot capture, bitmap upload or inspector rebuild.</summary>

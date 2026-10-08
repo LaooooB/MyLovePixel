@@ -26,6 +26,7 @@ public sealed partial class MainWindow
     private double _zoomTarget;
     private long _zoomStarted;
     private Point _zoomAnchor;
+    private Point _zoomSourceAnchor;
     private DocumentSession? _zoomSession;
 
     private void InitializeCanvasNavigation(ScrollViewer host)
@@ -33,7 +34,9 @@ public sealed partial class MainWindow
         // Tunnel navigation before PixelCanvasView dispatches to drawing tools.
         host.AddHandler(PointerPressedEvent, (_, e) =>
         {
-            if (!e.GetCurrentPoint(host).Properties.IsMiddleButtonPressed || IsScrollbarSource(e.Source)) return;
+            var properties = e.GetCurrentPoint(host).Properties;
+            if (properties.IsLeftButtonPressed && !properties.IsMiddleButtonPressed) { StopCanvasZoom(); return; }
+            if (!properties.IsMiddleButtonPressed || IsScrollbarSource(e.Source)) return;
             StopCanvasZoom();
             if (_canvasPointerActive || _selectionStart is not null) CancelCanvasInteraction();
             _panStart = e.GetPosition(host);
@@ -64,7 +67,6 @@ public sealed partial class MainWindow
             if (e.Delta.Y == 0 || IsScrollbarSource(e.Source)) return;
             e.Handled = true;
             if (_panPointer is not null || e.GetCurrentPoint(host).Properties.IsLeftButtonPressed) return;
-            // Fractional wheel/trackpad deltas are retained instead of rounded to a notch.
             AnimateCanvasZoom(Math.Pow(1.2, Math.Clamp(e.Delta.Y, -8d, 8d)), e.GetPosition(host));
         }, RoutingStrategies.Tunnel);
         AddHandler(KeyDownEvent, (_, e) =>
@@ -74,7 +76,6 @@ public sealed partial class MainWindow
         }, RoutingStrategies.Tunnel);
         host.SizeChanged += (_, _) =>
         {
-            // Half a viewport of overscroll keeps a fitted/small canvas pannable too.
             if (_comfortCanvasFrame is not null)
             {
                 _comfortCanvasFrame.UseLayoutRounding = false;
@@ -109,9 +110,11 @@ public sealed partial class MainWindow
             return;
         }
         var origin = _canvas.TranslatePoint(default, host) ?? default;
-        var canvasPoint = (anchor - origin) / _canvas.Zoom;
+        // Hold the source coordinate for the complete animation. Recomputing it
+        // every frame accumulates layout/scroll rounding and drifts under the cursor.
+        var canvasPoint = _zoomAnimating && ReferenceEquals(_zoomSession, session)
+            ? _zoomSourceAnchor : (anchor - origin) / _canvas.Zoom;
         session.SetZoom(zoom);
-        // Layout only the existing view; the document and pixel storage are untouched.
         host.UpdateLayout();
         var newOrigin = _canvas.TranslatePoint(default, host) ?? default;
         host.Offset += newOrigin + canvasPoint * _canvas.Zoom - anchor;
@@ -127,11 +130,12 @@ public sealed partial class MainWindow
 
     private void AnimateCanvasZoom(double factor, Point anchor)
     {
-        if (!double.IsFinite(factor) || factor <= 0 || Current() is not { } session) return;
+        if (!double.IsFinite(factor) || factor <= 0 || Current() is not { } session || _canvasScroll is not { } host) return;
         _zoomTarget = Math.Clamp((_zoomAnimating && ReferenceEquals(_zoomSession, session) ? _zoomTarget : session.Zoom) * factor,
             DocumentSession.MinimumZoom, DocumentSession.MaximumZoom);
         _zoomFrom = session.Zoom;
         _zoomAnchor = anchor;
+        _zoomSourceAnchor = (anchor - (_canvas.TranslatePoint(default, host) ?? default)) / _canvas.Zoom;
         _zoomSession = session;
         _zoomStarted = Stopwatch.GetTimestamp();
         _zoomAnimating = true;

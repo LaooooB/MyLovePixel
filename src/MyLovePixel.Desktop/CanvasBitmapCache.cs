@@ -8,7 +8,7 @@ using MyLovePixel.Application;
 namespace MyLovePixel.Desktop;
 
 /// <summary>Retains image storage across navigation; previews update only changed pixels.</summary>
-internal sealed class CanvasBitmapCache : IDisposable
+internal sealed partial class CanvasBitmapCache : IDisposable
 {
     private WriteableBitmap? _bitmap;
     private CanvasPresentation? _source;
@@ -43,6 +43,7 @@ internal sealed class CanvasBitmapCache : IDisposable
         var previewChanged = nextPreview.Count != _preview.Count || nextPreview.Any(p => !_preview.TryGetValue(p.Key, out var value) || value != p.Value);
         if (fullUpload || previewChanged)
         {
+            InvalidateResolutions();
             using var framebuffer = _bitmap!.Lock();
             if (fullUpload)
             {
@@ -60,7 +61,6 @@ internal sealed class CanvasBitmapCache : IDisposable
             }
             else
             {
-                // Restore pixels removed from the previous preview from the unchanged base.
                 var rgba = presentation.Rgba.Span;
                 foreach (var previous in _preview)
                 {
@@ -92,19 +92,21 @@ internal sealed class CanvasBitmapCache : IDisposable
         return BitConverter.IsLittleEndian ? r | g << 8 | b << 16 | a << 24 : a | b << 8 | g << 16 | r << 24;
     }
 
-    public void Draw(DrawingContext context, Rect destination, Rect? visible = null)
+    public void Draw(DrawingContext context, Rect destination, Rect? visible = null, double renderScaling = 1d)
     {
         if (_bitmap is null || destination.Width <= 0 || destination.Height <= 0) return;
         var clipped = visible is { } viewport ? destination.Intersect(viewport) : destination;
         if (clipped.Width <= 0 || clipped.Height <= 0) return;
-        var sx = _bitmap.PixelSize.Width / destination.Width;
-        var sy = _bitmap.PixelSize.Height / destination.Height;
-        context.DrawImage(_bitmap,
+        var bitmap = SelectResolution(destination, renderScaling);
+        var sx = bitmap.PixelSize.Width / destination.Width;
+        var sy = bitmap.PixelSize.Height / destination.Height;
+        context.DrawImage(bitmap,
             new Rect((clipped.X - destination.X) * sx, (clipped.Y - destination.Y) * sy, clipped.Width * sx, clipped.Height * sy), clipped);
     }
 
     public void Dispose()
     {
+        InvalidateResolutions();
         _bitmap?.Dispose(); _bitmap = null; _source = null; _sourcePixels = default; _preview.Clear();
     }
 }
