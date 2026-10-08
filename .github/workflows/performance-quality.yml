@@ -1,0 +1,80 @@
+name: Canvas performance and Windows package
+on:
+  push:
+    branches: ['perf/canvas-navigation-20261008']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet build MyLovePixel.slnx -c Release
+      - run: dotnet test MyLovePixel.slnx -c Release --no-build
+      - name: Existing UX regression checks
+        run: dotnet run --project tests/MyLovePixel.UxSmoke -c Release -- artifacts/ux-evidence
+      - name: Navigation and frame-cost checks
+        if: always()
+        run: |
+          if [ -f tests/MyLovePixel.PerformanceSmoke/MyLovePixel.PerformanceSmoke.csproj ]; then
+            dotnet run --project tests/MyLovePixel.PerformanceSmoke -c Release -- artifacts/performance
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Linux-performance-evidence
+          path: artifacts/
+          if-no-files-found: ignore
+  windows:
+    needs: linux
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet build MyLovePixel.slnx -c Release
+      - run: dotnet test MyLovePixel.slnx -c Release --no-build
+      - run: dotnet run --project tests/MyLovePixel.UxSmoke -c Release -- artifacts/ux-evidence
+      - name: Navigation and frame-cost checks
+        shell: pwsh
+        run: |
+          if (Test-Path tests/MyLovePixel.PerformanceSmoke/MyLovePixel.PerformanceSmoke.csproj) {
+            dotnet run --project tests/MyLovePixel.PerformanceSmoke -c Release -- artifacts/performance
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+      - name: Publish portable Windows EXE
+        run: dotnet publish src/MyLovePixel.Desktop/MyLovePixel.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:PublishTrimmed=false -o artifacts/windows
+      - name: Verify native EXE startup and normal shutdown
+        shell: pwsh
+        run: |
+          $p = Start-Process (Resolve-Path artifacts/windows/MyLovePixel.Desktop.exe) -PassThru
+          try {
+            if (-not $p.WaitForInputIdle(30000)) { throw 'EXE did not become ready' }
+            Start-Sleep -Seconds 3
+            $p.Refresh()
+            if ($p.HasExited -or $p.MainWindowHandle -eq 0) { throw 'Main window was not created' }
+            [void]$p.CloseMainWindow()
+            if (-not $p.WaitForExit(15000) -or $p.ExitCode -ne 0) { throw 'EXE failed normal shutdown' }
+          } finally { if (-not $p.HasExited) { $p.Kill() } }
+          Copy-Item THIRD_PARTY_NOTICES.md artifacts/windows/
+          Get-ChildItem artifacts/windows -Filter *.pdb | Remove-Item
+          (Get-FileHash artifacts/windows/MyLovePixel.Desktop.exe -Algorithm SHA256).Hash | Set-Content artifacts/windows/SHA256.txt
+          '${{ github.sha }}' | Set-Content artifacts/windows/BUILD_COMMIT.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MyLovePixel-Performance-Windows-x64
+          path: artifacts/windows/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Windows-performance-evidence
+          path: |
+            artifacts/ux-evidence/
+            artifacts/performance/
+          if-no-files-found: ignore
